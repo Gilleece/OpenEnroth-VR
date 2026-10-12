@@ -24,7 +24,7 @@ cmake-build-minsizerel
 # Default output folder used by Visual Studio
 out
 
-# Output folders used by Claude
+# Build folders
 build
 build_*
 build-*
@@ -55,7 +55,6 @@ dist
 .cxx
 local.properties
 
-# .claude
-.claude/settings.local.json
-.claude/plans
-.claude/worktrees/
+# MM7 game data and the generated texture pack
+/mm7/
+/mm7_hd/
