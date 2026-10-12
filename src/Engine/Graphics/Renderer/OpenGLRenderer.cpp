@@ -549,7 +549,7 @@ void OpenGLRenderer::drawComposite(const OpenGLRenderTarget &source, const Recti
         glBindTexture(GL_TEXTURE_2D, _antialiasingTarget.colorTexture());
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Keeps the frame around the viewport out.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // FXAA samples past the edges, which must not wrap to the other side.
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
         fxaashader.use();
