@@ -1262,36 +1262,42 @@ void SpellFxRenderer::_4A8BFC_prismatic_light() {  // for SPELL_LIGHT_PRISMATIC_
 }
 
 //----- (004A8C27) --------------------------------------------------------
-void SpellFxRenderer::RenderSpecialEffects() {
+void SpellFxRenderer::drawSpecialEffects() {
     double fadeProgress;         // st7@4 (renamed from v4)
     double fadeAmount;           // st6@4 (renamed from v5)
     float fadeAlpha;             // ST14_4@6 (renamed from v7)
     Duration animElapsed;        // ST14_4@8 (renamed from v8)
     SpriteFrame *prismaticFrame; // eax@8 (renamed from v10)
 
-    if (uNumProjectiles) {
+    if (uNumProjectiles)
         DrawProjectiles();
-        uNumProjectiles = 0;
-    }
 
-    field_204 = 0;
     if (uFadeTime > 0_ticks) {
         fadeProgress = (double)uFadeTime.ticks() / (double)uFadeLength.ticks();
         fadeAmount = 1.0 - fadeProgress * fadeProgress;
         if (fadeAmount > 0.9) fadeAmount = 1.0 - (fadeAmount - 0.9) * 10.0;
         fadeAlpha = fadeAmount;
         render->ScreenFade(uFadeColor, fadeAlpha);
-        uFadeTime -= gameTimer->dt();
     }
 
     if (uAnimLength > 0_ticks) {
         // prismatic light
         animElapsed = pSpriteFrameTable->pSpriteSFrames[pSpriteFrameTable->FastFindSprite("spell84")].animationLength - uAnimLength;
         prismaticFrame = pSpriteFrameTable->GetFrame(pSpriteFrameTable->FastFindSprite("spell84"), animElapsed);
-        uAnimLength -= gameTimer->dt();
 
         render->DrawSpecialEffectsQuad(prismaticFrame->sprites[0]->texture, prismaticFrame->paletteId);
     }
+}
+
+void SpellFxRenderer::finishFrame() {
+    uNumProjectiles = 0;
+    field_204 = 0;
+
+    if (uFadeTime > 0_ticks)
+        uFadeTime -= gameTimer->dt();
+
+    if (uAnimLength > 0_ticks)
+        uAnimLength -= gameTimer->dt();
 }
 
 //----- (004A902A) --------------------------------------------------------

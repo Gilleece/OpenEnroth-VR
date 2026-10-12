@@ -144,6 +144,7 @@ void Engine::drawWorld() {
         }*/
     } else {
         render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
+        render->resetBillboardRenderList(); // Picking reads the previous frame's list up to this point.
 
         // if ( !render->pRenderD3D )
         // pMouse->DrawCursorToTarget();
@@ -159,6 +160,7 @@ void Engine::drawWorld() {
             decal_builder->DrawBloodsplats();
         }
         render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
+        spell_fx_renedrer->finishFrame();
     }
 }
 

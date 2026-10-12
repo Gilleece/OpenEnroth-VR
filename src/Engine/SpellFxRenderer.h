@@ -132,7 +132,18 @@ struct SpellFxRenderer {
     void SetPartyBuffAnim(SpellId uSpellID);
     void FadeScreen__like_Turn_Undead_and_mb_Armageddon(Color uDiffuseColor, Duration uFadeTime);
     void _4A8BFC_prismatic_light();
-    void RenderSpecialEffects();
+
+    /**
+     * Draws this frame's projectiles, the screen fade and the prismatic light overlay. Call `finishFrame` after it.
+     */
+    void drawSpecialEffects();
+
+    /**
+     * Clears this frame's projectiles and fireball sphere tally, and advances the screen fade and prismatic light
+     * timers by a frame.
+     */
+    void finishFrame();
+
     void DrawPlayerBuffAnims();
     void LoadAnimations();
 
