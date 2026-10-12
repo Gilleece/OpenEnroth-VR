@@ -36,12 +36,13 @@ OpenGLShader::~OpenGLShader() {
     release();
 }
 
-bool OpenGLShader::load(const Blob &vertSource, const Blob &fragSource, bool openGLES, const FileSystem *pwd) {
-    GLuint vertex = loadShader(vertSource, GL_VERTEX_SHADER, openGLES, pwd);
+bool OpenGLShader::load(const Blob &vertSource, const Blob &fragSource, bool openGLES, const FileSystem *pwd,
+                        std::span<const std::string_view> defines) {
+    GLuint vertex = loadShader(vertSource, GL_VERTEX_SHADER, openGLES, pwd, defines);
     if (vertex == 0)
         return false;
 
-    GLuint fragment = loadShader(fragSource, GL_FRAGMENT_SHADER, openGLES, pwd);
+    GLuint fragment = loadShader(fragSource, GL_FRAGMENT_SHADER, openGLES, pwd, defines);
     if (fragment == 0) {
         glDeleteShader(vertex);
         return false;
@@ -95,11 +96,14 @@ void OpenGLShader::unuse() {
     glUseProgram(0);
 }
 
-unsigned OpenGLShader::loadShader(const Blob &source, int type, bool openGLES, const FileSystem *pwd) {
+unsigned OpenGLShader::loadShader(const Blob &source, int type, bool openGLES, const FileSystem *pwd,
+                                  std::span<const std::string_view> defines) {
     assert(pwd);
 
     // Preprocess source with version and GL_ES define in preamble.
-    std::string_view preamble = openGLES ? "#version 320 es\n#define GL_ES\n" : "#version 410 core\n";
+    std::string preamble = openGLES ? "#version 320 es\n#define GL_ES\n" : "#version 410 core\n";
+    for (std::string_view define : defines)
+        preamble += fmt::format("#define {}\n", define);
     Blob preprocessedSource;
     try {
         static constexpr std::string_view glslDirectives[] = {"version", "extension"};

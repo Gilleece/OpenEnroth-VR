@@ -163,6 +163,9 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader billbshader;
     OpenGLShader decalshader;
     OpenGLShader forcepershader;
+    OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
+    OpenGLShader outbuildmaterialshader;
+    OpenGLShader bspmaterialshader;
 
     // terrain shader
     OpenGLVertexBuffer<ShaderVertex> _terrainBuffer;
