@@ -44,6 +44,7 @@ set(OE_USE_SANITIZERS "" CACHE STRING "Sanitizers to build with, passed on to -f
 if(OE_DISTRIBUTION_BUILD)
     add_compile_definitions(OE_DISTRIBUTION_BUILD)
 endif()
+add_compile_definitions($<$<CONFIG:Debug>:OE_DEBUG_BUILD>) # Assertions.cmake strips NDEBUG from all builds.
 
 # Find ccache / sccache.
 if(OE_USE_CCACHE)

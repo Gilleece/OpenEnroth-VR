@@ -3347,7 +3347,11 @@ void OpenGLRenderer::Initialize() {
         //                     openenroth requires opengl core 4.1 or opengles 3.2 capable gpu to run.
     }
 
-    gladSetGLPostCallback(GL_Check_Errors);
+    if (config->debug.ValidateOpenGL.value()) {
+        gladSetGLPostCallback(GL_Check_Errors);
+    } else {
+        gladUninstallGLDebug();
+    }
 
     _initImGui();
 
