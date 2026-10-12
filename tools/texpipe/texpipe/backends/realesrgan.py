@@ -1,0 +1,151 @@
+"""Real-ESRGAN through the prebuilt realesrgan-ncnn-vulkan executable, downloaded into a cache on first use."""
+
+import os
+import platform
+import shutil
+import subprocess
+import tempfile
+import urllib.request
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+
+from PIL import Image
+
+from texpipe import imageops
+from texpipe.backends import Job, check_size
+
+RELEASE_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-{}.zip"
+RELEASE_PLATFORMS = {"Windows": "windows", "Linux": "ubuntu", "Darwin": "macos"}
+EXECUTABLE = "realesrgan-ncnn-vulkan"
+
+
+def cache_dir() -> Path:
+    """Where downloaded tools go: TEXPIPE_CACHE, else ~/.cache/texpipe. Never the repository.
+
+    Not %LOCALAPPDATA%, because packaged Python installs on Windows redirect writes there into a private folder.
+    """
+    if "TEXPIPE_CACHE" in os.environ:
+        return Path(os.environ["TEXPIPE_CACHE"])
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "texpipe"
+
+
+def find_executable(folder: Path) -> Path | None:
+    for path in folder.rglob(f"{EXECUTABLE}*"):
+        if path.is_file() and path.suffix in ("", ".exe"):
+            return path
+    return None
+
+
+def download_executable() -> Path:
+    """Downloads and unpacks the release for this platform into the cache, unless it is already there."""
+    folder = cache_dir() / "realesrgan"
+    existing = find_executable(folder) if folder.is_dir() else None
+    if existing:
+        return existing
+    url = RELEASE_URL.format(RELEASE_PLATFORMS[platform.system()])
+    folder.mkdir(parents=True, exist_ok=True)
+    archive = folder / "release.zip"
+    print(f"Downloading {url}")
+    urllib.request.urlretrieve(url, archive)
+    with zipfile.ZipFile(archive) as zip_file:
+        zip_file.extractall(folder)
+    archive.unlink()
+    executable = find_executable(folder)
+    if executable is None:
+        raise FileNotFoundError(f"{url} has no {EXECUTABLE}")
+    executable.chmod(executable.stat().st_mode | 0o111)
+    return executable
+
+
+@dataclass(frozen=True)
+class Prepared:
+    stem: str
+    size: tuple[int, int]
+    has_alpha: bool
+    border: tuple[int, int]  # Padding on each side, in source pixels.
+
+
+class RealEsrganBackend:
+    name = "realesrgan"
+
+    def __init__(self, options: dict, binary: Path | None = None):
+        self._model = options.get("model", "realesrgan-x4plus")
+        self._model_scale = options.get("model_scale", 4)
+        self._wrap_border = options.get("wrap_border", 16)
+        self._min_size = options.get("min_size", 32)
+        self._binary = binary
+
+    def run(self, jobs: list[Job]) -> None:
+        if not jobs:
+            return
+        binary = self._binary or download_executable()
+        with tempfile.TemporaryDirectory(prefix="texpipe-") as temp:
+            in_dir, out_dir = Path(temp) / "in", Path(temp) / "out"
+            in_dir.mkdir()
+            out_dir.mkdir()
+            prepared = [self._prepare(job, index, in_dir) for index, job in enumerate(jobs)]
+            self._run_binary(binary, in_dir, out_dir)
+            for job, item in zip(jobs, prepared, strict=True):
+                self._finish(job, out_dir, item)
+
+    def _border_for(self, job: Job, size: tuple[int, int]) -> tuple[int, int]:
+        """Tileable images get a wrapped border. Others get clamped edges, but only to reach the minimum size."""
+        if job.tileable:
+            return self._wrap_border, self._wrap_border
+        return tuple(max(0, -(-(self._min_size - side) // 2)) for side in size)
+
+    def _pad(self, job: Job, image: Image.Image, border: tuple[int, int]) -> Image.Image:
+        if job.tileable:
+            return imageops.wrap_pad(image, border[0])
+        return imageops.clamp_pad(image, *border)
+
+    def _prepare(self, job: Job, index: int, in_dir: Path) -> Prepared:
+        """Writes the color and, separately, the alpha of one job as padded model inputs."""
+        with Image.open(job.source) as source:
+            rgb, alpha = imageops.split_alpha(source)
+        item = Prepared(f"{index:06d}", rgb.size, alpha is not None, self._border_for(job, rgb.size))
+        self._pad(job, rgb, item.border).save(in_dir / f"{item.stem}.png")
+        if alpha is not None:
+            self._pad(job, alpha, item.border).convert("RGB").save(in_dir / f"{item.stem}a.png")
+        return item
+
+    def _run_binary(self, binary: Path, in_dir: Path, out_dir: Path) -> None:
+        models = binary.parent / "models"
+        command = [str(binary), "-i", str(in_dir), "-o", str(out_dir), "-n", self._model, "-s", str(self._model_scale)]
+        command += ["-f", "png", "-m", str(models)]
+        result = subprocess.run(command, check=True, stderr=subprocess.PIPE, text=True, errors="replace")
+        failures = [line for line in result.stderr.splitlines() if "failed" in line]
+        if failures:
+            # A lost GPU device leaves garbage in this and every later output of the batch.
+            raise RuntimeError(f"{binary.name} reported GPU errors, its output is unusable: {failures[0]}")
+
+    def _finish(self, job: Job, out_dir: Path, item: Prepared) -> None:
+        rgb = self._load_output(out_dir / f"{item.stem}.png", job, item)
+        alpha = self._load_output(out_dir / f"{item.stem}a.png", job, item).convert("L") if item.has_alpha else None
+        result = imageops.merge_alpha(rgb, alpha)
+        check_size(result.size, item.size, job.scale)
+        job.target.parent.mkdir(parents=True, exist_ok=True)
+        result.save(job.target)
+
+    def _load_output(self, path: Path, job: Job, item: Prepared) -> Image.Image:
+        """Crops the padding off a model output and brings it to the source size times the job's scale."""
+        with Image.open(path) as output:
+            border = tuple(side * self._model_scale for side in item.border)
+            image = imageops.crop_border(output.convert("RGB"), *border)
+        target = (item.size[0] * job.scale, item.size[1] * job.scale)
+        if image.size != target:
+            image = image.resize(target, Image.Resampling.LANCZOS)
+        return image
+
+
+def resolve_binary(path: str | None) -> Path | None:
+    if path is None:
+        return None
+    binary = Path(path)
+    if not binary.is_file():
+        found = shutil.which(path)
+        if not found:
+            raise FileNotFoundError(f"No executable at {path}")
+        binary = Path(found)
+    return binary

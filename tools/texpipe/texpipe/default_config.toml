@@ -1,0 +1,19 @@
+# Which backend and scale the upscale step uses for which images. The first [[rule]] whose section and entry name
+# glob both match decides, anything else falls back to [default]. --backend and --scale on the command line override
+# all of this.
+
+[default]
+backend = "realesrgan"
+scale = 4
+
+# The UI is drawn at a fixed size on screen, 2x already covers 1280x960 and the frame stays sharp.
+[[rule]]
+section = "icons"
+match = "*"
+backend = "realesrgan"
+scale = 2
+
+[realesrgan]
+model = "realesrgan-x4plus"
+model_scale = 4
+wrap_border = 16
