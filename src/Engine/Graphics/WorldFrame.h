@@ -34,6 +34,10 @@ class WorldFrame {
      */
     void finish();
 
+    [[nodiscard]] bool prepared() const {
+        return _prepared;
+    }
+
  private:
     void prepareOutdoor();
     void prepareIndoor();

@@ -25,6 +25,9 @@
 #include "Engine/Components/Control/EngineController.h"
 #include "Engine/Components/Deterministic/EngineDeterministicComponent.h"
 #include "Engine/Components/Random/EngineRandomComponent.h"
+#ifdef OE_BUILD_VR
+#   include "Engine/Vr/VrSystem.h"
+#endif
 
 #include "GUI/Overlay/OverlaySystem.h"
 
@@ -179,6 +182,18 @@ void GameStarter::initialize() {
     ::render = _renderer.get();
     _renderer->Initialize();
 
+#ifdef OE_BUILD_VR
+    // Init VR, on the OpenGL context the renderer has just made current.
+    if (_config->vr.Enabled.value() && !_options.headless) {
+        std::unique_ptr<VrSystem> vrSystem = std::make_unique<VrSystem>();
+        if (vrSystem->initialize()) {
+            _vrSystem = _application->installComponent(std::move(vrSystem));
+        } else {
+            MM_ERROR("VR: could not start, continuing without VR.");
+        }
+    }
+#endif
+
     // Init overlays.
     _overlaySystem = std::make_unique<OverlaySystem>(*_renderer, *_application);
 
@@ -193,6 +208,9 @@ void GameStarter::initialize() {
     _engine = std::make_unique<Engine>(_config, *_overlaySystem);
     ::engine = _engine.get();
     _engine->Initialize();
+#ifdef OE_BUILD_VR
+    _engine->_worldFrameViews = _vrSystem;
+#endif
 
     // Init game.
     _game = std::make_unique<Game>(_application.get(), _config);
@@ -215,6 +233,10 @@ GameStarter::~GameStarter() {
 
     _game.reset();
     _engine.reset();
+#ifdef OE_BUILD_VR
+    if (_vrSystem)
+        _application->removeComponent<VrSystem>(); // Before the renderer and the OpenGL context go away.
+#endif
     _overlaySystem.reset();
     _scriptingSystem.reset();
     _renderer.reset();

@@ -59,6 +59,7 @@ set(ENGINE_GRAPHICS_HEADERS
         Vis.h
         Weather.h
         WorldFrame.h
+        WorldFrameViews.h
         OutdoorTerrain.h
         OutdoorTerrain.cpp)
 

@@ -327,8 +327,8 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
 
     // Setup for 3D
 
-    if (_worldTarget) {
-        _worldTarget.bind();
+    if (OpenGLRenderTarget *target = _currentWorldTarget()) {
+        target->bind();
         glDisable(GL_SCISSOR_TEST);
     } else if (outputRender != outputPresent) {
         _uiTarget.bind();
@@ -351,7 +351,8 @@ void OpenGLRenderer::EndScene3D() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
-    if (!_worldTarget) {
+    OpenGLRenderTarget *target = _currentWorldTarget();
+    if (!target) {
         _set_ortho_projection();
         _set_ortho_modelview();
         DrawTwodVerts();
@@ -359,7 +360,7 @@ void OpenGLRenderer::EndScene3D() {
     }
 
     // The queued 2D quads are in UI coordinates, this maps the game viewport onto the whole world target.
-    glViewport(0, 0, _worldTarget.size().w, _worldTarget.size().h);
+    glViewport(0, 0, target->size().w, target->size().h);
     projmat = glm::ortho(float(pViewport.x), float(pViewport.x + pViewport.w), float(pViewport.y + pViewport.h), float(pViewport.y), float(-1), float(1));
     _set_ortho_modelview();
     DrawTwodVerts();
@@ -376,7 +377,9 @@ Recti OpenGLRenderer::worldTargetViewport() {
 }
 
 void OpenGLRenderer::compositeWorldTarget() {
-    if (!_worldTarget)
+    OpenGLRenderTarget *source = _mirrorPending ? &_mirrorTarget : (_worldTarget ? &_worldTarget : nullptr);
+    _mirrorPending = false;
+    if (!source)
         return;
 
     _bindUiTarget();
@@ -387,8 +390,8 @@ void OpenGLRenderer::compositeWorldTarget() {
 
     GLenum filter = config->graphics.WorldTargetFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
     int bottom = outputRender.h - (pViewport.y + pViewport.h);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, _worldTarget.framebuffer());
-    glBlitFramebuffer(0, 0, _worldTarget.size().w, _worldTarget.size().h,
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, source->framebuffer());
+    glBlitFramebuffer(0, 0, source->size().w, source->size().h,
                       pViewport.x, bottom, pViewport.x + pViewport.w, bottom + pViewport.h, GL_COLOR_BUFFER_BIT, filter);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     glEnable(GL_SCISSOR_TEST);
@@ -398,6 +401,39 @@ TextureRenderId OpenGLRenderer::uiTargetTexture() {
     if (outputRender == outputPresent)
         return TextureRenderId();
     return TextureRenderId(_uiTarget.colorTexture());
+}
+
+void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {
+    _externalWorldTarget = colorTexture ? _externalTarget(colorTexture, size) : nullptr;
+}
+
+void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
+    OpenGLRenderTarget *source = _externalTarget(colorTexture, size);
+    if (_mirrorTarget.size() != pViewport.size())
+        _mirrorTarget.reset(pViewport.size(), RENDER_TARGET_FORMAT_RGBA8, false);
+
+    Recti crop(Pointi(0, 0), size);
+    if (size.w * pViewport.h > size.h * pViewport.w) {
+        crop.w = size.h * pViewport.w / pViewport.h;
+        crop.x = (size.w - crop.w) / 2;
+    } else {
+        crop.h = size.w * pViewport.h / pViewport.w;
+        crop.y = (size.h - crop.h) / 2;
+    }
+
+    glDisable(GL_SCISSOR_TEST);
+    _mirrorTarget.bind();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, source->framebuffer());
+    glBlitFramebuffer(crop.x, crop.y, crop.x + crop.w, crop.y + crop.h, 0, 0, pViewport.w, pViewport.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    _bindUiTarget();
+    glEnable(GL_SCISSOR_TEST);
+
+    _mirrorPending = true;
+}
+
+void OpenGLRenderer::setExternalFramePacing(bool external) {
+    _externalFramePacing = external;
 }
 
 void OpenGLRenderer::DrawProjectile(float srcX, float srcY, float srcworldview, float srcfovoworldview,
@@ -1052,9 +1088,27 @@ void OpenGLRenderer::_set_ortho_modelview() {
 }
 
 void OpenGLRenderer::_setWorldViewport() {
-    int targetHeight = _worldTarget ? _worldTarget.size().h : outputRender.h;
+    OpenGLRenderTarget *target = _currentWorldTarget();
+    int targetHeight = target ? target->size().h : outputRender.h;
     const Recti &rect = _view.viewport;
     glViewport(rect.x, targetHeight - (rect.y + rect.h - 1) - 1, rect.w, rect.h);
+}
+
+OpenGLRenderTarget *OpenGLRenderer::_currentWorldTarget() {
+    if (_externalWorldTarget)
+        return _externalWorldTarget;
+    if (_worldTarget)
+        return &_worldTarget;
+    return nullptr;
+}
+
+OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture, Sizei size) {
+    std::unique_ptr<OpenGLRenderTarget> &target = _externalTargets[static_cast<GLuint>(colorTexture.value())];
+    if (!target)
+        target = std::make_unique<OpenGLRenderTarget>();
+    if (target->size() != size)
+        target->resetExternal(static_cast<GLuint>(colorTexture.value()), size, true);
+    return target.get();
 }
 
 void OpenGLRenderer::_bindUiTarget() {
@@ -2258,7 +2312,7 @@ void OpenGLRenderer::swapBuffers() {
         _texturesForDeletion.clear();
     }
 
-    if (config->graphics.FPSLimit.value() > 0)
+    if (!_externalFramePacing && config->graphics.FPSLimit.value() > 0)
         _frameLimiter.tick(config->graphics.FPSLimit.value());
 }
 

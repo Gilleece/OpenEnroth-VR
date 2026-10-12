@@ -35,3 +35,6 @@ target_link_libraries(application_startup
         scripting
         utility)
 
+if(OE_BUILD_VR)
+    target_link_libraries(application_startup PUBLIC engine_vr)
+endif()

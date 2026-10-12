@@ -30,6 +30,16 @@ class OpenGLRenderTarget {
     void reset(Sizei size, RenderTargetFormat format, bool withDepth);
 
     /**
+     * Wraps a colour texture owned by someone else, releasing whatever the target held before. The texture is not
+     * deleted when the target is released.
+     *
+     * @param colorTexture              Texture to draw into.
+     * @param size                      Size of the texture.
+     * @param withDepth                 Whether to add a 24-bit depth texture.
+     */
+    void resetExternal(GLuint colorTexture, Sizei size, bool withDepth);
+
+    /**
      * Releases the OpenGL objects.
      */
     void reset();
@@ -56,8 +66,12 @@ class OpenGLRenderTarget {
     }
 
  private:
+    void createDepthTexture();
+
+ private:
     GLuint _framebuffer = 0;
     GLuint _colorTexture = 0;
     GLuint _depthTexture = 0;
+    bool _ownsColorTexture = true;
     Sizei _size;
 };

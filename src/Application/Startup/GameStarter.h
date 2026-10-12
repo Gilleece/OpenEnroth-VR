@@ -24,6 +24,9 @@ class GameBindings;
 class OverlaySystem;
 class ScriptingSystem;
 class EngineController;
+#ifdef OE_BUILD_VR
+class VrSystem;
+#endif
 
 class GameStarter {
  public:
@@ -64,4 +67,7 @@ class GameStarter {
     std::unique_ptr<Engine> _engine;
     std::shared_ptr<Game> _game;
     bool _loadedVrEnabled = false; // vr.enabled as loaded from the ini, before --vr.
+#ifdef OE_BUILD_VR
+    VrSystem *_vrSystem = nullptr; // Owned by the application, set when the headset session could be created.
+#endif
 };

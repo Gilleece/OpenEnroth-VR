@@ -42,6 +42,7 @@ struct LightsStack_StationaryLight_;
 struct LightsStack_MobileLight_;
 class OverlaySystem;
 class WorldFrame;
+class WorldFrameViews;
 
 enum class GameState {
     GAME_STATE_PLAYING = 0,
@@ -161,6 +162,7 @@ class Engine {
     std::unique_ptr<LightsStack_StationaryLight_> _stationaryLights;
     std::unique_ptr<LightsStack_MobileLight_> _mobileLights;
     std::unique_ptr<WorldFrame> _worldFrame;
+    WorldFrameViews *_worldFrameViews = nullptr;
 
  private:
     std::unique_ptr<ResourceManager> _resourceManager;

@@ -104,6 +104,9 @@ add_subdirectory(Snapshots)
 add_subdirectory(Spells)
 add_subdirectory(Tables)
 add_subdirectory(TurnEngine)
+if(OE_BUILD_VR)
+    add_subdirectory(Vr)
+endif()
 
 if(OE_BUILD_TESTS)
     set(TEST_ENGINE_SOURCES
