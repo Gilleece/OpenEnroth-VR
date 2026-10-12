@@ -24,6 +24,11 @@ uniform sampler2DArray textureArray0;
 uniform sampler2DArray textureArray1;
 uniform FogParam fog;
 
+#ifdef MATERIAL_MAPS
+uniform sampler2DArray materialArray;
+#include "material.glsl"
+#endif
+
 void main() {
     vec3 fragnorm = normalize(vsNorm);
     vec3 fragviewdir = normalize(CameraPos - vsPos);
@@ -36,10 +41,27 @@ void main() {
     // get normal texture at point
     fragcol = texture(textureArray1, vec3(texuv.x,texuv.y,olayer));
 
+#ifdef MATERIAL_MAPS
+    vec4 material = texture(materialArray, vec3(texuv.x, texuv.y, olayer));
+    if (fragcol.a == 0.0 || (vsAttrib & 0x1) > 0)
+        material = vec4(0.0); // Water has no material.
+#endif
+
     // replace texture with water if alpha or a water tile (bit 0x1 in attribs)
     if (fragcol.a == 0.0 || (vsAttrib & 0x1) > 0){
         fragcol = watercol;
     }
+
+#ifdef MATERIAL_MAPS
+    // Tile u runs east and v runs south, along grid x and y.
+    vec3 tangent = normalize(vec3(1.0, 0.0, 0.0) - fragnorm * fragnorm.x);
+    vec3 bitangent = cross(fragnorm, tangent);
+
+    vec3 lit;
+    if (material.a > 0.0) {
+        lit = CalcMaterialLighting(material, fragcol.rgb, fragnorm, tangent, bitangent, vsPos, fragviewdir);
+    } else {
+#endif
 
     // apply sun
     vec3 result = CalcSunLight(sun, fragnorm, fragviewdir, vec3(1));
@@ -61,6 +83,12 @@ void main() {
         if (fspointlights[i].type == 2.0)
             result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir);
     }
+
+#ifdef MATERIAL_MAPS
+        lit = result;
+    }
+    vec3 result = lit;
+#endif
 
     vec3 clamps = result;
 
