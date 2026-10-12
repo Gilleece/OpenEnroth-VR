@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstring>
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <utility>
 
@@ -101,7 +102,14 @@ Blob uncompressBestEffort(const Blob &source, size_t sizeHint) {
 }
 
 uint32_t crc32(const Blob &data) {
-    return ::crc32_z(::crc32_z(0, nullptr, 0), static_cast<const Bytef *>(data.data()), data.size());
+    const Bytef *bytes = static_cast<const Bytef *>(data.data());
+    uLong result = ::crc32(0, nullptr, 0);
+    for (size_t offset = 0; offset < data.size();) {
+        uInt chunk = static_cast<uInt>(std::min<size_t>(data.size() - offset, std::numeric_limits<uInt>::max())); // crc32_z isn't in the Android NDK's zlib.
+        result = ::crc32(result, bytes + offset, chunk);
+        offset += chunk;
+    }
+    return static_cast<uint32_t>(result);
 }
 
 };  // namespace zlib
