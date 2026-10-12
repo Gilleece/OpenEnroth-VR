@@ -1,10 +1,9 @@
 """Small image operations on Pillow images that the pipeline steps share."""
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageFilter, ImageMath, ImageOps
 
 OPAQUE = 255
 TRANSPARENT = 0
-NEIGHBOURS = [(dx, dy) for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dx or dy]
 
 
 def color_key(image: Image.Image, color: tuple[int, int, int]) -> Image.Image:
@@ -23,28 +22,27 @@ def color_key(image: Image.Image, color: tuple[int, int, int]) -> Image.Image:
 def bleed_transparent(image: Image.Image) -> Image.Image:
     """Gives each transparent pixel the average color of its opaque neighbours, as the engine does for bitmaps.
 
-    Filtering and upscaling then don't pull a mask color into the edges.
+    Filtering and upscaling then don't pull a mask color into the edges. A transparent pixel with no opaque neighbour
+    becomes black. Runs on whole images in Pillow, sprites are too many to walk pixel by pixel.
     """
-    result = image.convert("RGBA")
-    source = image.convert("RGBA").load()
-    pixels = result.load()
-    width, height = result.size
-    alpha = result.getchannel("A").tobytes()
-    for index in (i for i, value in enumerate(alpha) if value == TRANSPARENT):
-        y, x = divmod(index, width)
-        pixels[x, y] = _neighbour_average(source, x, y, width, height)
-    return result
+    rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    opaque = alpha.point(lambda value: 1 if value != TRANSPARENT else 0).convert("I")
+    count = _neighbour_sum(opaque)
+    channels = []
+    for channel in rgba.split()[:3]:
+        total = _neighbour_sum(ImageMath.lambda_eval(lambda a: a["c"] * a["o"], c=channel.convert("I"), o=opaque))
+        average = ImageMath.lambda_eval(lambda a: a["t"] / a["max"](a["n"], 1), t=total, n=count)
+        channels.append(average.convert("L"))
+    bled = Image.merge("RGBA", (*channels, alpha))
+    return Image.composite(rgba, bled, alpha.point(lambda value: OPAQUE if value != TRANSPARENT else 0))
 
 
-def _neighbour_average(source, x: int, y: int, width: int, height: int) -> tuple[int, int, int, int]:
-    opaque = [
-        source[x + dx, y + dy]
-        for dx, dy in NEIGHBOURS
-        if 0 <= x + dx < width and 0 <= y + dy < height and source[x + dx, y + dy][3] != TRANSPARENT
-    ]
-    if not opaque:
-        return (0, 0, 0, TRANSPARENT)
-    return tuple(sum(pixel[i] for pixel in opaque) // len(opaque) for i in range(3)) + (TRANSPARENT,)
+def _neighbour_sum(image: Image.Image) -> Image.Image:
+    """Sums the 8 neighbours of every pixel of an "I" image, treating pixels outside it as 0."""
+    padded = ImageOps.expand(image, 1, 0)
+    total = padded.filter(ImageFilter.Kernel((3, 3), [1, 1, 1, 1, 0, 1, 1, 1, 1], scale=1))
+    return total.crop((1, 1, image.width + 1, image.height + 1))
 
 
 def has_transparency(image: Image.Image) -> bool:

@@ -8,7 +8,9 @@ import subprocess
 import tempfile
 import urllib.request
 import zipfile
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from itertools import repeat
 from pathlib import Path
 
 from PIL import Image
@@ -101,10 +103,11 @@ class RealEsrganBackend:
             in_dir, out_dir = Path(temp) / "in", Path(temp) / "out"
             in_dir.mkdir()
             out_dir.mkdir()
-            prepared = [self._prepare(job, index, in_dir) for index, job in enumerate(jobs)]
-            self._run_binary(binary, in_dir, out_dir)
-            for job, item in zip(jobs, prepared, strict=True):
-                self._finish(job, out_dir, item)
+            # Reading, padding, cropping and writing the images takes longer than the model, so it runs on all cores.
+            with ProcessPoolExecutor() as pool:
+                prepared = list(pool.map(self._prepare, jobs, range(len(jobs)), repeat(in_dir), chunksize=16))
+                self._run_binary(binary, in_dir, out_dir)
+                list(pool.map(self._finish, jobs, repeat(out_dir), prepared, chunksize=16))
 
     def _border_for(self, job: Job, size: tuple[int, int]) -> tuple[int, int]:
         """Tileable images get a wrapped border. Others get clamped edges, but only to reach the minimum size."""

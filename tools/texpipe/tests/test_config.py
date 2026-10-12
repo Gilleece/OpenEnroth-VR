@@ -11,3 +11,7 @@ def test_default_config_sends_small_and_direction_icons_to_nearest():
 
 def test_command_line_overrides_the_rules():
     assert choose(load_config(None), "icons", "mapdir3", 7, "realesrgan", 4) == Choice("realesrgan", 4)
+
+
+def test_sprites_default_to_realesrgan_at_2x():
+    assert choose(load_config(None), "sprites", "m246a0/247", 60) == Choice("realesrgan", 2)

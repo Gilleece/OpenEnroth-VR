@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     extract.add_argument("--out", type=Path, required=True, help="Work folder to create.")
     extract.add_argument("--lodtool", help=f"LodTool executable, defaults to ${lodtool.LODTOOL_ENV} or PATH.")
     extract.add_argument("--mask-table", type=Path, default=DEFAULT_MASK_TABLE, help="resource_mask_table.json.")
+    extract.add_argument("--sprites", action="store_true", help="Also extract the sprites listed in --palettes.")
+    extract.add_argument("--palettes", type=Path, help="Output of 'OpenEnroth dump-sprite-palettes', for --sprites.")
 
     upscale = commands.add_parser("upscale", help="Upscale the extracted images.")
     upscale.add_argument("--work", type=Path, required=True, help="Work folder made by extract.")
@@ -42,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--out", type=Path, required=True, help="Pack folder to write.")
     pack.add_argument("--colors", choices=COLORS, default="raw", help="How the engine treats the pack's colors.")
 
+    for command in (extract, upscale):
+        command.add_argument("--force", action="store_true", help="Redo everything, even what is up to date.")
     for command in (extract, upscale, maps, pack):
         command.add_argument(
             "--only", action="append", help="Only handle LOD entries matching this glob, e.g. 'ch1*'. Repeatable."
@@ -53,16 +57,22 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     start = time.monotonic()
     if args.command == "extract":
-        result = run_extract(args.data, args.out, lodtool.resolve_lodtool(args.lodtool), args.mask_table, args.only)
+        if args.sprites and not args.palettes:
+            raise SystemExit("--sprites needs --palettes, the output of 'OpenEnroth dump-sprite-palettes'.")
+        lodtool_path = lodtool.resolve_lodtool(args.lodtool)
+        palettes = args.palettes if args.sprites else None
+        result = run_extract(args.data, args.out, lodtool_path, args.mask_table, args.only, palettes, args.force)
         print(
-            f"Extracted {result['extracted']}, skipped {len(result['skipped'])}, failed {len(result['failed'])}, "
+            f"Extracted {result['extracted']}, already up to date {result['up_to_date']}, "
+            f"skipped {len(result['skipped'])}, failed {len(result['failed'])}, "
             f"left out {len(result['unsafe_names'])} entries whose names collide as files."
         )
         for name, reason in result["failed"].items():
             print(f"  failed {name}: {reason}")
     elif args.command == "upscale":
         config = load_config(args.config)
-        counts = run_upscale(args.work, config, args.only, args.backend, args.scale, resolve_binary(args.binary))
+        binary = resolve_binary(args.binary)
+        counts = run_upscale(args.work, config, args.only, args.backend, args.scale, binary, args.force)
         print(f"Upscaled {counts}.")
     elif args.command == "maps":
         print(f"Made maps for {run_maps(args.work, load_config(args.config), args.only)} bitmaps.")

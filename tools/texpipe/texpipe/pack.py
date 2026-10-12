@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image
 
 from texpipe.maps import MAPS, map_path
-from texpipe.workdir import SECTIONS, load_image_infos, load_upscaled_info, upscaled_dir, write_json
+from texpipe.workdir import SECTIONS, WorkImage, load_image_infos, load_upscaled_info, upscaled_dir, write_json
 
 MANIFEST_FORMAT = 1
 COLORS = ("raw", "final")
@@ -32,7 +32,7 @@ def build_manifest(entries: dict[str, dict[str, dict]], colors: str) -> dict:
 def run_pack(work: Path, out: Path, colors: str, only: list[str] | None) -> dict[str, int]:
     """Copies every upscaled image and its maps into the pack and writes the manifest and README.
 
-    Returns the number of images per section, and of bitmaps with maps.
+    Returns the number of entries per section, of bitmaps with maps, and of sprite images.
     """
     entries: dict[str, dict[str, dict]] = {section: {} for section in SECTIONS}
     for image in load_image_infos(work, only):
@@ -42,6 +42,9 @@ def run_pack(work: Path, out: Path, colors: str, only: list[str] | None) -> dict
         source = upscaled_dir(work, image.section) / f"{image.name}.png"
         size = _check_scaled(source, (image.width, image.height), upscaled.scale)
         _copy(source, out / image.section / f"{image.name}.png")
+        if image.section == "sprites":
+            _add_sprite_image(entries["sprites"], image)
+            continue
         entry = {"crc32": image.crc32}
         if image.section == "bitmaps" and all(map_path(work, kind, image.name).is_file() for kind in MAPS):
             for kind in MAPS:
@@ -53,7 +56,17 @@ def run_pack(work: Path, out: Path, colors: str, only: list[str] | None) -> dict
     (out / "README.txt").write_text(README_TEXT, encoding="utf-8")
     counts = {section: len(section_entries) for section, section_entries in entries.items()}
     counts["maps"] = sum(1 for entry in entries["bitmaps"].values() if "maps" in entry)
+    counts["sprite images"] = sum(len(entry["palettes"]) for entry in entries["sprites"].values())
     return counts
+
+
+def _add_sprite_image(sprites: dict[str, dict], image: WorkImage) -> None:
+    """Adds one palette of a sprite to its manifest entry, `{"crc32": ..., "palettes": [sorted ids]}`."""
+    name, palette_id = image.name.rsplit("/", 1)
+    entry = sprites.setdefault(name, {"crc32": image.crc32, "palettes": []})
+    if entry["crc32"] != image.crc32:
+        raise ValueError(f"sprite {name} has images from different sprites.lod entries")
+    entry["palettes"] = sorted([*entry["palettes"], int(palette_id)])
 
 
 def _copy(source: Path, target: Path) -> None:
