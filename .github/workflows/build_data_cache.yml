@@ -19,6 +19,8 @@ jobs:
       matrix:
         configuration: [Release]
         architecture: [x64]
+    env:
+      DATA_ACCESS_TOKEN: ${{secrets.DATA_ACCESS_TOKEN}} # Secrets cannot be referenced in if: blocks.
     steps:
       - name: 'Check for data cache'
         id: check_for_data_cache
@@ -30,7 +32,7 @@ jobs:
           lookup-only: true
 
       - name: 'Checkout private data'
-        if: steps.check_for_data_cache.outputs.cache-hit != 'true'
+        if: env.DATA_ACCESS_TOKEN != '' && steps.check_for_data_cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v7.0.1
         with:
           repository: OpenEnroth/OpenEnroth_GameData
@@ -41,12 +43,12 @@ jobs:
 
       # Pull request runs restore this cache, and they only need the data files.
       - name: 'Drop git metadata'
-        if: steps.check_for_data_cache.outputs.cache-hit != 'true'
+        if: env.DATA_ACCESS_TOKEN != '' && steps.check_for_data_cache.outputs.cache-hit != 'true'
         run: |
           rm -rf OpenEnroth_GameData/.git
 
       - name: 'Cache data'
-        if: steps.check_for_data_cache.outputs.cache-hit != 'true'
+        if: env.DATA_ACCESS_TOKEN != '' && steps.check_for_data_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
           path: |
