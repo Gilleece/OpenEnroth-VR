@@ -197,7 +197,8 @@ void Engine::Draw() {
 void Engine::DrawGUI() {
     render->ResetUIClipRect();
 
-    GameUI_DrawRightPanelFrames();
+    if (!minimalHud())
+        GameUI_DrawRightPanelFrames();
     _statusBar->draw();
 
     if (!pMovie_Track && uGameState != GAME_STATE_CHANGE_LOCATION) {  // ! pVideoPlayer->pSmackerMovie)
@@ -210,7 +211,7 @@ void Engine::DrawGUI() {
     GameUI_DrawPortraits();
     GameUI_DrawLifeManaBars();
     GameUI_DrawCharacterSelectionFrame();
-    if (_44100D_should_alter_right_panel()) GameUI_DrawRightPanel();
+    if (_44100D_should_alter_right_panel() && !minimalHud()) GameUI_DrawRightPanel();
 
     if (!pMovie_Track) {
         spell_fx_renedrer->DrawPlayerBuffAnims();
@@ -464,6 +465,16 @@ Vis_PIDAndDepth Engine::PickRay(float fPickDepth, Vec3f origin, Vec3f direction,
 
 bool Engine::aimPickCamera() {
     return _worldFrameViews && _worldFrameViews->aimPickCamera();
+}
+
+int Engine::snapTurnStep() const {
+    if (!config->vr.SnapTurn.value() || !render || !render->uiLayer())
+        return 0;
+    return static_cast<int>(std::lround(config->vr.SnapTurnDegrees.value() * 2048.0 / 360.0));
+}
+
+bool Engine::minimalHud() const {
+    return config->vr.MinimalHud.value() && render && render->uiLayer();
 }
 
 Vis_PIDAndDepth Engine::PickMouseForInfo() {

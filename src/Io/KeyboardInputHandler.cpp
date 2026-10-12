@@ -63,8 +63,11 @@ void Io::KeyboardInputHandler::GenerateActions(bool isPaused) {
     bool resettimer = true;
     for (InputAction action : allInputActions()) {
         bool isTriggered = false;
+        InputActionTriggerMode triggerMode = triggerModeForInputAction(action);
+        if ((action == INPUT_ACTION_TURN_LEFT || action == INPUT_ACTION_TURN_RIGHT) && !IsTurnStrafingToggled() && engine->snapTurnStep())
+            triggerMode = TRIGGER_ONCE; // A snap turn steps once per press.
         for (PlatformKey key : {actionMapping->keyFor(action), actionMapping->gamepadKeyFor(action)}) {
-            switch (triggerModeForInputAction(action)) {
+            switch (triggerMode) {
             default: assert(false); [[fallthrough]];
             case TRIGGER_ONCE:
                 isTriggered = controller->isKeyPressedThisFrame(key);

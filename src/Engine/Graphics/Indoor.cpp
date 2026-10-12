@@ -1393,27 +1393,35 @@ void BLV_ProcessPartyActions() {  // could this be combined with odm process act
     while (pPartyActionQueue->uNumActions) {
         switch (pPartyActionQueue->Next()) {
             case PARTY_TurnLeft:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw + step);
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw + (int) engine->config->settings.TurnSpeed.value());
                 else
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw + static_cast<int>(rotation * fTurnSpeedMultiplier));
                 break;
             case PARTY_TurnRight:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw - step);
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw - (int) engine->config->settings.TurnSpeed.value());
                 else
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw - static_cast<int>(rotation * fTurnSpeedMultiplier));
                 break;
 
             case PARTY_FastTurnLeft:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw + step);
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw + (int) engine->config->settings.TurnSpeed.value());
                 else
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw + static_cast<int>(2.0f * rotation * fTurnSpeedMultiplier));
                 break;
 
             case PARTY_FastTurnRight:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw - step);
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw - (int) engine->config->settings.TurnSpeed.value());
                 else
                     pParty->_viewYaw = TrigLUT.uDoublePiMask & (pParty->_viewYaw - static_cast<int>(2.0f * rotation * fTurnSpeedMultiplier));
