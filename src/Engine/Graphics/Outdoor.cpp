@@ -1015,7 +1015,9 @@ void ODM_ProcessPartyActions() {
                 break;
 
             case PARTY_TurnLeft:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw += step;
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw += engine->config->settings.TurnSpeed.value();  // discrete turn
                 else
                     pParty->_viewYaw += dturn * fTurnSpeedMultiplier;  // time-based smooth turn
@@ -1024,7 +1026,9 @@ void ODM_ProcessPartyActions() {
                 break;
 
             case PARTY_TurnRight:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw -= step;
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw -= engine->config->settings.TurnSpeed.value();
                 else
                     pParty->_viewYaw -= dturn * fTurnSpeedMultiplier;
@@ -1033,7 +1037,9 @@ void ODM_ProcessPartyActions() {
                 break;
 
             case PARTY_FastTurnLeft:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw += step;
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw += engine->config->settings.TurnSpeed.value();
                 else
                     pParty->_viewYaw += 2.0f * fTurnSpeedMultiplier * dturn;
@@ -1042,7 +1048,9 @@ void ODM_ProcessPartyActions() {
                 break;
 
             case PARTY_FastTurnRight:
-                if (engine->config->settings.TurnSpeed.value() > 0)
+                if (int step = engine->snapTurnStep())
+                    pParty->_viewYaw -= step;
+                else if (engine->config->settings.TurnSpeed.value() > 0)
                     pParty->_viewYaw -= engine->config->settings.TurnSpeed.value();
                 else
                     pParty->_viewYaw -= 2.0f * fTurnSpeedMultiplier * dturn;

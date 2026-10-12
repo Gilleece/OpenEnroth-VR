@@ -95,6 +95,19 @@ class Engine {
     bool aimPickCamera();
 
     /**
+     * @return                          Yaw step of a snap turn in the party's units, 2048 to a full turn, or 0 when the
+     *                                  turn keys turn smoothly. Snap turns are on with `vr.snap_turn` while the UI is a
+     *                                  layer of a headset.
+     */
+    int snapTurnStep() const;
+
+    /**
+     * @return                          Whether the HUD leaves out the frame around the game viewport, which it does with
+     *                                  `vr.minimal_hud` while the UI is a layer of a headset.
+     */
+    bool minimalHud() const;
+
+    /**
      * Picks whatever is under the cursor for display purposes - monster popups and status bar hints.
      * Reaches to the monster popup depth, matches anything.
      */
