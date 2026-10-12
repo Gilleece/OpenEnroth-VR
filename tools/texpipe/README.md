@@ -1,0 +1,83 @@
+# texpipe
+
+Builds a texture pack for OpenEnroth from your own copy of Might and Magic VII: higher resolution versions of the
+images in `bitmaps.lod` and `icons.lod`. The pack only holds upscaled derivatives, and the game has to be installed to
+use it.
+
+## Setup
+
+Needs Python 3.11 or later and Pillow:
+
+```
+pip install -r tools/texpipe/requirements.txt
+```
+
+The LOD files are read with the engine's own `LodTool`, so build the `LodTool` target first. Pass its path with
+`--lodtool` or set `TEXPIPE_LODTOOL`.
+
+Run the commands from `tools/texpipe`, as `python -m texpipe <command>`.
+
+## Commands
+
+Put everything under the `mm7_hd` folder at the repository root. It is gitignored, and nothing generated from the game
+data may be committed.
+
+**extract** dumps every bitmap and icon as a PNG, with the palette applied and transparency taken from the image's own
+flag and `resources/data/resource_mask_table.json`, the same way the engine does it. Palettes and the few entries that
+are not images are skipped. Next to each PNG goes a JSON file with the entry name, section, size, transparency and the
+CRC-32 of the raw LOD entry, which the engine uses to check that a pack matches the installed game.
+`summary.json` lists what was skipped and what failed.
+
+```
+python -m texpipe extract --data ../../mm7 --out ../../mm7_hd/work --lodtool <path to LodTool>
+```
+
+**upscale** runs the extracted images through a backend at 2x or 4x:
+
+- `nearest` is plain nearest neighbour scaling. It changes nothing but the size, which makes it the way to test the
+  pipeline and the engine end to end.
+- `realesrgan` runs the `realesrgan-ncnn-vulkan` executable, which needs a GPU with Vulkan. It is downloaded into
+  `~/.cache/texpipe` on first use, or `TEXPIPE_CACHE` if set. Pass `--binary` to use one you already have. Alpha is
+  upscaled separately from the color and put back afterwards. Bitmaps tile across walls and floors, so they are padded
+  with a border wrapped around from the opposite edge before upscaling, and cropped back after, which keeps the seams
+  continuous.
+
+```
+python -m texpipe upscale --work ../../mm7_hd/work --backend nearest --scale 2
+```
+
+Without `--backend` and `--scale`, each image gets what `texpipe/default_config.toml` says for its section and name.
+Pass `--config` to use your own copy.
+
+**pack** writes the pack folder: `manifest.json`, `bitmaps/` and `icons/` with one PNG per LOD entry, and a
+`README.txt`. `--colors raw`, the default, says the images have the LOD palette colors, and the engine applies its
+saturation and lightness to bitmaps as it does for the originals. Use `--colors final` only if you have graded the
+upscaled images yourself.
+
+```
+python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x
+```
+
+All three commands take `--only <glob>`, which can be repeated, to handle only the LOD entries matching it, e.g.
+`--only "ch1*" --only "ib-*"` for a quick run.
+
+## Using the pack
+
+Set `texture_pack` in the `[graphics]` section of `openenroth.ini` to the pack folder. A relative path is resolved
+against the game data folder, so with the game in `mm7` next to `mm7_hd`:
+
+```
+[graphics]
+texture_pack = ../mm7_hd/nearest2x
+```
+
+The log then says `Using texture pack '...' with N bitmaps and M icons.` at startup.
+
+## Tests
+
+```
+pip install pytest
+python -m pytest
+```
+
+The tests use small generated images and don't need the game data.

@@ -1,0 +1,26 @@
+[project]
+name = "texpipe"
+version = "0.1.0"
+description = "Builds an OpenEnroth texture pack from the user's own copy of Might and Magic VII."
+requires-python = ">=3.11"
+dependencies = ["Pillow>=10.0"]
+
+[project.scripts]
+texpipe = "texpipe.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["texpipe*"]
+
+[tool.setuptools.package-data]
+texpipe = ["default_config.toml"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B"]
