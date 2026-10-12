@@ -219,7 +219,7 @@ class OpenGLRenderer : public BaseRenderer {
 
     /**
      * Tonemaps a linear colour texture into the bound draw framebuffer: exposure, a shoulder that rolls the
-     * highlights off towards white, sRGB encoding and the user gamma. Leaves blending, depth test and scissor test
+     * highlights off towards white, sRGB encoding and the user gamma, then FXAA when it's enabled. Leaves blending, depth test and scissor test
      * disabled, and changes the viewport and the texture bound to unit 0.
      *
      * @param source                    Target with linear colour, as the world shaders draw it with the linear
@@ -277,6 +277,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader compositeshader;
     OpenGLShader bloomdownshader;
     OpenGLShader bloomupshader;
+    OpenGLShader fxaashader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -325,6 +326,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLVertexBuffer<SkyVertex> _skyBuffer;
     OpenGLVertexBuffer<CompositeVertex> _compositeBuffer;
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
+    OpenGLRenderTarget _antialiasingTarget; // Tonemapped world at the size it's composited at, the input to FXAA.
     std::vector<SkyVertex> _skyVertices;
 
     // two d shader

@@ -496,18 +496,28 @@ Colorf OpenGLRenderer::_worldColor(Colorf color) const {
 void OpenGLRenderer::drawComposite(const OpenGLRenderTarget &source, const Recti &viewport, GLenum filter) {
     _ensureFullscreenTriangle();
 
+    GLint destination = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &destination);
+
     GLuint bloom = 0;
     if (config->graphics.Bloom.value()) {
-        GLint framebuffer = 0;
-        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
         bloom = _drawBloom(source);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destination);
     }
 
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_SCISSOR_TEST);
-    glViewport(viewport.x, viewport.y, viewport.w, viewport.h);
+
+    bool fxaa = config->graphics.Antialiasing.value() == ANTIALIASING_FXAA;
+    if (fxaa) {
+        if (_antialiasingTarget.size() != viewport.size())
+            _antialiasingTarget.reset(viewport.size(), RENDER_TARGET_FORMAT_RGBA8, false);
+        _antialiasingTarget.bind();
+        glViewport(0, 0, viewport.w, viewport.h);
+    } else {
+        glViewport(viewport.x, viewport.y, viewport.w, viewport.h);
+    }
 
     if (bloom) {
         glActiveTexture(GL_TEXTURE0 + BLOOM_TEXTURE_UNIT);
@@ -532,6 +542,23 @@ void OpenGLRenderer::drawComposite(const OpenGLRenderTarget &source, const Recti
     _compositeBuffer.bind();
     glDrawArrays(GL_TRIANGLES, 0, 3);
     drawcalls++;
+
+    if (fxaa) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destination);
+        glViewport(viewport.x, viewport.y, viewport.w, viewport.h);
+        glBindTexture(GL_TEXTURE_2D, _antialiasingTarget.colorTexture());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); // Keeps the frame around the viewport out.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        fxaashader.use();
+        FxaaUniforms fxaaUniforms;
+        fxaaUniforms.texelSize = Vec2f(1.0f / viewport.w, 1.0f / viewport.h);
+        fxaaUniforms.submit(fxaashader);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        drawcalls++;
+    }
     _compositeBuffer.unbind();
 
     compositeshader.unuse();
@@ -4096,6 +4123,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&compositeshader,        "glcomposite",      "Composite",                        {}},
         {&bloomdownshader,        "glbloom",          "Bloom downsample",                 {}},
         {&bloomupshader,          "glbloom",          "Bloom upsample",                   bloomUpsampleDefines},
+        {&fxaashader,             "glfxaa",           "FXAA",                             {}},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           materialDefines},
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", materialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}

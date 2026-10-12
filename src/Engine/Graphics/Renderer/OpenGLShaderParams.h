@@ -121,6 +121,13 @@ struct CompositeUniforms {
     void submit(const OpenGLShader &shader) const;
 };
 
+struct FxaaUniforms {
+    int source = 0;
+    Vec2f texelSize;
+
+    void submit(const OpenGLShader &shader) const;
+};
+
 struct BloomUniforms {
     int source = 0;
     Vec2f texelSize;

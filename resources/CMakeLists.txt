@@ -55,6 +55,8 @@ set(RESOURCE_SOURCES
         shaders/gldecalshader.vert
         shaders/glforcepershader.frag
         shaders/glforcepershader.vert
+        shaders/glfxaa.frag
+        shaders/glfxaa.vert
         shaders/gllinesshader.frag
         shaders/gllinesshader.vert
         shaders/gloutbuild.frag
