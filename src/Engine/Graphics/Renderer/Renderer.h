@@ -70,6 +70,30 @@ class Renderer {
 
     virtual void BeginScene3D(const CameraView &view) = 0;
 
+    /**
+     * Ends the 3D pass by drawing the 2D quads queued during it, like the screen fade, into the world target.
+     */
+    virtual void EndScene3D() = 0;
+
+    /**
+     * @return                          Rectangle of the world target the 3D world is drawn into, to use as the
+     *                                  `CameraView` viewport. That's the game viewport unless a world target size is
+     *                                  configured.
+     */
+    virtual Recti worldTargetViewport() = 0;
+
+    /**
+     * Draws the world target into the game viewport of the UI target. Does nothing when the world is drawn straight
+     * into the game viewport.
+     */
+    virtual void compositeWorldTarget() = 0;
+
+    /**
+     * @return                          Colour texture of the UI target, or an empty id when the UI is drawn straight
+     *                                  into the window.
+     */
+    virtual TextureRenderId uiTargetTexture() = 0;
+
     virtual void MakeParticleBillboardAndPush(const Particle& p) = 0;
     virtual float GetGamma() = 0;
 

@@ -8,7 +8,19 @@
 
 Weather *pWeather = new Weather;
 
-void Weather::DrawSnow() {
+void Weather::Initialize() {
+    int width = pViewport.w - 1;
+    int height = pViewport.h - 1;
+    for (Pointi &point : Screen_Coord) {
+        point.x = pViewport.x + vrng->random(width);
+        point.y = pViewport.y + vrng->random(height);
+    }
+}
+
+void Weather::updateSnow() {
+    if (!bRenderSnow || !engine->config->graphics.Snow.value())
+        return;
+
     for (unsigned int i = 0; i < Screen_Coord.size(); ++i) {
         int size = 1;
         int base = 3;
@@ -31,23 +43,22 @@ void Weather::DrawSnow() {
             Screen_Coord[i].y = pViewport.y;
             Screen_Coord[i].x = pViewport.x + vrng->random(pViewport.w - 1 - size);
         }
+    }
+}
+
+void Weather::drawSnow() {
+    if (!bRenderSnow || !engine->config->graphics.Snow.value())
+        return;
+
+    for (unsigned int i = 0; i < Screen_Coord.size(); ++i) {
+        int size = 1;
+        if (i >= 950) {
+            size = 4;
+        } else if (i >= 700) {
+            size = 2;
+        }
 
         render->FillRect(Recti(Screen_Coord[i].x, Screen_Coord[i].y, size, size), colorTable.White);
-    }
-}
-
-void Weather::Initialize() {
-    int width = pViewport.w - 1;
-    int height = pViewport.h - 1;
-    for (Pointi &point : Screen_Coord) {
-        point.x = pViewport.x + vrng->random(width);
-        point.y = pViewport.y + vrng->random(height);
-    }
-}
-
-void Weather::Draw() {
-    if (bRenderSnow && engine->config->graphics.Snow.value()) {
-        DrawSnow();
     }
 }
 

@@ -80,8 +80,6 @@ int uNumSpritesDrawnThisFrame;
 RenderVertexSoft array_73D150[20];
 RenderVertexSoft VertexRenderList[50];
 
-static GLuint framebuffer = 0;
-static GLuint framebufferTextures[2] = {0, 0};
 static bool OpenGLES = false;
 
 namespace detail_gl_error {
@@ -107,27 +105,6 @@ void GL_Check_Errors(void *ret, const char *name, GLADapiproc apiproc, int len_a
 
         err = glad_glGetError();
     }
-}
-
-namespace detail_fb_error {
-MM_DEFINE_ENUM_SERIALIZATION_FUNCTIONS(GLenum, CASE_SENSITIVE, {
-    {GL_FRAMEBUFFER_UNDEFINED, "framebuffer is undefined"},
-    {GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT, "framebuffer has missing attachment"},
-    {GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT, "framebuffer has incomplete attachment"},
-    {GL_FRAMEBUFFER_UNSUPPORTED, "framebuffer is unsupported"},
-    {GL_FRAMEBUFFER_INCOMPLETE_MULTISAMPLE, "framebuffer has incomplete multisample"},
-    {0, "unknown error"}
-})
-} // namespace detail_fb_error
-
-void GL_Check_Framebuffer(const char *name) {
-    std::string error;
-
-    GLenum status = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
-    if (!detail_fb_error::trySerialize(status, &error))
-        return;
-
-    MM_WARNING("OpenGL Framebuffer error ({}): {} from function {}", status, error, name);
 }
 
 // sky billboard stuff
@@ -277,7 +254,7 @@ OpenGLRenderer::~OpenGLRenderer() {
 RgbaImage OpenGLRenderer::ReadScreenPixels() {
     RgbaImage result = RgbaImage::uninitialized(outputRender.w, outputRender.h);
     if (outputRender != outputPresent) {
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
     }
     glReadPixels(0, 0, outputRender.w, outputRender.h, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels().data());
     if (outputRender != outputPresent) {
@@ -350,13 +327,13 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
 
     // Setup for 3D
 
-    if (outputRender != outputPresent) {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, framebufferTextures[1], 0);
-
-        GL_Check_Framebuffer(__FUNCTION__);
+    if (_worldTarget) {
+        _worldTarget.bind();
+        glDisable(GL_SCISSOR_TEST);
+    } else if (outputRender != outputPresent) {
+        _uiTarget.bind();
     }
+    _setWorldViewport();
 
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
@@ -367,6 +344,60 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
 
     SetFogParametersGL();
     gamma = GetGamma();
+}
+
+void OpenGLRenderer::EndScene3D() {
+    glDepthMask(GL_FALSE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+
+    if (!_worldTarget) {
+        _set_ortho_projection();
+        _set_ortho_modelview();
+        DrawTwodVerts();
+        return;
+    }
+
+    // The queued 2D quads are in UI coordinates, this maps the game viewport onto the whole world target.
+    glViewport(0, 0, _worldTarget.size().w, _worldTarget.size().h);
+    projmat = glm::ortho(float(pViewport.x), float(pViewport.x + pViewport.w), float(pViewport.y + pViewport.h), float(pViewport.y), float(-1), float(1));
+    _set_ortho_modelview();
+    DrawTwodVerts();
+
+    _bindUiTarget();
+    glEnable(GL_SCISSOR_TEST);
+    glViewport(0, 0, outputRender.w, outputRender.h);
+}
+
+Recti OpenGLRenderer::worldTargetViewport() {
+    if (_worldTarget)
+        return Recti(Pointi(0, 0), _worldTarget.size());
+    return pViewport;
+}
+
+void OpenGLRenderer::compositeWorldTarget() {
+    if (!_worldTarget)
+        return;
+
+    _bindUiTarget();
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0, 0, 0, 0);
+    glClearDepthf(1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    GLenum filter = config->graphics.WorldTargetFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
+    int bottom = outputRender.h - (pViewport.y + pViewport.h);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, _worldTarget.framebuffer());
+    glBlitFramebuffer(0, 0, _worldTarget.size().w, _worldTarget.size().h,
+                      pViewport.x, bottom, pViewport.x + pViewport.w, bottom + pViewport.h, GL_COLOR_BUFFER_BIT, filter);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glEnable(GL_SCISSOR_TEST);
+}
+
+TextureRenderId OpenGLRenderer::uiTargetTexture() {
+    if (outputRender == outputPresent)
+        return TextureRenderId();
+    return TextureRenderId(_uiTarget.colorTexture());
 }
 
 void OpenGLRenderer::DrawProjectile(float srcX, float srcY, float srcworldview, float srcfovoworldview,
@@ -822,13 +853,18 @@ RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int heig
 
     pCamera3D->updateFromParty();
 
-    BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
+    BeginScene3D(CameraView::fromCamera3D(*pCamera3D, worldTargetViewport()));
     resetBillboardRenderList();
     if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)
         render->uFogColor = GetLevelFogColor();
     engine->_worldFrame->prepare();
     engine->_worldFrame->drawWithoutDecals();
+    if (_worldTarget)
+        EndScene3D(); // Without a world target, the 2D quads queued by the 3D pass are drawn by the next 2D flush.
     engine->_worldFrame->finish();
+
+    if (_worldTarget)
+        return makeWorldTargetScreenshot(width, height);
 
     // TODO(captainurist): subImage().scale()
     RgbaImage sPixels = ReadScreenPixels();
@@ -999,7 +1035,7 @@ void OpenGLRenderer::_set_ortho_projection(bool gameviewport) {
         glViewport(0, 0, outputRender.w, outputRender.h);
         projmat = glm::ortho(float(0), float(outputRender.w), float(outputRender.h), float(0), float(-1), float(1));
     } else {  // project to game viewport
-        glViewport(pViewport.x, outputRender.h - (pViewport.y + pViewport.h - 1) - 1, pViewport.w, pViewport.h);
+        _setWorldViewport();
         projmat = glm::ortho(float(pViewport.x), float(pViewport.x + pViewport.w - 1), float(pViewport.y + pViewport.h - 1), float(pViewport.y), float(1), float(-1));
     }
 }
@@ -1008,6 +1044,38 @@ void OpenGLRenderer::_set_ortho_projection(bool gameviewport) {
 void OpenGLRenderer::_set_ortho_modelview() {
     // load identity matrix
     viewmat = glm::mat4x4(1);
+}
+
+void OpenGLRenderer::_setWorldViewport() {
+    int targetHeight = _worldTarget ? _worldTarget.size().h : outputRender.h;
+    const Recti &rect = _view.viewport;
+    glViewport(rect.x, targetHeight - (rect.y + rect.h - 1) - 1, rect.w, rect.h);
+}
+
+void OpenGLRenderer::_bindUiTarget() {
+    if (outputRender != outputPresent) {
+        _uiTarget.bind();
+    } else {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    }
+}
+
+RgbaImage OpenGLRenderer::makeWorldTargetScreenshot(int width, int height) {
+    Sizei size = _worldTarget.size();
+    RgbaImage pixels = RgbaImage::uninitialized(size.w, size.h);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, _worldTarget.framebuffer());
+    glReadPixels(0, 0, size.w, size.h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.pixels().data());
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+
+    float intervalX = static_cast<float>(size.w) / width;
+    float intervalY = static_cast<float>(size.h) / height;
+    RgbaImage result = RgbaImage::solid(Color(), width, height);
+    if (uCurrentlyLoadedLevelType != LEVEL_NULL) {
+        for (int y = 0; y < height; ++y)
+            for (int x = 0; x < width; ++x)
+                result[y][x] = pixels[size.h - (y + 1) * intervalY][x * intervalX];
+    }
+    return result;
 }
 
 
@@ -1909,14 +1977,8 @@ void OpenGLRenderer::ResetUIClipRect() {
 void OpenGLRenderer::BeginScene2D() {
     // Setup for 2D
 
-    if (outputRender != outputPresent) {
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
-
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, framebufferTextures[0], 0);
-        glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, framebufferTextures[1], 0);
-
-        GL_Check_Framebuffer(__FUNCTION__);
-    }
+    if (outputRender != outputPresent)
+        _uiTarget.bind();
 
     glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
@@ -2166,7 +2228,7 @@ void OpenGLRenderer::flushAndScale() {
         rect.h = h;
 
         GLenum filter = config->graphics.RenderFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
         glBlitFramebuffer(0, 0, outputRender.w, outputRender.h, rect.x, rect.y, rect.w + rect.x, rect.h + rect.y, GL_COLOR_BUFFER_BIT, filter);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     }
@@ -3285,27 +3347,16 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
-    glDeleteFramebuffers(1, &framebuffer);
-    glDeleteTextures(2, framebufferTextures);
+    _uiTarget.reset(outputRender, RENDER_TARGET_FORMAT_RGBA8, true);
 
-    glGenFramebuffers(1, &framebuffer);
-    glGenTextures(2, framebufferTextures);
-
-    glBindTexture(GL_TEXTURE_2D, framebufferTextures[0]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, outputRender.w, outputRender.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    glBindTexture(GL_TEXTURE_2D, framebufferTextures[1]);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, outputRender.w, outputRender.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    int worldTargetWidth = config->graphics.WorldTargetWidth.value();
+    int worldTargetHeight = config->graphics.WorldTargetHeight.value();
+    if (worldTargetWidth > 0 && worldTargetHeight > 0) {
+        RenderTargetFormat format = config->graphics.WorldTargetHdr.value() ? RENDER_TARGET_FORMAT_RGBA16F : RENDER_TARGET_FORMAT_RGBA8;
+        _worldTarget.reset(Sizei(worldTargetWidth, worldTargetHeight), format, true);
+    } else {
+        _worldTarget.reset();
+    }
 
     glViewport(0, 0, outputRender.w, outputRender.h);
     glScissor(0, 0, outputRender.w, outputRender.h);

@@ -144,7 +144,7 @@ void Engine::drawWorld() {
         render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
         }*/
     } else {
-        render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
+        render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, render->worldTargetViewport()));
         render->resetBillboardRenderList(); // Picking reads the previous frame's list up to this point.
 
         // if ( !render->pRenderD3D )
@@ -156,6 +156,7 @@ void Engine::drawWorld() {
             _worldFrame->prepare();
         }
         _worldFrame->draw();
+        render->EndScene3D();
         _worldFrame->finish();
     }
 }
@@ -179,6 +180,7 @@ void Engine::drawHUD() {
 //----- (0044103C) --------------------------------------------------------
 void Engine::Draw() {
     drawWorld();
+    render->compositeWorldTarget();
     drawHUD();
     render->flushAndScale();
     drawOverlay();
@@ -217,9 +219,10 @@ void Engine::DrawGUI() {
     static unsigned last_frame_time = platform->tickCount();
     static unsigned framerate_time_elapsed = 0;
 
-    if (current_screen_type == SCREEN_GAME &&
-        uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)
-        pWeather->Draw();  // Ritor1: my include
+    if (current_screen_type == SCREEN_GAME && uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
+        pWeather->updateSnow();  // Ritor1: my include
+        pWeather->drawSnow();
+    }
 
     // while(GetTickCount() - last_frame_time < 33 );//FPS control
     unsigned frame_dt = platform->tickCount() - last_frame_time;

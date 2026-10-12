@@ -492,6 +492,17 @@ class GameConfig : public Config {
                             "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
                             " 0 - disabled (render dimensions will always match window dimensions), 1 - linear filter, 2 - nearest filter"};
 
+        Int WorldTargetWidth = {this, "world_target_width", 0, &ValidateWorldTargetDimension,
+                                "Width of the separate render target the 3D world is drawn into. 0 draws the world straight into the"
+                                " game viewport, as the original game does."};
+        Int WorldTargetHeight = {this, "world_target_height", 0, &ValidateWorldTargetDimension,
+                                 "Height of the separate render target the 3D world is drawn into. 0 draws the world straight into the"
+                                 " game viewport, as the original game does."};
+        Bool WorldTargetHdr = {this, "world_target_hdr", false,
+                               "Use a 16-bit floating point world render target. Only applies when the world target size is set."};
+        Int WorldTargetFilter = {this, "world_target_filter", 1, &ValidateWorldTargetFilter,
+                                 "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
+
         Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes"};
         Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes"};
 
@@ -536,6 +547,12 @@ class GameConfig : public Config {
         }
         static int ValidateRenderFilter(int filter) {
             return std::clamp(filter, 0, 2);
+        }
+        static int ValidateWorldTargetDimension(int dimension) {
+            return std::max(dimension, 0);
+        }
+        static int ValidateWorldTargetFilter(int filter) {
+            return std::clamp(filter, 1, 2);
         }
     };
 

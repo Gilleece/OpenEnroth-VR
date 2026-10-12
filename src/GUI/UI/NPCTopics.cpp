@@ -280,11 +280,13 @@ void prepareArenaFight(ArenaLevel level) {
     pParty->arenaLevel = level;
 
     // TODO(pskelton): This doesnt work properly and we dont want draw calls here
-    render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
+    render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, render->worldTargetViewport()));
     render->resetBillboardRenderList();
     engine->_worldFrame->prepare();
     engine->_worldFrame->drawWithoutDecals();
+    render->EndScene3D();
     engine->_worldFrame->finish();
+    render->compositeWorldTarget();
     render->BeginScene2D();
     pDialogueWindow->DrawDialoguePanel(localization->str(LSTR_PLEASE_WAIT_WHILE_I_SUMMON_THE_MONSTERS));
     render->Present();

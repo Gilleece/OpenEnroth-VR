@@ -15,3 +15,9 @@ enum class TextureFilter {
     TEXTURE_FILTER_MIPMAPPED, // Trilinear, plus anisotropic where the driver supports it.
 };
 using enum TextureFilter;
+
+enum class RenderTargetFormat {
+    RENDER_TARGET_FORMAT_RGBA8,
+    RENDER_TARGET_FORMAT_RGBA16F
+};
+using enum RenderTargetFormat;
