@@ -118,3 +118,28 @@ UNIT_TEST(TexturePack, BadManifest) {
     fs.write("manifest.json", Blob::fromString(R"({"format": 1, "colors": "vivid"})"));
     EXPECT_ANY_THROW(TexturePack{&fs});
 }
+
+UNIT_TEST(TexturePack, SpriteImages) {
+    // A sprite has one image per listed palette, and an unlisted palette has none.
+    MemoryFileSystem fs("pack");
+    Blob lodEntry = Blob::fromString("lod sprite");
+    RgbaImage image = makeImage({6, 4});
+    writeManifest(&fs, "", "", fmt::format(R"("sprites": {{"M452wa0": {{"crc32": "{}", "palettes": [453, 454, 455]}}}},)", crcString(lodEntry)));
+    fs.write("sprites/m452wa0/453.png", png::encode(image));
+    fs.write("sprites/m452wa0/455.png", png::encode(makeImage({5, 4})));
+
+    TexturePack pack(&fs);
+    EXPECT_EQ(pack.spriteImageCount(), 3);
+    EXPECT_TRUE(pack.hasSpriteImage("m452wa0", 453));
+    EXPECT_FALSE(pack.hasSpriteImage("m452wa0", 456));
+    EXPECT_FALSE(pack.hasSpriteImage("m452wa1", 453));
+
+    RgbaImage result = pack.spriteImage("M452WA0", 453, lodEntry, {3, 2});
+    ASSERT_EQ(result.size(), image.size());
+    EXPECT_TRUE(std::ranges::equal(result.pixels(), image.pixels()));
+
+    EXPECT_FALSE(pack.spriteImage("m452wa0", 454, lodEntry, {3, 2})); // Listed, but the file is missing.
+    EXPECT_FALSE(pack.spriteImage("m452wa0", 455, lodEntry, {3, 2})); // Wrong size.
+    EXPECT_FALSE(pack.spriteImage("m452wa0", 456, lodEntry, {3, 2}));
+    EXPECT_FALSE(pack.spriteImage("m452wa0", 453, Blob::fromString("patched lod sprite"), {3, 2}));
+}

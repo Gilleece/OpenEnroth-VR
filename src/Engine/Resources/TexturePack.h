@@ -18,10 +18,11 @@ enum class TexturePackSection {
 using enum TexturePackSection;
 
 /**
- * Higher resolution replacements for images in `bitmaps.lod` and `icons.lod`.
+ * Higher resolution replacements for images in `bitmaps.lod`, `icons.lod` and `sprites.lod`.
  *
- * A pack is a folder with a `manifest.json` and `bitmaps` and `icons` subfolders. Each replacement is a PNG named after
- * the LOD entry it replaces, e.g. `bitmaps/d8s2wl.png` or `icons/foo.pcx.png`.
+ * A pack is a folder with a `manifest.json` and `bitmaps`, `icons` and `sprites` subfolders. Each bitmap or icon
+ * replacement is a PNG named after the LOD entry it replaces, e.g. `bitmaps/d8s2wl.png` or `icons/foo.pcx.png`. Sprites
+ * are stored with their palette applied, one PNG per palette, e.g. `sprites/m452wa0/453.png`.
  */
 class TexturePack {
  public:
@@ -50,6 +51,29 @@ class TexturePack {
      *                                  LOD entry, is missing, or has a wrong size is logged and not returned.
      */
     [[nodiscard]] RgbaImage image(TexturePackSection section, std::string_view name, const Blob &lodEntry, Sizei lodSize) const;
+
+    /**
+     * @return                          Number of sprite images the manifest lists, over all sprites and palettes.
+     */
+    [[nodiscard]] int spriteImageCount() const;
+
+    /**
+     * @param name                      `sprites.lod` entry name, case-insensitive.
+     * @param paletteId                 Palette the sprite is drawn with.
+     * @return                          Whether the manifest lists an image for this sprite and palette. The image
+     *                                  itself is only checked by `spriteImage()`.
+     */
+    [[nodiscard]] bool hasSpriteImage(std::string_view name, int paletteId) const;
+
+    /**
+     * @param name                      `sprites.lod` entry name, case-insensitive.
+     * @param paletteId                 Palette the sprite is drawn with.
+     * @param lodEntry                  The LOD entry the image replaces, as stored in the LOD.
+     * @param lodSize                   Size of the LOD sprite.
+     * @return                          The sprite with the palette applied, sized `lodSize` times 1, 2 or 4, or an
+     *                                  empty image under the same conditions as `image()`.
+     */
+    [[nodiscard]] RgbaImage spriteImage(std::string_view name, int paletteId, const Blob &lodEntry, Sizei lodSize) const;
 
  private:
     const FileSystem *_fs = nullptr;
