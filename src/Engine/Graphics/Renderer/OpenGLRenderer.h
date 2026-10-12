@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <unordered_set>
 #include <vector>
 
 #include <glad/gl.h> // NOLINT: this is not a C system include.
@@ -207,6 +208,7 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<GraphicsImage *, 7> hd_water_tile_anim = {{}}; // Water animation textures.
 
     std::vector<GLuint> _texturesForDeletion;
+    std::unordered_set<GLuint> _mipmappedTextures; // Created with `TEXTURE_FILTER_MIPMAPPED`.
 
  private:
     CameraView _view;

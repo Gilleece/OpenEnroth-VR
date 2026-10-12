@@ -972,6 +972,7 @@ TextureRenderId OpenGLRenderer::CreateTexture(RgbaImageView image, TextureFilter
     if (filter == TEXTURE_FILTER_MIPMAPPED) {
         glGenerateMipmap(GL_TEXTURE_2D);
         setMipmappedFilter(GL_TEXTURE_2D);
+        _mipmappedTextures.insert(glId);
     }
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -1944,6 +1945,9 @@ void OpenGLRenderer::DrawBillboards() {
         if (_billboardVertices[offset].paletteId) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        } else if (_mipmappedTextures.contains(static_cast<GLuint>(_billboardVertices[offset].texid))) {
+            setMipmappedFilter(GL_TEXTURE_2D);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         } else {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -2272,6 +2276,8 @@ void OpenGLRenderer::swapBuffers() {
 
     if (!_texturesForDeletion.empty()) {
         glDeleteTextures(_texturesForDeletion.size(), _texturesForDeletion.data());
+        for (GLuint id : _texturesForDeletion)
+            _mipmappedTextures.erase(id);
         _texturesForDeletion.clear();
     }
 
@@ -3730,6 +3736,9 @@ void OpenGLRenderer::DrawTwodVerts() {
         if (_twodVertices[offset].paletteid) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        } else if (_mipmappedTextures.contains(static_cast<GLuint>(_twodVertices[offset].texid))) {
+            setMipmappedFilter(GL_TEXTURE_2D);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         } else {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
