@@ -105,4 +105,6 @@ struct WorldBillboard {
     std::array<Vec2f, 4> facing = {{}};
     std::array<Vec2f, 4> texcoords = {{}};
     std::array<Color, 4> colors = {{}};
+    std::array<Vec3f, 4> corners = {{}}; // World space vertices, set by `Renderer::buildWorldBillboardQuads`.
+    float distance = 0; // Distance from the eye the quads were built for, for fog.
 };

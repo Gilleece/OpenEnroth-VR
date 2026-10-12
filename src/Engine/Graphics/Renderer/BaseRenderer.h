@@ -22,6 +22,7 @@ class BaseRenderer : public Renderer {
 
     virtual void TransformBillboards() override;
     virtual void resetBillboardRenderList() override;
+    virtual void buildWorldBillboardQuads(const CameraView &view) override;
     virtual void sortBillboardRenderList() override;
     virtual void buildBloodsplatDecals() override;
     virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) override;
@@ -58,6 +59,8 @@ class BaseRenderer : public Renderer {
      * so they're sorted through `pSortedBillboardRenderListD3D` too.
      */
     std::array<WorldBillboard, MAX_BILLBOARDS_D3D> _worldBillboards;
+    bool _worldBillboardQuadsBuilt = false; // This frame, by `buildWorldBillboardQuads`.
+    Vec3f _worldBillboardEye; // Eye position of the view the quads were built for.
 
  private:
     void updateRenderDimensions();

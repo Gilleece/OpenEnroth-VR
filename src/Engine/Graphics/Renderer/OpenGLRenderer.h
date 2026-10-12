@@ -127,15 +127,10 @@ class OpenGLRenderer : public BaseRenderer {
     float billboardTextureId(GraphicsImage *texture, int *paletteId);
 
     /**
-     * Draws `_worldBillboards` back to front, facing the current view, with depth test and without depth writes.
+     * Draws `_worldBillboards` back to front, with depth test and without depth writes. Builds their quads facing the
+     * current view first, unless they were built for this frame already.
      */
     void drawWorldBillboards();
-
-    /**
-     * @return                          Right and up axes for camera facing quads, those of the current view with its
-     *                                  roll taken out.
-     */
-    std::pair<Vec3f, Vec3f> billboardAxes() const;
 
     /**
      * Draws the outdoor sky as a quad covering the view at the far plane. The sky shader finds where each pixel's ray

@@ -136,6 +136,14 @@ class Renderer {
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) = 0;
 
     /**
+     * Turns this frame's world space billboards into quads facing a view, for every 3D pass of the frame to draw the
+     * same geometry. Without a call, the first pass that draws them builds them facing its own view.
+     *
+     * @param view                      View for the quads to face, its roll is taken out.
+     */
+    virtual void buildWorldBillboardQuads(const CameraView &view) = 0;
+
+    /**
      * Makes the UI a layer of its own for an external compositor, like a VR runtime. The UI is then drawn into the UI
      * target over transparent black, with nothing in the game viewport, and the window gets the viewport mirror under
      * it when the frame is presented.
