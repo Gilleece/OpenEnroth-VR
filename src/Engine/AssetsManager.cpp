@@ -9,6 +9,7 @@
 #include "Engine/Graphics/ImageLoader.h"
 #include "Engine/Graphics/Image.h"
 #include "Engine/Resources/LodSpriteCache.h"
+#include "Engine/Resources/ResourceManager.h"
 
 #include "GUI/GUIFont.h"
 
@@ -50,6 +51,9 @@ void AssetsManager::releaseAllTextures() {
     for (auto *cache : {&images, &bitmaps, &sprites})
         for (const auto &[name, image] : *cache)
             image->releaseRenderId();
+    for (const auto &[name, variants] : spriteVariants)
+        for (const auto &[paletteId, image] : variants)
+            image->releaseRenderId();
 
     ReloadFonts();
 }
@@ -58,6 +62,8 @@ void AssetsManager::releaseImage(GraphicsImage *image) {
     for (auto *cache : {&images, &bitmaps, &sprites}) {
         auto pos = cache->find(image->name());
         if (pos != cache->end() && pos->second.get() == image) {
+            if (cache == &sprites)
+                spriteVariants.erase(image->name());
             cache->erase(pos);
             return;
         }
@@ -111,4 +117,18 @@ GraphicsImage *AssetsManager::getSprite(std::string_view name) {
         i = sprites.emplace(filename, GraphicsImage::Create(std::make_unique<Sprites_LOD_Loader>(engine->resources(), filename))).first;
 
     return i->second.get();
+}
+
+GraphicsImage *AssetsManager::getSpriteVariant(GraphicsImage *sprite, int paletteId) {
+    if (paletteId == 0 || !engine->resources()->hasPackSprite(sprite->name(), paletteId))
+        return nullptr;
+
+    auto pos = sprites.find(sprite->name());
+    if (pos == sprites.end() || pos->second.get() != sprite)
+        return nullptr;
+
+    std::unique_ptr<GraphicsImage> &result = spriteVariants[sprite->name()][paletteId];
+    if (!result)
+        result = GraphicsImage::Create(std::make_unique<SpriteVariant_LOD_Loader>(engine->resources(), sprite->name(), paletteId));
+    return result.get();
 }
