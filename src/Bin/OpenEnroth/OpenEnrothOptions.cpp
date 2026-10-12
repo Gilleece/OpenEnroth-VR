@@ -69,6 +69,13 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
         "Path to trace file(s) to retrace.")->option_text("...");
     retrace->set_help_flag("-h,--help", "Print help and exit."); // This places --help last in the command list.
 
+    CLI::App *dumpSpritePalettes = app->add_subcommand("dump-sprite-palettes",
+        "Write which palettes each sprites.lod image is drawn with as JSON and exit.", result.subcommand, SUBCOMMAND_DUMP_SPRITE_PALETTES)->fallthrough();
+    dumpSpritePalettes->add_option(
+        "OUTPUT", result.dumpSpritePalettes.output,
+        "Path to the JSON file to write.")->required()->option_text(" ");
+    dumpSpritePalettes->set_help_flag("-h,--help", "Print help and exit.");
+
     app->parse(argc, argv, result.helpPrinted);
 
     if (!portable && fs::exists(".portable"))
@@ -89,6 +96,12 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
 
         if (!result.logLevel)
             result.logLevel = LOG_ERROR; // Default log level for retracing is LOG_ERROR.
+    }
+
+    if (result.subcommand == SUBCOMMAND_DUMP_SPRITE_PALETTES) {
+        result.ramFsUserData = true;
+        result.quickStart = true;
+        result.headless = true;
     }
 
     if (result.subcommand == SUBCOMMAND_PLAY) {

@@ -6,6 +6,8 @@
 #include <string>
 #include <algorithm>
 #include <chrono>
+#include <map>
+#include <set>
 
 #include "Application/Startup/GameStarter.h"
 
@@ -18,6 +20,7 @@
 
 #include "Core/Trace/EventTrace.h"
 
+#include "Library/Json/Json.h"
 #include "Library/StackTrace/StackTraceOnCrash.h"
 #include "Library/Platform/Application/PlatformApplication.h"
 
@@ -27,6 +30,7 @@
 #include "Utility/String/Transformations.h"
 
 #include "OpenEnrothOptions.h"
+#include "SpritePalettes.h"
 
 int runRetrace(const OpenEnrothOptions &options) {
     GameStarter starter(options);
@@ -91,6 +95,26 @@ int runPlay(const OpenEnrothOptions &options) {
     return 0;
 }
 
+int runDumpSpritePalettes(const OpenEnrothOptions &options) {
+    GameStarter starter(options);
+
+    starter.runInstrumented([options] (EngineController *) {
+        std::map<std::string, std::set<int>> palettes = collectSpritePalettes();
+        Json sprites = Json::object();
+        int count = 0;
+        for (const auto &[name, ids] : palettes) {
+            sprites[name] = ids;
+            count += static_cast<int>(ids.size());
+        }
+
+        Json result = {{"count", count}, {"sprites", std::move(sprites)}};
+        FileOutputStream(options.dumpSpritePalettes.output).write(result.dump(2) + "\n");
+        fmt::println(stderr, "Wrote {} palettes for {} sprites to '{}'.", count, palettes.size(), options.dumpSpritePalettes.output);
+    });
+
+    return 0;
+}
+
 int runOpenEnroth(const OpenEnrothOptions &options) {
     GameStarter(options).run();
     return 0;
@@ -120,6 +144,7 @@ int openEnrothMain(int argc, char **argv) {
         case OpenEnrothOptions::SUBCOMMAND_GAME: return runOpenEnroth(options);
         case OpenEnrothOptions::SUBCOMMAND_PLAY: return runPlay(options);
         case OpenEnrothOptions::SUBCOMMAND_RETRACE: return runRetrace(options);
+        case OpenEnrothOptions::SUBCOMMAND_DUMP_SPRITE_PALETTES: return runDumpSpritePalettes(options);
         }
     } catch (const std::exception &e) {
         fmt::print(stderr, "{}\n", e.what());

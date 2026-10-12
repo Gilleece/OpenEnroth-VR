@@ -14,12 +14,17 @@ struct OpenEnrothOptions : public GameStarterOptions {
     enum class Subcommand {
         SUBCOMMAND_GAME,
         SUBCOMMAND_PLAY,
-        SUBCOMMAND_RETRACE
+        SUBCOMMAND_RETRACE,
+        SUBCOMMAND_DUMP_SPRITE_PALETTES
     };
     using enum Subcommand;
 
     struct RetraceOptions {
         std::vector<Path> traces;
+    };
+
+    struct DumpSpritePalettesOptions {
+        Path output;
     };
 
     struct PlayOptions {
@@ -31,6 +36,7 @@ struct OpenEnrothOptions : public GameStarterOptions {
     bool helpPrinted = false; // True means that help message was already printed.
     RetraceOptions retrace;
     PlayOptions play;
+    DumpSpritePalettesOptions dumpSpritePalettes;
 
     /**
      * Parses OpenEnroth command line options.

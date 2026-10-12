@@ -2,10 +2,12 @@ cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 
 set(BIN_OPENENROTH_SOURCES
         OpenEnroth.cpp
-        OpenEnrothOptions.cpp)
+        OpenEnrothOptions.cpp
+        SpritePalettes.cpp)
 
 set(BIN_OPENENROTH_HEADERS
-        OpenEnrothOptions.h)
+        OpenEnrothOptions.h
+        SpritePalettes.h)
 
 if(OE_BUILD_PLATFORM STREQUAL "android")
     add_library(main SHARED)
