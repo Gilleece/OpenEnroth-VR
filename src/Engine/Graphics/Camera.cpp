@@ -23,6 +23,8 @@ float Camera3D::GetMouseInfoDepth() {
 }
 
 float Camera3D::GetNearClip() const {
+    if (_nearClipOverride > 0)
+        return _nearClipOverride;
     return engine->config->graphics.ClipNearDistance.value();
 }
 
@@ -108,10 +110,33 @@ void Camera3D::updateFromParty() {
     vCameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0);
     vCameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0);
     vCameraPos.z = pParty->pos.z + pParty->eyeLevel;  // 193, but real 353
+    _fovOverrideRad = 0;
+    _nearClipOverride = 0;
 
     CalculateRotations(pParty->_viewYaw, pParty->_viewPitch);
     CreateViewMatrixAndProjectionScale();
     BuildViewFrustum();
+}
+
+void Camera3D::updateFromPose(Vec3f position, int yaw, int pitch, float horizontalFovRad, float nearClip) {
+    vCameraPos = glm::vec3(position.x, position.y, position.z);
+    _fovOverrideRad = horizontalFovRad;
+    _nearClipOverride = nearClip;
+
+    CalculateRotations(yaw, pitch);
+    CreateViewMatrixAndProjectionScale();
+    BuildViewFrustum();
+}
+
+float Camera3D::levelViewPlaneDistPixels() const {
+    float halfFovTan = std::tan((uCurrentlyLoadedLevelType == LEVEL_INDOOR ? blv_fov_rad : odm_fov_rad) / 2.0);
+    return (double)pViewport.w * 0.5 / halfFovTan;
+}
+
+float Camera3D::horizontalFovRad() const {
+    if (_fovOverrideRad > 0)
+        return _fovOverrideRad;
+    return uCurrentlyLoadedLevelType == LEVEL_INDOOR ? blv_fov_rad : odm_fov_rad;
 }
 
 //----- (004376E7) --------------------------------------------------------
@@ -132,9 +157,7 @@ void Camera3D::CreateViewMatrixAndProjectionScale() {
 
     // TODO(pskelton): fov calcs only need recalculating on level change or if we add config option
     // fov projection calcs
-    float halfFovTan = std::tan(odm_fov_rad / 2.0);
-    if (uCurrentlyLoadedLevelType == LEVEL_INDOOR)
-        halfFovTan = std::tan(blv_fov_rad / 2.0);
+    float halfFovTan = std::tan(horizontalFovRad() / 2.0);
 
     ViewPlaneDistPixels = (double)pViewport.w * 0.5 / halfFovTan;
 
@@ -149,12 +172,8 @@ void Camera3D::CreateViewMatrixAndProjectionScale() {
 
 //----- (004374E8) --------------------------------------------------------
 void Camera3D::BuildViewFrustum() {
-    float HalfAngleX = (M_PI / 2.0) - (odm_fov_rad / 2.0);
+    float HalfAngleX = (M_PI / 2.0) - (horizontalFovRad() / 2.0);
     float HalfAngleY = (M_PI / 2.0) - (std::atan((pViewport.h / 2.0) / pCamera3D->ViewPlaneDistPixels));
-
-    if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
-        HalfAngleX = (M_PI / 2.0) - (blv_fov_rad / 2.0);
-    }
 
     glm::vec3 PlaneVec(0);
 

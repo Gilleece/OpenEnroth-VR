@@ -40,6 +40,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
      */
     bool initialize();
 
+    virtual bool aimCullingCamera() override;
     virtual bool drawViews(WorldFrame &frame) override;
 
  private:
@@ -86,6 +87,13 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
 
     void beginFrame();
     void endFrame();
+
+    /**
+     * Locates the eye views for this frame's display time into `_views`, with the head offset clamped.
+     *
+     * @return                          Whether the views were located.
+     */
+    bool locateViews();
 
     /**
      * Copies the UI layer into the UI swapchain, recreating the swapchain if the UI changed size.
@@ -142,6 +150,8 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     bool _frameBegun = false;
     bool _layerReady = false;
     std::array<XrCompositionLayerProjectionView, 2> _projectionViews = {};
+    std::array<XrView, 2> _views = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
+    bool _viewsLocated = false; // This frame, by `locateViews`.
     int64_t _frameIndex = 0;
     int64_t _worldFrameCount = 0;
 };

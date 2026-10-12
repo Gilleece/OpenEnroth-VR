@@ -48,6 +48,24 @@ struct Camera3D {
      */
     void updateFromParty();
 
+    /**
+     * Points the camera along a pose of its own instead of the party's view, like the head of a VR headset, then
+     * rebuilds the view matrix and frustum. `updateFromParty` goes back to the party's view.
+     *
+     * @param position                  Eye position.
+     * @param yaw                       Yaw in the party's units, 2048 to a full turn.
+     * @param pitch                     Pitch in the party's units, positive looks up.
+     * @param horizontalFovRad          Horizontal field of view, replacing the level's.
+     * @param nearClip                  Near clip distance, replacing `graphics.clip_near_distance`.
+     */
+    void updateFromPose(Vec3f position, int yaw, int pitch, float horizontalFovRad, float nearClip);
+
+    /**
+     * @return                          `ViewPlaneDistPixels` for the level's own field of view, whatever field of view
+     *                                  the camera was given.
+     */
+    float levelViewPlaneDistPixels() const;
+
     void BuildViewFrustum();
     void CreateViewMatrixAndProjectionScale();
 
@@ -101,6 +119,12 @@ struct Camera3D {
 
     float GetNearClip() const;
     float GetFarClip() const;
+
+ private:
+    float horizontalFovRad() const;
+
+    float _fovOverrideRad = 0; // Set by `updateFromPose`.
+    float _nearClipOverride = 0; // Set by `updateFromPose`.
 };
 
 extern std::unique_ptr<Camera3D> pCamera3D;

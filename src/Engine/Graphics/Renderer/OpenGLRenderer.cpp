@@ -2221,7 +2221,7 @@ void OpenGLRenderer::drawSkyVertices(float planeHeight, bool fade) {
     skyshader.use();
 
     // These follow DrawOutdoorSky and DrawIndoorSky, with the screen rows they use measured on a level view.
-    float viewPlaneDist = pCamera3D->ViewPlaneDistPixels;
+    float viewPlaneDist = pCamera3D->levelViewPlaneDistPixels();
     float farClip = pCamera3D->GetFarClip();
     float cameraZ = pCamera3D->vCameraPos.z;
 

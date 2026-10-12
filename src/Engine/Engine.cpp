@@ -147,6 +147,7 @@ void Engine::drawWorld() {
     } else {
         render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, render->worldTargetViewport()));
         render->resetBillboardRenderList(); // Picking reads the previous frame's list up to this point.
+        bool cullingCameraMoved = _worldFrameViews && _worldFrameViews->aimCullingCamera();
 
         // if ( !render->pRenderD3D )
         // pMouse->DrawCursorToTarget();
@@ -161,6 +162,8 @@ void Engine::drawWorld() {
             render->EndScene3D();
         }
         _worldFrame->finish();
+        if (cullingCameraMoved)
+            pCamera3D->updateFromParty();
     }
 }
 

@@ -16,8 +16,12 @@
 
 #include "Engine/Engine.h"
 #include "Engine/Party.h"
+#include "Engine/Graphics/BspRenderer.h"
 #include "Engine/Graphics/Camera.h"
 #include "Engine/Graphics/CameraView.h"
+#include "Engine/Graphics/Outdoor.h"
+#include "Engine/Graphics/Viewport.h"
+#include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/WorldFrame.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 
@@ -35,6 +39,9 @@ static constexpr XrViewConfigurationType VIEW_CONFIGURATION = XR_VIEW_CONFIGURAT
 static constexpr float GAME_UNITS_PER_METRE = 100.0f; // The party's eye level of 160 units is a 1.6 m standing eye height.
 static constexpr int64_t LOGGED_FRAME_COUNT = 5;
 static constexpr int64_t FRAME_SUMMARY_INTERVAL = 900;
+static constexpr int64_t CULLING_LOG_INTERVAL = 90;
+static constexpr float CULLING_MARGIN_RAD = 5 * M_PI / 180; // Slack for the culling yaw and pitch, rounded to the party's units.
+static constexpr float MAX_CULLING_HALF_FOV_RAD = 85 * M_PI / 180;
 
 using PfnWglSwapIntervalExt = BOOL (WINAPI *)(int interval);
 using PfnWglGetSwapIntervalExt = int (WINAPI *)();
@@ -116,6 +123,64 @@ static XrView midView(const std::array<XrView, 2> &views) {
     return result;
 }
 
+static glm::quat toGlm(const XrQuaternionf &orientation) {
+    return glm::quat(orientation.w, orientation.x, orientation.y, orientation.z);
+}
+
+/**
+ * @param views                         Eye views.
+ * @param head                          Mid-eye view the culling camera looks along.
+ * @param roll                          Roll of the head in radians, which the culling camera doesn't have.
+ * @param nearClip                      Near clip distance in game units.
+ * @param aspect                        Width over height of the culling camera's frustum.
+ * @return                              Horizontal field of view in radians for a culling camera that looks along
+ *                                      `head` without its roll and still covers both eye frustums.
+ */
+static float cullingFovRad(const std::array<XrView, 2> &views, const XrView &head, float roll, float nearClip, float aspect) {
+    glm::quat toHead = glm::inverse(toGlm(head.pose.orientation));
+    float tanX = 0;
+    float tanY = 0;
+    float eyeOffset = 0;
+    for (const XrView &view : views) {
+        glm::quat eyeInHead = toHead * toGlm(view.pose.orientation);
+        for (float tanH : {std::tan(view.fov.angleLeft), std::tan(view.fov.angleRight)}) {
+            for (float tanV : {std::tan(view.fov.angleDown), std::tan(view.fov.angleUp)}) {
+                glm::vec3 corner = eyeInHead * glm::vec3(tanH, tanV, -1);
+                float depth = std::max(-corner.z, 0.01f);
+                tanX = std::max(tanX, std::abs(corner.x) / depth);
+                tanY = std::max(tanY, std::abs(corner.y) / depth);
+            }
+        }
+        const XrVector3f &eye = view.pose.position;
+        const XrVector3f &centre = head.pose.position;
+        eyeOffset = std::max(eyeOffset, glm::length(glm::vec3(eye.x - centre.x, eye.y - centre.y, eye.z - centre.z)));
+    }
+
+    // The eyes sit to the sides of the head, so up close they see past its frustum, by the most at the near clip.
+    float widening = std::atan(eyeOffset * GAME_UNITS_PER_METRE / nearClip) + CULLING_MARGIN_RAD;
+    tanX = std::tan(std::min(std::atan(tanX) + widening, MAX_CULLING_HALF_FOV_RAD));
+    tanY = std::tan(std::min(std::atan(tanY) + widening, MAX_CULLING_HALF_FOV_RAD));
+
+    // The bounds of the eye frustums turned by the head's roll.
+    float rolledX = tanX * std::abs(std::cos(roll)) + tanY * std::abs(std::sin(roll));
+    float rolledY = tanX * std::abs(std::sin(roll)) + tanY * std::abs(std::cos(roll));
+    return 2 * std::min(std::atan(std::max(rolledX, rolledY * aspect)), MAX_CULLING_HALF_FOV_RAD);
+}
+
+/**
+ * @return                              Number of outdoor models the culling camera sees, or 0 indoors.
+ */
+static int visibleModelCount() {
+    if (uCurrentlyLoadedLevelType != LEVEL_OUTDOOR)
+        return 0;
+    int result = 0;
+    for (BSPModel &model : pOutdoor->pBModels) {
+        bool reachable = false;
+        result += IsBModelVisible(&model, 256, &reachable);
+    }
+    return result;
+}
+
 VrSystem::VrSystem() : PlatformEventFilter({EVENT_KEY_PRESS}) {}
 
 VrSystem::~VrSystem() {
@@ -126,8 +191,35 @@ bool VrSystem::initialize() {
     return createInstance() && checkGraphicsRequirements() && createSession() && createSwapchains();
 }
 
-bool VrSystem::drawViews(WorldFrame &frame) {
-    if (!_frameBegun || !_frameState.shouldRender || !frame.prepared() || _space == XR_NULL_HANDLE)
+bool VrSystem::aimCullingCamera() {
+    if (!locateViews())
+        return false;
+
+    CameraView head = eyeView(midView(_views), _eyes[0].size);
+    glm::vec3 forward = head.worldToView[0];
+    glm::vec3 left = head.worldToView[1];
+    glm::vec3 up = head.worldToView[2];
+    float yaw = std::atan2(forward.y, forward.x);
+    float pitch = std::asin(std::clamp(forward.z, -1.0f, 1.0f));
+    float roll = std::atan2(left.z, up.z);
+
+    float nearClip = engine->config->vr.NearClip.value();
+    float fov = cullingFovRad(_views, midView(_views), roll, nearClip, static_cast<float>(pViewport.w) / pViewport.h);
+    int cameraYaw = static_cast<int>(std::lround(yaw * 1024 / M_PI)) & 2047;
+    int cameraPitch = static_cast<int>(std::lround(pitch * 1024 / M_PI));
+    pCamera3D->updateFromPose(head.position, cameraYaw, cameraPitch, fov, nearClip);
+
+    if (_worldFrameCount < LOGGED_FRAME_COUNT || _worldFrameCount % CULLING_LOG_INTERVAL == 0) {
+        MM_INFO("VR: frame {} culls from yaw {:.1f}, pitch {:.1f} and roll {:.1f} degrees with a {:.1f} degree field of view, the party faces yaw {:.1f}.",
+                _frameIndex, cameraYaw * 360.0 / 2048, cameraPitch * 360.0 / 2048, roll * 180 / M_PI, fov * 180 / M_PI,
+                (pParty->_viewYaw & 2047) * 360.0 / 2048);
+    }
+    return true;
+}
+
+bool VrSystem::locateViews() {
+    _viewsLocated = false;
+    if (!_frameBegun || !_frameState.shouldRender || _space == XR_NULL_HANDLE)
         return false;
 
     XrViewLocateInfo locateInfo = {XR_TYPE_VIEW_LOCATE_INFO};
@@ -135,13 +227,21 @@ bool VrSystem::drawViews(WorldFrame &frame) {
     locateInfo.displayTime = _frameState.predictedDisplayTime;
     locateInfo.space = _space;
     XrViewState viewState = {XR_TYPE_VIEW_STATE};
-    std::array<XrView, 2> views = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
+    _views = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
     uint32_t viewCount = 0;
-    if (!check(xrLocateViews(_session, &locateInfo, &viewState, static_cast<uint32_t>(views.size()), &viewCount, views.data()), "xrLocateViews"))
+    if (!check(xrLocateViews(_session, &locateInfo, &viewState, static_cast<uint32_t>(_views.size()), &viewCount, _views.data()), "xrLocateViews"))
         return false;
     if (!(viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
         return false;
-    clampHeadOffset(views, engine->config->vr.HeadOffsetRadius.value());
+    clampHeadOffset(_views, engine->config->vr.HeadOffsetRadius.value());
+    _viewsLocated = true;
+    return true;
+}
+
+bool VrSystem::drawViews(WorldFrame &frame) {
+    if (!_viewsLocated || !frame.prepared())
+        return false;
+    const std::array<XrView, 2> &views = _views;
 
     // Both eyes draw the same billboard quads, so that only the eye projections differ.
     XrView head = midView(views);
@@ -166,6 +266,10 @@ bool VrSystem::drawViews(WorldFrame &frame) {
                     _frameIndex, i, pose.position.x, pose.position.y, pose.position.z, fov.angleLeft, fov.angleRight, fov.angleUp, fov.angleDown,
                     billboards[i]);
         }
+    }
+    if (_worldFrameCount < LOGGED_FRAME_COUNT || _worldFrameCount % CULLING_LOG_INTERVAL == 0) {
+        MM_INFO("VR: frame {} drew {} world billboards per eye, with {} outdoor models and {} indoor faces in the culling view.", _frameIndex,
+                billboards[0], visibleModelCount(), uCurrentlyLoadedLevelType == LEVEL_INDOOR ? pBspRenderer->num_faces : 0);
     }
     return true;
 }
@@ -466,6 +570,7 @@ void VrSystem::endFrame() {
 
     _frameBegun = false;
     _layerReady = false;
+    _viewsLocated = false;
 }
 
 bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
