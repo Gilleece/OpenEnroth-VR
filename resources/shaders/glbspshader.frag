@@ -129,7 +129,11 @@ void main() {
             result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir);
     }
 
+#ifdef LINEAR_PIPELINE
+    result *= linearToSrgb(fragcol.rgb); // Lit in sRGB like the stock shaders, the sRGB curve doesn't commute with the product.
+#else
     result *= fragcol.rgb;
+#endif
 
     // stack mobile
 
@@ -157,10 +161,11 @@ void main() {
     }
 
     FragColour = vec4(clamps,1)  * vec4(dull,1); // result, 1.0);
-
 #ifdef LINEAR_PIPELINE
     FragColour.rgb = srgbToLinear(FragColour.rgb);
-#else
+#endif
+
+#ifndef LINEAR_PIPELINE
     FragColour.rgb = pow(FragColour.rgb, vec3(1.0/gamma));
 #endif
 

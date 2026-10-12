@@ -229,6 +229,19 @@ class OpenGLRenderer : public BaseRenderer {
      */
     void drawComposite(GLuint source, const Recti &viewport, GLenum filter);
 
+    /**
+     * @return                          Internal format for the colour texture arrays of the world, sRGB with the
+     *                                  linear pipeline so that sampling them decodes to linear.
+     */
+    GLint _colorArrayFormat() const;
+
+    /**
+     * @param color                     sRGB encoded colour, as the stock code computes it.
+     * @return                          The colour to hand to the world shaders, decoded to linear with the linear
+     *                                  pipeline, unchanged without it.
+     */
+    Colorf _worldColor(Colorf color) const;
+
     Recti clipRect;
 
     int GL_lastboundtex = 0;

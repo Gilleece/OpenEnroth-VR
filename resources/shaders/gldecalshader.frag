@@ -19,12 +19,12 @@ uniform FogParam fog;
 
 void main() {
     vec4 fragcol = texture(texture0, texuv) * vertexColour;
+#ifdef LINEAR_PIPELINE
+    fragcol.rgb = srgbToLinear(fragcol.rgb);
+#endif
 
     float fograt = getFogRatio(fog, abs(viewspace.z/ viewspace.w));
     if (fragcol.a < 0.004) fograt = 0.0;
     
     FragColour = mix(fragcol, vec4(0.0), fograt);
-#ifdef LINEAR_PIPELINE
-    FragColour.rgb = srgbToLinear(FragColour.rgb);
-#endif
 }
