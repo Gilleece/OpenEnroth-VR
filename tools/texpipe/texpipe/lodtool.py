@@ -37,3 +37,9 @@ def extract(lodtool: Path, lod: Path, out_dir: Path, raw: bool) -> None:
     command += [str(lod), str(out_dir)]
     out_dir.mkdir(parents=True, exist_ok=True)
     subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+
+
+def list_entries(lodtool: Path, lod: Path) -> list[str]:
+    """Returns the entry names of `lod` exactly as stored, trailing spaces included."""
+    result = subprocess.run([str(lodtool), "ls", str(lod)], check=True, stdout=subprocess.PIPE, text=True)
+    return [name for name in result.stdout.splitlines() if name]

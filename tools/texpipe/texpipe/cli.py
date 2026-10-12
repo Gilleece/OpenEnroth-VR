@@ -49,7 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     start = time.monotonic()
     if args.command == "extract":
         result = run_extract(args.data, args.out, lodtool.resolve_lodtool(args.lodtool), args.mask_table, args.only)
-        print(f"Extracted {result['extracted']}, skipped {len(result['skipped'])}, failed {len(result['failed'])}.")
+        print(
+            f"Extracted {result['extracted']}, skipped {len(result['skipped'])}, failed {len(result['failed'])}, "
+            f"left out {len(result['unsafe_names'])} entries whose names collide as files."
+        )
         for name, reason in result["failed"].items():
             print(f"  failed {name}: {reason}")
     elif args.command == "upscale":
