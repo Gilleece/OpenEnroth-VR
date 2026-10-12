@@ -681,6 +681,38 @@ class GameConfig : public Config {
 
     Settings settings{this};
 
+    class Vr : public ConfigSection {
+     public:
+        explicit Vr(GameConfig *config) : ConfigSection(config, "vr") {}
+
+        Bool Enabled = {this, "enabled", false, "Render to a VR headset through OpenXR. Needs a build with VR support."};
+
+        Float UiDistance = {this, "ui_distance", 1.2f, &ValidateUiDistance,
+            "Distance of the floating game screen from the eyes in metres."};
+
+        Float UiWidth = {this, "ui_width", 1.0f, &ValidateUiWidth, "Width of the floating game screen in metres."};
+
+        Bool SnapTurn = {this, "snap_turn", false, "Turn in fixed steps instead of smoothly."};
+
+        Int SnapTurnDegrees = {this, "snap_turn_degrees", 30, &ValidateSnapTurnDegrees, "Degrees per snap turn."};
+
+        Bool MinimalHud = {this, "minimal_hud", false,
+            "Hide the frame around the world view and keep only the portraits, status bar and compass."};
+
+     private:
+        static float ValidateUiDistance(float distance) {
+            return std::clamp(distance, 0.3f, 10.0f);
+        }
+        static float ValidateUiWidth(float width) {
+            return std::clamp(width, 0.1f, 10.0f);
+        }
+        static int ValidateSnapTurnDegrees(int degrees) {
+            return std::clamp(degrees, 5, 180);
+        }
+    };
+
+    Vr vr{this};
+
     class Window : public ConfigSection {
      public:
         explicit Window(GameConfig *config): ConfigSection(config, "window") {}

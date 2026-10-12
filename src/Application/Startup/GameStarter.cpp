@@ -97,6 +97,8 @@ void GameStarter::initialize() {
         _config->graphics.Saturation.setValue(1.0f);
         _config->graphics.Lightness.setValue(1.0f);
     }
+    if (_options.vr)
+        _config->vr.Enabled.setValue(true);
 
     // Finish logger init now that we have user fs and know the desired log level.
     _logStarter.initialize(ufs, _options.logLevel ? *_options.logLevel : _config->debug.LogLevel.value());

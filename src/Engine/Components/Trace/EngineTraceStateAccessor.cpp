@@ -20,6 +20,7 @@ static bool shouldSkip(const GameConfig *config, const ConfigSection *section, c
     return
         (section == &config->window && entry != &config->window.Width && entry != &config->window.Height) ||
         section == &config->graphics ||
+        section == &config->vr ||
         entry == &config->settings.MusicLevel ||
         entry == &config->settings.VoiceLevel ||
         entry == &config->settings.SoundLevel ||
