@@ -50,6 +50,9 @@ class OpenGLRenderer : public BaseRenderer {
     virtual Recti worldTargetViewport() override;
     virtual void compositeWorldTarget() override;
     virtual TextureRenderId uiTargetTexture() override;
+    virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
+    virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
+    virtual void setExternalFramePacing(bool external) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,
@@ -130,6 +133,8 @@ class OpenGLRenderer : public BaseRenderer {
     void _set_ortho_projection(bool gameviewport = false);
     void _set_ortho_modelview();
     void _setWorldViewport();
+    OpenGLRenderTarget *_currentWorldTarget();
+    OpenGLRenderTarget *_externalTarget(TextureRenderId colorTexture, Sizei size);
     void _bindUiTarget();
 
     /**
@@ -228,6 +233,11 @@ class OpenGLRenderer : public BaseRenderer {
     CameraView _view;
     OpenGLRenderTarget _uiTarget;
     OpenGLRenderTarget _worldTarget;
+    std::map<GLuint, std::unique_ptr<OpenGLRenderTarget>> _externalTargets; // By colour texture.
+    OpenGLRenderTarget *_externalWorldTarget = nullptr;
+    OpenGLRenderTarget _mirrorTarget;
+    bool _mirrorPending = false;
+    bool _externalFramePacing = false;
 };
 
 

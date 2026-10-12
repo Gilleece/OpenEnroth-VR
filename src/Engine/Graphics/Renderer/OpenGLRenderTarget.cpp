@@ -32,6 +32,7 @@ void OpenGLRenderTarget::reset(Sizei size, RenderTargetFormat format, bool withD
     _size = size;
     glGenFramebuffers(1, &_framebuffer);
 
+    _ownsColorTexture = true;
     glGenTextures(1, &_colorTexture);
     glBindTexture(GL_TEXTURE_2D, _colorTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -45,16 +46,21 @@ void OpenGLRenderTarget::reset(Sizei size, RenderTargetFormat format, bool withD
     }
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    if (withDepth) {
-        glGenTextures(1, &_depthTexture);
-        glBindTexture(GL_TEXTURE_2D, _depthTexture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size.w, size.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
+    if (withDepth)
+        createDepthTexture();
+}
+
+void OpenGLRenderTarget::resetExternal(GLuint colorTexture, Sizei size, bool withDepth) {
+    reset();
+
+    _size = size;
+    glGenFramebuffers(1, &_framebuffer);
+
+    _ownsColorTexture = false;
+    _colorTexture = colorTexture;
+
+    if (withDepth)
+        createDepthTexture();
 }
 
 void OpenGLRenderTarget::reset() {
@@ -63,7 +69,8 @@ void OpenGLRenderTarget::reset() {
         _framebuffer = 0;
     }
     if (_colorTexture) {
-        glDeleteTextures(1, &_colorTexture);
+        if (_ownsColorTexture)
+            glDeleteTextures(1, &_colorTexture);
         _colorTexture = 0;
     }
     if (_depthTexture) {
@@ -71,6 +78,17 @@ void OpenGLRenderTarget::reset() {
         _depthTexture = 0;
     }
     _size = Sizei();
+}
+
+void OpenGLRenderTarget::createDepthTexture() {
+    glGenTextures(1, &_depthTexture);
+    glBindTexture(GL_TEXTURE_2D, _depthTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, _size.w, _size.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void OpenGLRenderTarget::bind() {

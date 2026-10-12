@@ -1,0 +1,448 @@
+#include "VrSystem.h"
+
+#include <windows.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+#include <glad/gl.h> // NOLINT: not a C system header.
+#include <glm/glm.hpp> // NOLINT: not a C system header.
+#include <glm/gtc/quaternion.hpp> // NOLINT: not a C system header.
+#include <openxr/openxr_platform.h> // NOLINT: not a C system header.
+
+#include "Engine/Party.h"
+#include "Engine/Graphics/Camera.h"
+#include "Engine/Graphics/CameraView.h"
+#include "Engine/Graphics/WorldFrame.h"
+#include "Engine/Graphics/Renderer/Renderer.h"
+
+#include "Library/Logger/Logger.h"
+
+#include "Utility/String/Format.h"
+
+static constexpr XrViewConfigurationType VIEW_CONFIGURATION = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+static constexpr float GAME_UNITS_PER_METRE = 100.0f; // The party's eye level of 160 units is a 1.6 m standing eye height.
+static constexpr int64_t LOGGED_FRAME_COUNT = 5;
+static constexpr int64_t FRAME_SUMMARY_INTERVAL = 900;
+
+using PfnWglSwapIntervalExt = BOOL (WINAPI *)(int interval);
+using PfnWglGetSwapIntervalExt = int (WINAPI *)();
+
+static void setDesktopSwapInterval(int interval) {
+    if (auto swapInterval = reinterpret_cast<PfnWglSwapIntervalExt>(wglGetProcAddress("wglSwapIntervalEXT")))
+        swapInterval(interval);
+}
+
+static int desktopSwapInterval() {
+    if (auto getSwapInterval = reinterpret_cast<PfnWglGetSwapIntervalExt>(wglGetProcAddress("wglGetSwapIntervalEXT")))
+        return getSwapInterval();
+    return 1;
+}
+
+static const char *sessionStateName(XrSessionState state) {
+    switch (state) {
+    case XR_SESSION_STATE_IDLE: return "idle";
+    case XR_SESSION_STATE_READY: return "ready";
+    case XR_SESSION_STATE_SYNCHRONIZED: return "synchronized";
+    case XR_SESSION_STATE_VISIBLE: return "visible";
+    case XR_SESSION_STATE_FOCUSED: return "focused";
+    case XR_SESSION_STATE_STOPPING: return "stopping";
+    case XR_SESSION_STATE_LOSS_PENDING: return "loss pending";
+    case XR_SESSION_STATE_EXITING: return "exiting";
+    default: return "unknown";
+    }
+}
+
+static std::string versionString(XrVersion version) {
+    return fmt::format("{}.{}.{}", XR_VERSION_MAJOR(version), XR_VERSION_MINOR(version), XR_VERSION_PATCH(version));
+}
+
+VrSystem::VrSystem() = default;
+
+VrSystem::~VrSystem() {
+    shutdown();
+}
+
+bool VrSystem::initialize() {
+    return createInstance() && checkGraphicsRequirements() && createSession() && createSwapchains();
+}
+
+bool VrSystem::drawViews(WorldFrame &frame) {
+    if (!_frameBegun || !_frameState.shouldRender || !frame.prepared())
+        return false;
+
+    XrViewLocateInfo locateInfo = {XR_TYPE_VIEW_LOCATE_INFO};
+    locateInfo.viewConfigurationType = VIEW_CONFIGURATION;
+    locateInfo.displayTime = _frameState.predictedDisplayTime;
+    locateInfo.space = _space;
+    XrViewState viewState = {XR_TYPE_VIEW_STATE};
+    std::array<XrView, 2> views = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
+    uint32_t viewCount = 0;
+    if (!check(xrLocateViews(_session, &locateInfo, &viewState, static_cast<uint32_t>(views.size()), &viewCount, views.data()), "xrLocateViews"))
+        return false;
+    if (!(viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
+        return false;
+
+    if (!drawEye(0, views[0], frame))
+        return false;
+    _layerReady = drawEye(1, views[1], frame);
+    render->setExternalWorldTarget(TextureRenderId(), Sizei());
+
+    if (_worldFrameCount < LOGGED_FRAME_COUNT) {
+        for (int i = 0; i < 2; i++) {
+            const XrPosef &pose = views[i].pose;
+            const XrFovf &fov = views[i].fov;
+            MM_INFO("VR: frame {} eye {} at ({:.3f}, {:.3f}, {:.3f}) m, fov left {:.3f} right {:.3f} up {:.3f} down {:.3f} rad.",
+                    _frameIndex, i, pose.position.x, pose.position.y, pose.position.z, fov.angleLeft, fov.angleRight, fov.angleUp, fov.angleDown);
+        }
+    }
+    return true;
+}
+
+void VrSystem::swapBuffers() {
+    endFrame();
+    ProxyOpenGLContext::swapBuffers();
+    pollEvents();
+    beginFrame();
+}
+
+bool VrSystem::check(XrResult result, const char *call) const {
+    if (XR_SUCCEEDED(result))
+        return true;
+
+    char name[XR_MAX_RESULT_STRING_SIZE] = {};
+    if (_instance == XR_NULL_HANDLE || XR_FAILED(xrResultToString(_instance, result, name)))
+        std::snprintf(name, sizeof(name), "%d", static_cast<int>(result));
+    MM_ERROR("VR: {} failed with {}.", call, name);
+    return false;
+}
+
+bool VrSystem::createInstance() {
+    uint32_t extensionCount = 0;
+    if (!check(xrEnumerateInstanceExtensionProperties(nullptr, 0, &extensionCount, nullptr), "xrEnumerateInstanceExtensionProperties"))
+        return false;
+    std::vector<XrExtensionProperties> extensions(extensionCount, {XR_TYPE_EXTENSION_PROPERTIES});
+    if (!check(xrEnumerateInstanceExtensionProperties(nullptr, extensionCount, &extensionCount, extensions.data()), "xrEnumerateInstanceExtensionProperties"))
+        return false;
+    if (!std::ranges::any_of(extensions, [](const XrExtensionProperties &extension) {
+        return std::strcmp(extension.extensionName, XR_KHR_OPENGL_ENABLE_EXTENSION_NAME) == 0;
+    })) {
+        MM_ERROR("VR: the OpenXR runtime doesn't support {}.", XR_KHR_OPENGL_ENABLE_EXTENSION_NAME);
+        return false;
+    }
+
+    const char *enabledExtensions[] = {XR_KHR_OPENGL_ENABLE_EXTENSION_NAME};
+    XrInstanceCreateInfo createInfo = {XR_TYPE_INSTANCE_CREATE_INFO};
+    std::strncpy(createInfo.applicationInfo.applicationName, "OpenEnroth", XR_MAX_APPLICATION_NAME_SIZE - 1);
+    std::strncpy(createInfo.applicationInfo.engineName, "OpenEnroth", XR_MAX_ENGINE_NAME_SIZE - 1);
+    createInfo.applicationInfo.applicationVersion = 1;
+    createInfo.applicationInfo.engineVersion = 1;
+    createInfo.applicationInfo.apiVersion = XR_API_VERSION_1_0;
+    createInfo.enabledExtensionCount = 1;
+    createInfo.enabledExtensionNames = enabledExtensions;
+    if (!check(xrCreateInstance(&createInfo, &_instance), "xrCreateInstance"))
+        return false;
+
+    XrInstanceProperties instanceProperties = {XR_TYPE_INSTANCE_PROPERTIES};
+    if (check(xrGetInstanceProperties(_instance, &instanceProperties), "xrGetInstanceProperties"))
+        MM_INFO("VR: OpenXR runtime '{}' version {}.", instanceProperties.runtimeName, versionString(instanceProperties.runtimeVersion));
+
+    XrSystemGetInfo systemInfo = {XR_TYPE_SYSTEM_GET_INFO};
+    systemInfo.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
+    if (!check(xrGetSystem(_instance, &systemInfo, &_systemId), "xrGetSystem"))
+        return false;
+
+    XrSystemProperties systemProperties = {XR_TYPE_SYSTEM_PROPERTIES};
+    if (check(xrGetSystemProperties(_instance, _systemId, &systemProperties), "xrGetSystemProperties")) {
+        MM_INFO("VR: headset '{}', vendor {:#x}, swapchains up to {}x{}, orientation tracking {}, position tracking {}.",
+                systemProperties.systemName, systemProperties.vendorId,
+                systemProperties.graphicsProperties.maxSwapchainImageWidth, systemProperties.graphicsProperties.maxSwapchainImageHeight,
+                systemProperties.trackingProperties.orientationTracking ? "on" : "off",
+                systemProperties.trackingProperties.positionTracking ? "on" : "off");
+    }
+    return true;
+}
+
+bool VrSystem::checkGraphicsRequirements() {
+    PFN_xrGetOpenGLGraphicsRequirementsKHR getRequirements = nullptr;
+    if (!check(xrGetInstanceProcAddr(_instance, "xrGetOpenGLGraphicsRequirementsKHR", reinterpret_cast<PFN_xrVoidFunction *>(&getRequirements)),
+               "xrGetInstanceProcAddr"))
+        return false;
+
+    XrGraphicsRequirementsOpenGLKHR requirements = {XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR};
+    if (!check(getRequirements(_instance, _systemId, &requirements), "xrGetOpenGLGraphicsRequirementsKHR"))
+        return false;
+
+    GLint major = 0;
+    GLint minor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+    XrVersion contextVersion = XR_MAKE_VERSION(major, minor, 0);
+    MM_INFO("VR: OpenGL context {}.{}, the runtime wants {} up to {}.", major, minor,
+            versionString(requirements.minApiVersionSupported), versionString(requirements.maxApiVersionSupported));
+
+    if (contextVersion < requirements.minApiVersionSupported) {
+        MM_ERROR("VR: the OpenGL context is older than the runtime supports.");
+        return false;
+    }
+    if (contextVersion > requirements.maxApiVersionSupported)
+        MM_WARNING("VR: the OpenGL context is newer than the runtime was tested with.");
+    return true;
+}
+
+bool VrSystem::createSession() {
+    // OpenEnroth renders on one context, the one current on this thread since the renderer was initialized.
+    XrGraphicsBindingOpenGLWin32KHR binding = {XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR};
+    binding.hDC = wglGetCurrentDC();
+    binding.hGLRC = wglGetCurrentContext();
+
+    XrSessionCreateInfo sessionInfo = {XR_TYPE_SESSION_CREATE_INFO};
+    sessionInfo.next = &binding;
+    sessionInfo.systemId = _systemId;
+    if (!check(xrCreateSession(_instance, &sessionInfo, &_session), "xrCreateSession"))
+        return false;
+
+    XrReferenceSpaceCreateInfo spaceInfo = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+    spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    spaceInfo.poseInReferenceSpace.orientation.w = 1.0f;
+    return check(xrCreateReferenceSpace(_session, &spaceInfo, &_space), "xrCreateReferenceSpace");
+}
+
+bool VrSystem::createSwapchains() {
+    uint32_t viewCount = 0;
+    if (!check(xrEnumerateViewConfigurationViews(_instance, _systemId, VIEW_CONFIGURATION, 0, &viewCount, nullptr), "xrEnumerateViewConfigurationViews"))
+        return false;
+    if (viewCount != _eyes.size()) {
+        MM_ERROR("VR: the headset has {} views instead of 2.", viewCount);
+        return false;
+    }
+    std::array<XrViewConfigurationView, 2> views = {{{XR_TYPE_VIEW_CONFIGURATION_VIEW}, {XR_TYPE_VIEW_CONFIGURATION_VIEW}}};
+    if (!check(xrEnumerateViewConfigurationViews(_instance, _systemId, VIEW_CONFIGURATION, viewCount, &viewCount, views.data()), "xrEnumerateViewConfigurationViews"))
+        return false;
+
+    uint32_t formatCount = 0;
+    if (!check(xrEnumerateSwapchainFormats(_session, 0, &formatCount, nullptr), "xrEnumerateSwapchainFormats"))
+        return false;
+    std::vector<int64_t> formats(formatCount);
+    if (!check(xrEnumerateSwapchainFormats(_session, formatCount, &formatCount, formats.data()), "xrEnumerateSwapchainFormats"))
+        return false;
+
+    // The runtime lists its formats in its order of preference.
+    auto format = std::ranges::find_if(formats, [](int64_t format) { return format == GL_SRGB8_ALPHA8 || format == GL_RGBA8; });
+    if (format == formats.end()) {
+        MM_ERROR("VR: the runtime offers neither GL_SRGB8_ALPHA8 nor GL_RGBA8 swapchains.");
+        return false;
+    }
+    MM_INFO("VR: using {} swapchains.", *format == GL_SRGB8_ALPHA8 ? "GL_SRGB8_ALPHA8" : "GL_RGBA8");
+
+    for (size_t i = 0; i < _eyes.size(); i++) {
+        Eye &eye = _eyes[i];
+        eye.size = Sizei(views[i].recommendedImageRectWidth, views[i].recommendedImageRectHeight);
+
+        XrSwapchainCreateInfo swapchainInfo = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
+        swapchainInfo.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+        swapchainInfo.format = *format;
+        swapchainInfo.sampleCount = 1;
+        swapchainInfo.width = eye.size.w;
+        swapchainInfo.height = eye.size.h;
+        swapchainInfo.faceCount = 1;
+        swapchainInfo.arraySize = 1;
+        swapchainInfo.mipCount = 1;
+        if (!check(xrCreateSwapchain(_session, &swapchainInfo, &eye.swapchain), "xrCreateSwapchain"))
+            return false;
+
+        uint32_t imageCount = 0;
+        if (!check(xrEnumerateSwapchainImages(eye.swapchain, 0, &imageCount, nullptr), "xrEnumerateSwapchainImages"))
+            return false;
+        std::vector<XrSwapchainImageOpenGLKHR> images(imageCount, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
+        if (!check(xrEnumerateSwapchainImages(eye.swapchain, imageCount, &imageCount,
+                                              reinterpret_cast<XrSwapchainImageBaseHeader *>(images.data())), "xrEnumerateSwapchainImages"))
+            return false;
+        for (const XrSwapchainImageOpenGLKHR &image : images)
+            eye.images.push_back(image.image);
+
+        MM_INFO("VR: eye {} swapchain is {}x{} with {} images.", i, eye.size.w, eye.size.h, eye.images.size());
+    }
+    return true;
+}
+
+void VrSystem::pollEvents() {
+    if (_instance == XR_NULL_HANDLE)
+        return;
+
+    XrEventDataBuffer event = {XR_TYPE_EVENT_DATA_BUFFER};
+    while (xrPollEvent(_instance, &event) == XR_SUCCESS) {
+        if (event.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
+            handleSessionState(reinterpret_cast<const XrEventDataSessionStateChanged &>(event).state);
+        } else if (event.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
+            MM_WARNING("VR: the OpenXR runtime is going away, continuing without VR.");
+            setRunning(false);
+        }
+        event = {XR_TYPE_EVENT_DATA_BUFFER};
+    }
+}
+
+void VrSystem::handleSessionState(XrSessionState state) {
+    MM_INFO("VR: session state is {}.", sessionStateName(state));
+
+    if (state == XR_SESSION_STATE_READY) {
+        XrSessionBeginInfo beginInfo = {XR_TYPE_SESSION_BEGIN_INFO};
+        beginInfo.primaryViewConfigurationType = VIEW_CONFIGURATION;
+        if (check(xrBeginSession(_session, &beginInfo), "xrBeginSession"))
+            setRunning(true);
+    } else if (state == XR_SESSION_STATE_STOPPING) {
+        setRunning(false);
+        check(xrEndSession(_session), "xrEndSession");
+    } else if (state == XR_SESSION_STATE_EXITING || state == XR_SESSION_STATE_LOSS_PENDING) {
+        setRunning(false);
+        MM_INFO("VR: the session is over, continuing without VR.");
+    }
+}
+
+void VrSystem::setRunning(bool running) {
+    if (_running == running)
+        return;
+
+    _running = running;
+    if (running) {
+        _desktopSwapInterval = desktopSwapInterval();
+        setDesktopSwapInterval(0);
+    } else {
+        setDesktopSwapInterval(_desktopSwapInterval);
+    }
+    if (render)
+        render->setExternalFramePacing(running);
+}
+
+void VrSystem::beginFrame() {
+    if (!_running)
+        return;
+
+    _frameState = {XR_TYPE_FRAME_STATE};
+    XrFrameWaitInfo waitInfo = {XR_TYPE_FRAME_WAIT_INFO};
+    if (!check(xrWaitFrame(_session, &waitInfo, &_frameState), "xrWaitFrame"))
+        return;
+
+    XrFrameBeginInfo beginInfo = {XR_TYPE_FRAME_BEGIN_INFO};
+    if (!check(xrBeginFrame(_session, &beginInfo), "xrBeginFrame"))
+        return;
+    _frameBegun = true;
+
+    if (_frameIndex < LOGGED_FRAME_COUNT) {
+        MM_INFO("VR: frame {} begun, display at {} ns, period {} ns, {}.", _frameIndex, _frameState.predictedDisplayTime,
+                _frameState.predictedDisplayPeriod, _frameState.shouldRender ? "should render" : "should not render");
+    }
+}
+
+void VrSystem::endFrame() {
+    if (!_frameBegun)
+        return;
+
+    XrCompositionLayerProjection layer = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+    layer.space = _space;
+    layer.viewCount = static_cast<uint32_t>(_projectionViews.size());
+    layer.views = _projectionViews.data();
+    const XrCompositionLayerBaseHeader *layers[] = {reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer)};
+
+    XrFrameEndInfo endInfo = {XR_TYPE_FRAME_END_INFO};
+    endInfo.displayTime = _frameState.predictedDisplayTime;
+    endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    endInfo.layerCount = _layerReady ? 1 : 0;
+    endInfo.layers = _layerReady ? layers : nullptr;
+    check(xrEndFrame(_session, &endInfo), "xrEndFrame");
+
+    if (_layerReady)
+        _worldFrameCount++;
+    if (_frameIndex < LOGGED_FRAME_COUNT || (_layerReady && _worldFrameCount <= LOGGED_FRAME_COUNT))
+        MM_INFO("VR: frame {} ended with {} layer(s).", _frameIndex, endInfo.layerCount);
+
+    _frameIndex++;
+    if (_frameIndex % FRAME_SUMMARY_INTERVAL == 0)
+        MM_INFO("VR: {} frames submitted, {} of them with the world drawn.", _frameIndex, _worldFrameCount);
+
+    _frameBegun = false;
+    _layerReady = false;
+}
+
+bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
+    Eye &eye = _eyes[index];
+
+    uint32_t imageIndex = 0;
+    XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+    if (!check(xrAcquireSwapchainImage(eye.swapchain, &acquireInfo, &imageIndex), "xrAcquireSwapchainImage"))
+        return false;
+    XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+    waitInfo.timeout = XR_INFINITE_DURATION;
+    if (!check(xrWaitSwapchainImage(eye.swapchain, &waitInfo), "xrWaitSwapchainImage"))
+        return false;
+
+    TextureRenderId texture(eye.images[imageIndex]);
+    render->setExternalWorldTarget(texture, eye.size);
+    render->BeginScene3D(eyeView(view, eye.size));
+    frame.draw();
+    render->EndScene3D();
+    if (index == 0)
+        render->setViewportMirror(texture, eye.size);
+
+    XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    check(xrReleaseSwapchainImage(eye.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
+
+    XrCompositionLayerProjectionView &projectionView = _projectionViews[index];
+    projectionView = {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW};
+    projectionView.pose = view.pose;
+    projectionView.fov = view.fov;
+    projectionView.subImage.swapchain = eye.swapchain;
+    projectionView.subImage.imageRect.extent = {eye.size.w, eye.size.h};
+    return true;
+}
+
+void VrSystem::shutdown() {
+    if (_frameBegun) {
+        _layerReady = false;
+        endFrame();
+    }
+    setRunning(false);
+
+    for (Eye &eye : _eyes) {
+        if (eye.swapchain != XR_NULL_HANDLE)
+            xrDestroySwapchain(eye.swapchain);
+        eye = Eye();
+    }
+    if (_space != XR_NULL_HANDLE)
+        xrDestroySpace(_space);
+    if (_session != XR_NULL_HANDLE)
+        xrDestroySession(_session);
+    if (_instance != XR_NULL_HANDLE) {
+        xrDestroyInstance(_instance);
+        MM_INFO("VR: shut down.");
+    }
+    _space = XR_NULL_HANDLE;
+    _session = XR_NULL_HANDLE;
+    _instance = XR_NULL_HANDLE;
+}
+
+CameraView VrSystem::eyeView(const XrView &view, Sizei size) const {
+    glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
+
+    // OpenXR looks along -z with +x to the right and +y up, the game looks along +x with +y to the left and +z up.
+    const XrQuaternionf &orientation = view.pose.orientation;
+    glm::quat headOrientation(orientation.w, -orientation.z, -orientation.x, orientation.y);
+    const XrVector3f &position = view.pose.position;
+    glm::vec3 headOffset = partyYaw * glm::vec3(-position.z, -position.x, position.y) * GAME_UNITS_PER_METRE;
+
+    Vec3f eye = pParty->pos + Vec3f(headOffset.x, headOffset.y, headOffset.z + pParty->eyeLevel);
+
+    ProjectionDesc projection;
+    projection.tanLeft = std::tan(view.fov.angleLeft);
+    projection.tanRight = std::tan(view.fov.angleRight);
+    projection.tanUp = std::tan(view.fov.angleUp);
+    projection.tanDown = std::tan(view.fov.angleDown);
+    projection.nearClip = pCamera3D->GetNearClip();
+    projection.farClip = pCamera3D->GetFarClip();
+
+    return CameraView::fromPose(eye, partyYaw * headOrientation, projection, Recti(0, 0, size.w, size.h));
+}

@@ -32,6 +32,7 @@
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
 #include "Engine/Graphics/WorldFrame.h"
+#include "Engine/Graphics/WorldFrameViews.h"
 #include "Engine/Graphics/TurnBasedOverlay.h"
 #include "Engine/Resources/LodSpriteCache.h"
 #include "Engine/Localization.h"
@@ -155,8 +156,10 @@ void Engine::drawWorld() {
                 render->uFogColor = GetLevelFogColor();
             _worldFrame->prepare();
         }
-        _worldFrame->draw();
-        render->EndScene3D();
+        if (!_worldFrameViews || !_worldFrameViews->drawViews(*_worldFrame)) {
+            _worldFrame->draw();
+            render->EndScene3D();
+        }
         _worldFrame->finish();
     }
 }

@@ -94,6 +94,29 @@ class Renderer {
      */
     virtual TextureRenderId uiTargetTexture() = 0;
 
+    /**
+     * Makes the following 3D passes draw into a colour texture owned by the caller instead of the world target.
+     *
+     * @param colorTexture              Texture to draw into, or an empty id to go back to the world target.
+     * @param size                      Size of the texture.
+     */
+    virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) = 0;
+
+    /**
+     * Copies a colour texture, cropped to the aspect ratio of the game viewport, for the next `compositeWorldTarget`
+     * to draw into the game viewport instead of the world target.
+     *
+     * @param colorTexture              Texture to copy.
+     * @param size                      Size of the texture.
+     */
+    virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) = 0;
+
+    /**
+     * @param external                  Whether something other than the frame rate limiter, like a VR runtime, paces
+     *                                  the frames.
+     */
+    virtual void setExternalFramePacing(bool external) = 0;
+
     virtual void MakeParticleBillboardAndPush(const Particle& p) = 0;
     virtual float GetGamma() = 0;
 
