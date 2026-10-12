@@ -61,6 +61,7 @@ set(RESOURCE_SOURCES
         shaders/gltwodshader.frag
         shaders/gltwodshader.vert
         shaders/lighting.glsl
+        shaders/material.glsl
         shaders/precision.glsl)
 
 cmrc_add_resource_library(resources NAMESPACE openenroth ${RESOURCE_SOURCES})

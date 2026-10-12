@@ -227,6 +227,14 @@ RgbaImage ResourceManager::packBitmap(std::string_view filename) {
     return result;
 }
 
+RgbaImage ResourceManager::packBitmapMaterial(std::string_view filename, Sizei colorSize) {
+    std::string name = ascii::toLower(filename);
+    if (!_texturePack || !_bitmapsLodReader.exists(name))
+        return {};
+
+    return _texturePack->materialImage(name, _bitmapsLodReader.read(name), colorSize);
+}
+
 RgbaImage ResourceManager::generated(std::string_view filename) {
     _tileGenerator->ensureTile(filename);
     RgbaImage result = png::decode(ufs->read(filename));

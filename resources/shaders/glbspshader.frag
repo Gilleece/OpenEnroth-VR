@@ -7,6 +7,9 @@ flat in float olayer;
 in vec3 vsPos;
 in vec3 vsNorm;
 flat in int vsAttrib;
+#ifdef MATERIAL_MAPS
+in vec3 vsCameraOffset;
+#endif
 
 out vec4 FragColour;
 
@@ -23,6 +26,11 @@ uniform PointLight fspointlights[num_point_lights];
 
 uniform sampler2DArray textureArray0;
 uniform ivec2 logicaltexsize;
+
+#ifdef MATERIAL_MAPS
+uniform sampler2DArray materialArray;
+#include "material.glsl"
+#endif
 
 void main() {
     vec3 fragnorm = normalize(vsNorm);
@@ -91,6 +99,21 @@ void main() {
         }
     }
 
+#ifdef MATERIAL_MAPS
+    float materiallayer = olayer;
+    if ((watertiles == 1) && (olayer == 0.0))
+        materiallayer = ((vsAttrib & 0x3C00) != 0) ? 0.0 : float(waterframe);
+    vec4 material = texture(materialArray, vec3(texcoords.x, texcoords.y, materiallayer));
+    vec3 tangent;
+    vec3 bitangent;
+    bool hasframe = FaceTangentFrame(vsCameraOffset, texuv, fragnorm, tangent, bitangent);
+
+    vec3 lit;
+    if (material.a > 0.0 && hasframe) {
+        lit = CalcMaterialLighting(material, fragcol.rgb, fragnorm, tangent, bitangent, vsPos, fragviewdir);
+    } else {
+#endif
+
 
     vec3 result = CalcSunLight(sun, fragnorm, fragviewdir, vec3(1)); //fragcol.rgb);
     result = clamp(result, 0.0, 0.85);
@@ -111,6 +134,12 @@ void main() {
         if (fspointlights[i].type == 2.0)
             result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir);
     }
+
+#ifdef MATERIAL_MAPS
+        lit = result;
+    }
+    vec3 result = lit;
+#endif
 
     vec3 clamps = result; // fragcol.rgb *  // clamp(result,0,1) * ;
 

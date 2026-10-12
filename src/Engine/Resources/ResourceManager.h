@@ -78,6 +78,14 @@ class ResourceManager {
     RgbaImage packBitmap(std::string_view filename);
 
     /**
+     * @param filename                  Name of an image in `bitmaps.lod`, case-insensitive.
+     * @param colorSize                 Size of the image the bitmap is drawn with, see `TexturePack::materialImage()`.
+     * @return                          The texture pack's normal and roughness maps for the bitmap, or an empty image
+     *                                  if there are none. Never desaturated, the maps are data and not colors.
+     */
+    RgbaImage packBitmapMaterial(std::string_view filename, Sizei colorSize);
+
+    /**
      * @param filename                  Name of a generated transition tile, as `addGeneratedTiles()` put it into the
      *                                  tile table. The tile is generated on first use.
      * @return                          The desaturated tile.

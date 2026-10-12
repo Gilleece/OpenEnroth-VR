@@ -38,6 +38,13 @@ class GraphicsImage {
      */
     int textureScale();
 
+    /**
+     * @return                          Normal and roughness maps that go with `textureRgba()`, same size as it, or an
+     *                                  empty image if there are none. See `TexturePack::materialImage()` for the
+     *                                  format.
+     */
+    RgbaImageView materialRgba();
+
     const std::string &name();
 
     [[nodiscard]] TextureRenderId renderId();
@@ -52,5 +59,6 @@ class GraphicsImage {
     std::optional<Sizei> _size; // From the loader's loadSize() or from the loaded image, whichever comes first.
     std::optional<RgbaImage> _rgba; // Empty image if the loader failed.
     std::optional<RgbaImage> _textureRgba; // Empty image if the loader has no replacement.
+    std::optional<RgbaImage> _materialRgba; // Empty image if the loader has no material.
     TextureRenderId _renderId;
 };
