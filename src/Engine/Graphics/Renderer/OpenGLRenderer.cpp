@@ -2499,13 +2499,15 @@ void OpenGLRenderer::DrawBillboards() {
         if (thisblend == 0.0) {
             // disable alpha blending and enable fog for opaque items
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glUniform1f(billbshader.uniformLocation("additivegain"), 1.0f);
+            if (_linearPipeline)
+                glUniform1f(billbshader.uniformLocation("additivegain"), 1.0f);
             glUniform1f(billbshader.uniformLocation("fog.weakDistance"), GLfloat(fog.weakDistance));
             glUniform1f(billbshader.uniformLocation("fog.strongDistance"), GLfloat(fog.strongDistance));
         } else {
             // enable blending and disable fog for transparent items
             glBlendFunc(GL_ONE, GL_ONE);
-            glUniform1f(billbshader.uniformLocation("additivegain"), LINEAR_ADDITIVE_GAIN);
+            if (_linearPipeline)
+                glUniform1f(billbshader.uniformLocation("additivegain"), LINEAR_ADDITIVE_GAIN);
             glUniform1f(billbshader.uniformLocation("fog.weakDistance"), GLfloat(fog.clipDistance));
             glUniform1f(billbshader.uniformLocation("fog.strongDistance"), GLfloat(fog.clipDistance));
         }
