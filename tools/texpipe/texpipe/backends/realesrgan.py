@@ -1,5 +1,6 @@
 """Real-ESRGAN through the prebuilt realesrgan-ncnn-vulkan executable, downloaded into a cache on first use."""
 
+import hashlib
 import os
 import platform
 import shutil
@@ -17,6 +18,11 @@ from texpipe.backends import Job, check_size
 
 RELEASE_URL = "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-{}.zip"
 RELEASE_PLATFORMS = {"Windows": "windows", "Linux": "ubuntu", "Darwin": "macos"}
+RELEASE_SHA256 = {
+    "windows": "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d",
+    "ubuntu": "e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96",
+    "macos": "e0ad05580abfeb25f8d8fb55aaf7bedf552c375b5b4d9bd3c8d59764d2cc333a",
+}
 EXECUTABLE = "realesrgan-ncnn-vulkan"
 
 
@@ -37,20 +43,31 @@ def find_executable(folder: Path) -> Path | None:
     return None
 
 
+def verify_archive(archive: Path, expected_sha256: str) -> None:
+    """Raises if the SHA-256 of `archive` is not `expected_sha256`."""
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if digest != expected_sha256:
+        raise ValueError(f"{archive.name} has SHA-256 {digest}, expected {expected_sha256}. Not unpacking it.")
+
+
 def download_executable() -> Path:
-    """Downloads and unpacks the release for this platform into the cache, unless it is already there."""
+    """Downloads, verifies and unpacks the release for this platform into the cache, unless it is already there."""
     folder = cache_dir() / "realesrgan"
     existing = find_executable(folder) if folder.is_dir() else None
     if existing:
         return existing
-    url = RELEASE_URL.format(RELEASE_PLATFORMS[platform.system()])
+    release = RELEASE_PLATFORMS[platform.system()]
+    url = RELEASE_URL.format(release)
     folder.mkdir(parents=True, exist_ok=True)
     archive = folder / "release.zip"
     print(f"Downloading {url}")
     urllib.request.urlretrieve(url, archive)
-    with zipfile.ZipFile(archive) as zip_file:
-        zip_file.extractall(folder)
-    archive.unlink()
+    try:
+        verify_archive(archive, RELEASE_SHA256[release])
+        with zipfile.ZipFile(archive) as zip_file:
+            zip_file.extractall(folder)
+    finally:
+        archive.unlink()
     executable = find_executable(folder)
     if executable is None:
         raise FileNotFoundError(f"{url} has no {EXECUTABLE}")
