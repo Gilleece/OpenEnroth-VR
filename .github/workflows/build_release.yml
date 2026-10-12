@@ -14,6 +14,11 @@ on:
     branches:
       - master
 
+# The nightly tag job and the release steps inside build_all and linux_flatpak all write releases, and a called
+# workflow cannot get more token permissions than its caller job has.
+permissions:
+  contents: write
+
 env:
   TAG_NAME: nightly
 
