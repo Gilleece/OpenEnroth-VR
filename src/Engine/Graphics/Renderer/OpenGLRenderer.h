@@ -48,7 +48,7 @@ class OpenGLRenderer : public BaseRenderer {
                                 float dstX, float dstY, float a7, float a8,
                                 GraphicsImage *texture) override;
 
-    virtual TextureRenderId CreateTexture(RgbaImageView image) override;
+    virtual TextureRenderId CreateTexture(RgbaImageView image, TextureFilter filter) override;
     virtual void DeleteTexture(TextureRenderId id) override;
 
     virtual void BeginScene2D() override;

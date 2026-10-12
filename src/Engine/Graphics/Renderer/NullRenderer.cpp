@@ -43,7 +43,7 @@ void NullRenderer::DrawProjectile(float srcX, float srcY, float a3, float a4,
                                   float dstX, float dstY, float a7, float a8,
                                   GraphicsImage *texture) {}
 
-TextureRenderId NullRenderer::CreateTexture(RgbaImageView image) {
+TextureRenderId NullRenderer::CreateTexture(RgbaImageView image, TextureFilter filter) {
     return TextureRenderId(1);
 }
 
