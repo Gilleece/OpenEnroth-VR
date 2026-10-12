@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -51,6 +52,12 @@ class BaseRenderer : public Renderer {
  protected:
     Sizei outputRender = {0, 0};
     Sizei outputPresent = {0, 0};
+
+    /**
+     * World space versions of the billboards in `pBillboardRenderListD3D`, at the same indices. Built along with them,
+     * so they're sorted through `pSortedBillboardRenderListD3D` too.
+     */
+    std::array<WorldBillboard, MAX_BILLBOARDS_D3D> _worldBillboards;
 
  private:
     void updateRenderDimensions();

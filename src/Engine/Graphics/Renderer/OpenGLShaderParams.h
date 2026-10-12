@@ -99,6 +99,31 @@ struct DecalUniforms {
     void submit(const OpenGLShader &shader) const;
 };
 
+struct SkyVertex {
+    Vec3f pos;
+    Colorf color;
+    Vec2f texsize;
+    Vec2f timeoffset; // Animation offset in texels, wrapped to the texture size.
+    float texid = 0;
+};
+
+struct SkyUniforms {
+    glm::mat4 projection = {};
+    glm::mat4 view = {};
+    Vec3f eye;
+    float planeHeight = 0;
+    float elevationBias = 0;
+    int fade = 0;
+    float fadeTop = 0;
+    float fadeBottom = 0;
+    float horizon = 0;
+    FogUniforms fog;
+    float fogDistance = 0;
+    int texture0 = 0;
+
+    void submit(const OpenGLShader &shader) const;
+};
+
 struct BillboardVertex {
     Vec3f pos;
     Vec2f texuv;

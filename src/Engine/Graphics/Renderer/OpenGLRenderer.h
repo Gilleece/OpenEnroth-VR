@@ -5,6 +5,7 @@
 #include <string>
 #include <map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <glad/gl.h> // NOLINT: this is not a C system include.
@@ -23,6 +24,7 @@
 #include "OpenGLShaderParams.h"
 
 class PlatformOpenGLContext;
+struct BLVFace;
 
 class OpenGLRenderer : public BaseRenderer {
  public:
@@ -53,6 +55,8 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;
+    virtual bool worldSpaceBillboards() override;
+    virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,
@@ -111,9 +115,57 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void DoRenderBillboards_D3D() override;
     void SetBillboardBlendOptions(RenderBillboardD3D::OpacityType a1);
 
+    /**
+     * @param texture                   Billboard texture, null for the solid particle texture.
+     * @param[in,out] paletteId         Palette of the billboard, set to 0 when the texture pack has a sprite with the
+     *                                  palette already applied.
+     * @return                          OpenGL texture to draw the billboard with.
+     */
+    float billboardTextureId(GraphicsImage *texture, int *paletteId);
+
+    /**
+     * Draws `_worldBillboards` back to front, facing the current view, with depth test and without depth writes.
+     */
+    void drawWorldBillboards();
+
+    /**
+     * @return                          Right and up axes for camera facing quads, those of the current view with its
+     *                                  roll taken out.
+     */
+    std::pair<Vec3f, Vec3f> billboardAxes() const;
+
+    /**
+     * Draws the outdoor sky as a quad covering the view at the far plane. The sky shader finds where each pixel's ray
+     * hits the sky plane.
+     */
+    void drawWorldOutdoorSky();
+
+    /**
+     * Queues an indoor sky face for `drawSkyVertices`, in world space.
+     *
+     * @param face                      Sky face.
+     */
+    void queueWorldIndoorSky(BLVFace *face);
+
+    /**
+     * Draws `_skyVertices` through the sky shader with the current view and projection matrices.
+     *
+     * @param planeHeight               Height of the sky plane above the eye, in the units the sky texture tiles in.
+     * @param fade                      Whether to fade the sky into its tint towards the horizon and fill with the
+     *                                  tint below it. Without it, pixels below the horizon are left alone.
+     */
+    void drawSkyVertices(float planeHeight, bool fade);
+
     void DrawOutdoorSkyPolygon(int numVertices, GraphicsImage *texture, int dimmingLevel);
     void DrawIndoorSkyPolygon(int uNumVertices, GraphicsImage *texture, int dimmingLevel);
     void DrawForcePerVerts();
+
+    /**
+     * @param normalWeatherGrey         Fog colour outdoors in normal weather, where the fog never shows.
+     * @return                          Fog for the forced perspective sky and projectiles, which keeps the sky foggy in
+     *                                  foggy weather.
+     */
+    FogUniforms forcedPerspectiveFog(float normalWeatherGrey);
 
     void SetFogParametersGL();
 
@@ -163,6 +215,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader billbshader;
     OpenGLShader decalshader;
     OpenGLShader forcepershader;
+    OpenGLShader skyshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -206,6 +259,10 @@ class OpenGLRenderer : public BaseRenderer {
     // forced perspective shader
     OpenGLVertexBuffer<ForcePerVertex> _forcePerBuffer;
     std::vector<ForcePerVertex> _forcePerVertices;
+
+    // sky shader
+    OpenGLVertexBuffer<SkyVertex> _skyBuffer;
+    std::vector<SkyVertex> _skyVertices;
 
     // two d shader
     OpenGLVertexBuffer<TwoDVertex> _twodBuffer;

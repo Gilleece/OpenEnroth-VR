@@ -502,6 +502,9 @@ class GameConfig : public Config {
                                "Use a 16-bit floating point world render target. Only applies when the world target size is set."};
         Int WorldTargetFilter = {this, "world_target_filter", 1, &ValidateWorldTargetFilter,
                                  "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
+        Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
+                                     "Draw sprites, particles, projectiles and the sky in world space through the camera matrices instead of in"
+                                     " screen space. Always on in VR, where the screen space versions are wrong in stereo."};
 
         Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes"};
         Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes"};

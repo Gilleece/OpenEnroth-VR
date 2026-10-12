@@ -54,6 +54,8 @@ set(RESOURCE_SOURCES
         shaders/gllinesshader.vert
         shaders/gloutbuild.frag
         shaders/gloutbuild.vert
+        shaders/glskyshader.frag
+        shaders/glskyshader.vert
         shaders/glterrain.frag
         shaders/glterrain.vert
         shaders/gltextshader.frag

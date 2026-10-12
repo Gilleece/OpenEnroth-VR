@@ -51,6 +51,21 @@ void DecalUniforms::submit(const OpenGLShader &shader) const {
     fog.submit(shader, true);
 }
 
+void SkyUniforms::submit(const OpenGLShader &shader) const {
+    glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
+    glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);
+    glUniform3f(shader.uniformLocation("eye"), eye.x, eye.y, eye.z);
+    glUniform1f(shader.uniformLocation("planeHeight"), planeHeight);
+    glUniform1f(shader.uniformLocation("elevationBias"), elevationBias);
+    glUniform1i(shader.uniformLocation("fade"), fade);
+    glUniform1f(shader.uniformLocation("fadeTop"), fadeTop);
+    glUniform1f(shader.uniformLocation("fadeBottom"), fadeBottom);
+    glUniform1f(shader.uniformLocation("horizon"), horizon);
+    glUniform1f(shader.uniformLocation("fogDistance"), fogDistance);
+    glUniform1i(shader.uniformLocation("texture0"), texture0);
+    fog.submit(shader);
+}
+
 void BillboardUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);

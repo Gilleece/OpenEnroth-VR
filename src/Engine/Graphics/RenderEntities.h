@@ -55,6 +55,7 @@ struct RenderVertexD3D3 {
 
 struct RenderBillboard {
     Vec2f screenspace_projection_factor;
+    Vec2f scale; // World units per sprite pixel.
     Sprite* hwsprite = nullptr;
     int16_t uPaletteId = 0;
     int uIndoorSectorID = 0;
@@ -87,4 +88,21 @@ struct RenderBillboardD3D {
     int sParentBillboardID = -1;
     int paletteId = 0;
     float view_space_L2 = 0.0f;
+};
+
+/**
+ * Billboard placed in the world, to be drawn through the view and projection matrices. Vertex `i` sits at
+ * `pos + offsets[i] + right * facing[i].x + up * facing[i].y`, where `right` and `up` are the axes of the view it's
+ * drawn from, with the roll taken out.
+ */
+struct WorldBillboard {
+    GraphicsImage *texture = nullptr; // Null for the solid particle texture.
+    int paletteId = 0;
+    RenderBillboardD3D::OpacityType opacity = RenderBillboardD3D::Transparent;
+    int numVertices = 4;
+    Vec3f pos;
+    std::array<Vec3f, 4> offsets = {{}};
+    std::array<Vec2f, 4> facing = {{}};
+    std::array<Vec2f, 4> texcoords = {{}};
+    std::array<Color, 4> colors = {{}};
 };
