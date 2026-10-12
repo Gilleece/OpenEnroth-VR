@@ -20,6 +20,7 @@ Io::KeyboardActionMapping::KeyboardActionMapping(std::shared_ptr<GameConfig> con
     };
 
     fill(config->keybindings, &_keyboardEntryByInputAction);
+    fill(config->vr, &_keyboardEntryByInputAction);
     fill(config->gamepad, &_gamepadEntryByInputAction);
 }
 

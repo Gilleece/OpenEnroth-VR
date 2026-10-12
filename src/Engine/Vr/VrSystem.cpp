@@ -14,13 +14,20 @@
 #include <glm/gtc/quaternion.hpp> // NOLINT: not a C system header.
 #include <openxr/openxr_platform.h> // NOLINT: not a C system header.
 
+#include "Engine/Engine.h"
 #include "Engine/Party.h"
 #include "Engine/Graphics/Camera.h"
 #include "Engine/Graphics/CameraView.h"
 #include "Engine/Graphics/WorldFrame.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 
+#include "Application/GameConfig.h"
+
+#include "Io/InputEnums.h"
+#include "Io/KeyboardActionMapping.h"
+
 #include "Library/Logger/Logger.h"
+#include "Library/Platform/Interface/PlatformEvents.h"
 
 #include "Utility/String/Format.h"
 
@@ -61,7 +68,29 @@ static std::string versionString(XrVersion version) {
     return fmt::format("{}.{}.{}", XR_VERSION_MAJOR(version), XR_VERSION_MINOR(version), XR_VERSION_PATCH(version));
 }
 
-VrSystem::VrSystem() = default;
+/**
+ * Moves both eyes by the same amount, so that the point between them stays within a radius of the head origin.
+ *
+ * @param views                     Eye views located in the head origin space.
+ * @param radius                    Radius in metres.
+ */
+static void clampHeadOffset(std::array<XrView, 2> &views, float radius) {
+    const XrVector3f &left = views[0].pose.position;
+    const XrVector3f &right = views[1].pose.position;
+    glm::vec3 head((left.x + right.x) / 2, (left.y + right.y) / 2, (left.z + right.z) / 2);
+    float distance = glm::length(head);
+    if (distance <= radius)
+        return;
+
+    glm::vec3 shift = head * (radius / distance - 1);
+    for (XrView &view : views) {
+        view.pose.position.x += shift.x;
+        view.pose.position.y += shift.y;
+        view.pose.position.z += shift.z;
+    }
+}
+
+VrSystem::VrSystem() : PlatformEventFilter({EVENT_KEY_PRESS}) {}
 
 VrSystem::~VrSystem() {
     shutdown();
@@ -72,7 +101,7 @@ bool VrSystem::initialize() {
 }
 
 bool VrSystem::drawViews(WorldFrame &frame) {
-    if (!_frameBegun || !_frameState.shouldRender || !frame.prepared())
+    if (!_frameBegun || !_frameState.shouldRender || !frame.prepared() || _space == XR_NULL_HANDLE)
         return false;
 
     XrViewLocateInfo locateInfo = {XR_TYPE_VIEW_LOCATE_INFO};
@@ -86,6 +115,7 @@ bool VrSystem::drawViews(WorldFrame &frame) {
         return false;
     if (!(viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
         return false;
+    clampHeadOffset(views, engine->config->vr.HeadOffsetRadius.value());
 
     if (!drawEye(0, views[0], frame))
         return false;
@@ -108,6 +138,12 @@ void VrSystem::swapBuffers() {
     ProxyOpenGLContext::swapBuffers();
     pollEvents();
     beginFrame();
+}
+
+bool VrSystem::keyPressEvent(const PlatformKeyEvent *event) {
+    if (!event->isAutoRepeat && keyboardActionMapping && keyboardActionMapping->isBound(INPUT_ACTION_VR_RECENTER, event->key))
+        _recenterRequested = true;
+    return false;
 }
 
 bool VrSystem::check(XrResult result, const char *call) const {
@@ -209,7 +245,10 @@ bool VrSystem::createSession() {
     XrReferenceSpaceCreateInfo spaceInfo = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     spaceInfo.poseInReferenceSpace.orientation.w = 1.0f;
-    return check(xrCreateReferenceSpace(_session, &spaceInfo, &_space), "xrCreateReferenceSpace");
+    if (!check(xrCreateReferenceSpace(_session, &spaceInfo, &_localSpace), "xrCreateReferenceSpace"))
+        return false;
+    spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+    return check(xrCreateReferenceSpace(_session, &spaceInfo, &_viewSpace), "xrCreateReferenceSpace");
 }
 
 bool VrSystem::createSwapchains() {
@@ -288,6 +327,7 @@ void VrSystem::pollEvents() {
 
 void VrSystem::handleSessionState(XrSessionState state) {
     MM_INFO("VR: session state is {}.", sessionStateName(state));
+    _focused = state == XR_SESSION_STATE_FOCUSED;
 
     if (state == XR_SESSION_STATE_READY) {
         XrSessionBeginInfo beginInfo = {XR_TYPE_SESSION_BEGIN_INFO};
@@ -332,6 +372,9 @@ void VrSystem::beginFrame() {
         return;
     _frameBegun = true;
 
+    if (_focused && (_space == XR_NULL_HANDLE || _recenterRequested) && captureOrigin(_frameState.predictedDisplayTime))
+        _recenterRequested = false;
+
     if (_frameIndex < LOGGED_FRAME_COUNT) {
         MM_INFO("VR: frame {} begun, display at {} ns, period {} ns, {}.", _frameIndex, _frameState.predictedDisplayTime,
                 _frameState.predictedDisplayPeriod, _frameState.shouldRender ? "should render" : "should not render");
@@ -366,6 +409,38 @@ void VrSystem::endFrame() {
 
     _frameBegun = false;
     _layerReady = false;
+}
+
+bool VrSystem::captureOrigin(XrTime time) {
+    XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
+    if (!check(xrLocateSpace(_viewSpace, _localSpace, time, &head), "xrLocateSpace"))
+        return false;
+    XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+    if ((head.locationFlags & tracked) != tracked)
+        return false;
+
+    // The head looks along -z, and the yaw is its turn around +y.
+    const XrQuaternionf &orientation = head.pose.orientation;
+    glm::vec3 forward = glm::quat(orientation.w, orientation.x, orientation.y, orientation.z) * glm::vec3(0, 0, -1);
+    float yaw = std::atan2(-forward.x, -forward.z);
+    glm::quat level = glm::angleAxis(yaw, glm::vec3(0, 1, 0));
+
+    XrReferenceSpaceCreateInfo spaceInfo = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+    spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    spaceInfo.poseInReferenceSpace.orientation = {level.x, level.y, level.z, level.w};
+    spaceInfo.poseInReferenceSpace.position = head.pose.position;
+    XrSpace space = XR_NULL_HANDLE;
+    if (!check(xrCreateReferenceSpace(_session, &spaceInfo, &space), "xrCreateReferenceSpace"))
+        return false;
+
+    if (_space != XR_NULL_HANDLE)
+        xrDestroySpace(_space);
+    _space = space;
+
+    const XrVector3f &position = head.pose.position;
+    MM_INFO("VR: head origin at ({:.3f}, {:.3f}, {:.3f}) m in the runtime's LOCAL space, turned {:.1f} degrees.",
+            position.x, position.y, position.z, yaw * 180 / M_PI);
+    return true;
 }
 
 bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
@@ -412,8 +487,9 @@ void VrSystem::shutdown() {
             xrDestroySwapchain(eye.swapchain);
         eye = Eye();
     }
-    if (_space != XR_NULL_HANDLE)
-        xrDestroySpace(_space);
+    for (XrSpace space : {_space, _viewSpace, _localSpace})
+        if (space != XR_NULL_HANDLE)
+            xrDestroySpace(space);
     if (_session != XR_NULL_HANDLE)
         xrDestroySession(_session);
     if (_instance != XR_NULL_HANDLE) {
@@ -421,6 +497,8 @@ void VrSystem::shutdown() {
         MM_INFO("VR: shut down.");
     }
     _space = XR_NULL_HANDLE;
+    _viewSpace = XR_NULL_HANDLE;
+    _localSpace = XR_NULL_HANDLE;
     _session = XR_NULL_HANDLE;
     _instance = XR_NULL_HANDLE;
 }
