@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <exception>
+#include <memory>
 #include <string>
 
 #include "Engine/Data/ResourceMask.h"
@@ -24,6 +26,7 @@
 #include "Utility/MapAccess.h"
 
 #include "EngineFileSystem.h"
+#include "TexturePack.h"
 #include "TileGenerator.h"
 
 static Palette maskedPalette(const LodImage &image, const ResourceMask &mask) {
@@ -115,6 +118,17 @@ void ResourceManager::open(float saturation, float lightness) {
     _bitmapsLodReader.open(dfs->read("data/bitmaps.lod"));
     _spritesLodReader.open(dfs->read("data/sprites.lod"));
     from_json(Json::parse(dfs->read("data/resource_mask_table.json").str()), _masks);
+
+    if (tfs) {
+        try {
+            _texturePack = std::make_unique<TexturePack>(tfs);
+            MM_INFO("Using texture pack '{}' with {} bitmaps and {} icons.", tfs->displayPath(""),
+                    _texturePack->count(TEXTURE_PACK_BITMAPS), _texturePack->count(TEXTURE_PACK_ICONS));
+        } catch (const std::exception &e) {
+            MM_ERROR("{} Using the original textures.", e.what());
+        }
+    }
+
     // TODO(captainurist):
     //  on exception:
     //      Error(localization->str(LSTR_MIGHT_AND_MAGIC_VII_IS_HAVING_TROUBLE), localization->str(LSTR_REINSTALL_NECESSARY));
@@ -158,6 +172,14 @@ Sizei ResourceManager::iconSize(std::string_view filename) {
     return lod::decodeImageSize(_iconsLodReader.read(name));
 }
 
+RgbaImage ResourceManager::packIcon(std::string_view filename) {
+    std::string name = ascii::toLower(filename);
+    if (!_texturePack || !_iconsLodReader.exists(name))
+        return {};
+
+    return _texturePack->image(TEXTURE_PACK_ICONS, name, _iconsLodReader.read(name), iconSize(name));
+}
+
 RgbaImage ResourceManager::bitmap(std::string_view filename) {
     LodImage image = rawBitmap(filename);
     if (!image.image)
@@ -192,6 +214,17 @@ Sizei ResourceManager::bitmapSize(std::string_view filename) {
         return {};
     }
     return lod::decodeImageSize(_bitmapsLodReader.read(name));
+}
+
+RgbaImage ResourceManager::packBitmap(std::string_view filename) {
+    std::string name = ascii::toLower(filename);
+    if (!_texturePack || !_bitmapsLodReader.exists(name))
+        return {};
+
+    RgbaImage result = _texturePack->image(TEXTURE_PACK_BITMAPS, name, _bitmapsLodReader.read(name), bitmapSize(name));
+    if (result && _texturePack->colors() == TEXTURE_PACK_COLORS_RAW)
+        desaturate(result.pixels());
+    return result;
 }
 
 RgbaImage ResourceManager::generated(std::string_view filename) {

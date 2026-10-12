@@ -495,6 +495,10 @@ class GameConfig : public Config {
         Float Saturation = {this, "saturation", 0.65f, "Colour saturation multiplier for textures and palettes"};
         Float Lightness = {this, "lightness", 1.1f, "Colour lightness multiplier for textures and palettes"};
 
+        String TexturePack = {this, "texture_pack", "",
+            "Folder with a texture pack of higher resolution bitmaps and icons. Relative paths are resolved against the "
+            "game data folder. Leave empty to use the original textures. Takes effect on restart."};
+
         Bool AlwaysCustomCursor = {this, "always_custom_cursor", false,
             "Always draw a custom cursor using the graphics API and hide the system cursor, even if it's the default mouse arrow cursor."};
 

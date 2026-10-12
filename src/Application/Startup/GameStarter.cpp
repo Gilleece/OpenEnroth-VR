@@ -109,6 +109,8 @@ void GameStarter::initialize() {
     // TODO(captainurist): actually move datapath to config?
     resolveDataPath(_environment.get(), &_options);
     _fsStarter.initDataFs(_options.dataPath, _config->debug.OverrideBuiltInResources.value());
+    if (std::string texturePack = _config->graphics.TexturePack.value(); !texturePack.empty())
+        _fsStarter.initTexturePackFs(_options.dataPath / Path(texturePack));
     MM_INFO("Using data path '{}'.", _options.dataPath); // Can't use dfs->displayPath("") b/c it'll show "embedded://"...
 
     // Migrate saves if needed. We don't migrate anything else.

@@ -13,6 +13,7 @@ class FileSystemStarter {
 
     void initUserFs(bool ramFs, const Path &path);
     void initDataFs(const Path &path, bool pathOverridesBuiltIn);
+    void initTexturePackFs(const Path &path);
 
  private:
     std::unique_ptr<FileSystem> _userFs;
@@ -20,4 +21,6 @@ class FileSystemStarter {
     std::unique_ptr<FileSystem> _dataDirFs;
     std::unique_ptr<FileSystem> _dataDirLowercaseFs;
     std::unique_ptr<FileSystem> _dataFs;
+    std::unique_ptr<FileSystem> _texturePackDirFs;
+    std::unique_ptr<FileSystem> _texturePackLowercaseFs;
 };
