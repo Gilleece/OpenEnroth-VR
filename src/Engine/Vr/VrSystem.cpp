@@ -117,17 +117,21 @@ bool VrSystem::drawViews(WorldFrame &frame) {
         return false;
     clampHeadOffset(views, engine->config->vr.HeadOffsetRadius.value());
 
+    std::array<int, 2> billboards = {};
     if (!drawEye(0, views[0], frame))
         return false;
+    billboards[0] = render->worldBillboardsDrawn;
     _layerReady = drawEye(1, views[1], frame);
+    billboards[1] = render->worldBillboardsDrawn;
     render->setExternalWorldTarget(TextureRenderId(), Sizei());
 
     if (_worldFrameCount < LOGGED_FRAME_COUNT) {
         for (int i = 0; i < 2; i++) {
             const XrPosef &pose = views[i].pose;
             const XrFovf &fov = views[i].fov;
-            MM_INFO("VR: frame {} eye {} at ({:.3f}, {:.3f}, {:.3f}) m, fov left {:.3f} right {:.3f} up {:.3f} down {:.3f} rad.",
-                    _frameIndex, i, pose.position.x, pose.position.y, pose.position.z, fov.angleLeft, fov.angleRight, fov.angleUp, fov.angleDown);
+            MM_INFO("VR: frame {} eye {} at ({:.3f}, {:.3f}, {:.3f}) m, fov left {:.3f} right {:.3f} up {:.3f} down {:.3f} rad, {} world billboards.",
+                    _frameIndex, i, pose.position.x, pose.position.y, pose.position.z, fov.angleLeft, fov.angleRight, fov.angleUp, fov.angleDown,
+                    billboards[i]);
         }
     }
     return true;

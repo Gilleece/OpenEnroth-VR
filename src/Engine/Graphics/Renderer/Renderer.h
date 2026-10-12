@@ -117,6 +117,24 @@ class Renderer {
      */
     virtual void setExternalFramePacing(bool external) = 0;
 
+    /**
+     * @return                          Whether the current 3D pass draws sprites, particles, projectiles and the sky in
+     *                                  world space through the view and projection matrices. That's the case when
+     *                                  `graphics.world_space_billboards` is set, and always for external world targets,
+     *                                  which are drawn from views other than the party camera.
+     */
+    virtual bool worldSpaceBillboards() = 0;
+
+    /**
+     * Draws a projectile beam, like a lightning bolt, between two points in world space. Only valid when
+     * `worldSpaceBillboards` is true, `DrawProjectile` draws it otherwise.
+     *
+     * @param src                       Start of the beam.
+     * @param dst                       End of the beam.
+     * @param texture                   Beam texture.
+     */
+    virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) = 0;
+
     virtual void MakeParticleBillboardAndPush(const Particle& p) = 0;
     virtual float GetGamma() = 0;
 
@@ -234,6 +252,7 @@ class Renderer {
                                        //                     resulting in dangling textures in pBillboardRenderListD3D.
 
     int drawcalls = 0;
+    int worldBillboardsDrawn = 0; // World space billboards drawn since the last `BeginScene3D`.
 
     /**
      * @returns                         1x1 white texture for solid color fills. Initialized lazily on first use.

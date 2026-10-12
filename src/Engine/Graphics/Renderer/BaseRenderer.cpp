@@ -357,6 +357,23 @@ void BaseRenderer::TransformBillboard(const RenderBillboard *pBillboard, int par
     billboard->view_space_L2 = pBillboard->view_space_L2;
     billboard->sParentBillboardID = parent;
     billboard->paletteId = pBillboard->uPaletteId;
+
+    // Anchored at the bottom centre like the screen space quad above, with the same corners and texture coordinates.
+    WorldBillboard &world = _worldBillboards[billboard_index];
+    world = WorldBillboard();
+    world.texture = billboard->texture;
+    world.paletteId = billboard->paletteId;
+    world.opacity = billboard->opacity;
+    world.pos = pBillboard->worldPos;
+    float halfWidth = pSprite->uWidth / 2 * pBillboard->scale.x;
+    float height = pSprite->uHeight * pBillboard->scale.y;
+    if (pBillboard->flags & BILLBOARD_MIRRORED)
+        halfWidth = -halfWidth;
+    world.facing = {{{-halfWidth, height}, {-halfWidth, 0}, {halfWidth, 0}, {halfWidth, height}}};
+    for (int i = 0; i < 4; i++) {
+        world.texcoords[i] = billboard->pQuads[i].texcoord;
+        world.colors[i] = diffuse;
+    }
 }
 
 bool BaseRenderer::AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector) {
@@ -382,6 +399,7 @@ bool BaseRenderer::AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& 
             bill.view_space_z = viewspace.x;
             bill.view_space_L2 = viewspace.length();
             bill.screenspace_projection_factor = billScale;
+            bill.scale = scale;
             bill.uPaletteId = palette;
             bill.flags = flags;
             bill.uIndoorSectorID = sector;
@@ -408,6 +426,22 @@ void BaseRenderer::MakeParticleBillboardAndPush(const Particle& p) {
 
     float acos = std::cos(p.angle); // TODO(captainurist): taking cos of an INT angle? WTF?
     float asin = std::sin(p.angle);
+
+    WorldBillboard &world = _worldBillboards[billboard_index];
+    world = WorldBillboard();
+    world.texture = billboard->texture;
+    world.paletteId = billboard->paletteId;
+    world.opacity = billboard->opacity;
+    world.pos = Vec3f(p.x, p.y, p.z);
+    std::array<Vec2f, 4> corners = {{{-12, -12}, {-12, 12}, {12, 12}, {12, -12}}};
+    for (int i = 0; i < 4; i++) {
+        // The screen space corners below in world units, with y flipped to point up.
+        float x = acos * corners[i].x - asin * corners[i].y;
+        float y = acos * corners[i].y + asin * corners[i].x - 12.f;
+        world.facing[i] = Vec2f(x, -y) * p.particle_size;
+        world.colors[i] = p.fadedColor;
+    }
+    world.texcoords = {{{0, 0}, {0, 1}, {1, 1}, {1, 0}}};
 
     {
         float v16 = -12.f;
@@ -492,6 +526,18 @@ void BaseRenderer::BillboardSphereSpellFX(SpellFX_Billboard *a1, Color diffuse) 
     pBillboardRenderListD3D[v5].pQuads[3].pos.x = 0.0f;
     pBillboardRenderListD3D[v5].pQuads[3].pos.y = 0.0f;
     pBillboardRenderListD3D[v5].pQuads[3].pos.z = 0.0f;
+
+    // The whole triangle, the frustum clips it on the GPU.
+    WorldBillboard &world = _worldBillboards[v5];
+    world = WorldBillboard();
+    world.opacity = RenderBillboardD3D::Opaque_2;
+    world.numVertices = 3;
+    world.pos = (a1->field_14[0].pos + a1->field_14[1].pos + a1->field_14[2].pos) / 3;
+    for (int i = 0; i < 3; i++) {
+        world.offsets[i] = a1->field_14[i].pos - world.pos;
+        world.texcoords[i] = Vec2f(0.5f, 0.5f);
+        world.colors[i] = diffuse.a ? a1->field_14[i].diffuse : diffuse;
+    }
 
     for (unsigned int i = 0; i < (unsigned int)a1->uNumVertices; ++i) {
         pBillboardRenderListD3D[v5].pQuads[i].pos = a1->field_104[i].pos;

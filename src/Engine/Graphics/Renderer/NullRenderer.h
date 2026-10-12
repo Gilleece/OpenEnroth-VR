@@ -28,6 +28,8 @@ class NullRenderer : public BaseRenderer {
     virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;
+    virtual bool worldSpaceBillboards() override;
+    virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,

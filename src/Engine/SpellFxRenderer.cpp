@@ -293,6 +293,10 @@ void SpellFxRenderer::DrawProjectiles() {
     for (int i = 0; i < uNumProjectiles; ++i) {
         // For each projectile
         ProjectileAnim *p = &pProjectiles[i];
+        if (render->worldSpaceBillboards()) {
+            render->drawWorldProjectile(Vec3f(p->srcX, p->srcY, p->srcZ), Vec3f(p->dstX, p->dstY, p->dstZ), p->texture);
+            continue;
+        }
 
         // get the source and destination positions
         v[0].vWorldPosition = Vec3f(p->srcX, p->srcY, p->srcZ);

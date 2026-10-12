@@ -52,6 +52,12 @@ void NullRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei si
 void NullRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::setExternalFramePacing(bool external) {}
 
+bool NullRenderer::worldSpaceBillboards() {
+    return false;
+}
+
+void NullRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) {}
+
 void NullRenderer::DrawProjectile(float srcX, float srcY, float a3, float a4,
                                   float dstX, float dstY, float a7, float a8,
                                   GraphicsImage *texture) {}

@@ -403,6 +403,7 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
 
     SetFogParametersGL();
     gamma = GetGamma();
+    worldBillboardsDrawn = 0;
 }
 
 void OpenGLRenderer::EndScene3D() {
@@ -493,6 +494,10 @@ void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size)
 
 void OpenGLRenderer::setExternalFramePacing(bool external) {
     _externalFramePacing = external;
+}
+
+bool OpenGLRenderer::worldSpaceBillboards() {
+    return _externalWorldTarget || config->graphics.WorldSpaceBillboards.value();
 }
 
 void OpenGLRenderer::DrawProjectile(float srcX, float srcY, float srcworldview, float srcfovoworldview,
@@ -830,6 +835,11 @@ void OpenGLRenderer::DrawIndoorSky(int /*uNumVertices*/, int uFaceID) {
 
     // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
     if (!pFace->GetTexture()) return;
+
+    if (worldSpaceBillboards()) {
+        queueWorldIndoorSky(pFace);
+        return;
+    }
 
     int dimming_level = 0;
     unsigned int uNumVertices = pFace->vertexIds.size();
@@ -1557,6 +1567,12 @@ void OpenGLRenderer::DrawOutdoorSky() {
     if (!pOutdoor->sky_texture)
         pOutdoor->sky_texture = assets->getBitmap("plansky3"); // TODO(pskelton): do we need this?
 
+    if (worldSpaceBillboards()) {
+        if (pOutdoor->sky_texture)
+            drawWorldOutdoorSky();
+        return;
+    }
+
     if (pOutdoor->sky_texture) {
         int dimming_level = (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)? 31 : 0;
         int uNumVertices = 4;
@@ -1772,36 +1788,7 @@ void OpenGLRenderer::DrawForcePerVerts() {
     ForcePerUniforms uniforms;
     uniforms.projection = projmat;
     uniforms.view = viewmat;
-
-    if (config->graphics.Fog.value() && uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
-        Color fpfogcol = GetLevelFogColor();
-        if (fpfogcol != Color()) {
-            // Foggy weather.
-            uniforms.fog.weakDensity = 0.25;
-            uniforms.fog.strongDensity = 0.85;
-            uniforms.fog.weakDistance = fog.weakDistance;
-            uniforms.fog.strongDistance = fog.strongDistance;
-            uniforms.fog.clipDistance = fog.clipDistance;
-            uniforms.fog.color = Colorf(fpfogcol.r / 255.0f, fpfogcol.g / 255.0f, fpfogcol.b / 255.0f);
-        } else {
-            // Normal weather.
-            uniforms.fog.weakDensity = 0.0f;
-            uniforms.fog.strongDensity = 0.0f;
-            uniforms.fog.weakDistance = pCamera3D->GetFarClip();
-            uniforms.fog.strongDistance = pCamera3D->GetFarClip();
-            uniforms.fog.clipDistance = pCamera3D->GetFarClip();
-            float fogVal = _forcePerVertices[0].color.r;
-            uniforms.fog.color = Colorf(fogVal, fogVal, fogVal);
-        }
-    } else {
-        uniforms.fog.weakDensity = 0.0f;
-        uniforms.fog.strongDensity = 0.0f;
-        uniforms.fog.weakDistance = pCamera3D->GetFarClip();
-        uniforms.fog.strongDistance = pCamera3D->GetFarClip();
-        uniforms.fog.clipDistance = pCamera3D->GetFarClip();
-        uniforms.fog.color = Colorf();
-    }
-
+    uniforms.fog = forcedPerspectiveFog(_forcePerVertices[0].color.r);
     uniforms.submit(forcepershader);
 
     // draw all similar textures in batches
@@ -1829,6 +1816,38 @@ void OpenGLRenderer::DrawForcePerVerts() {
     _forcePerBuffer.unbind();
 
     _forcePerVertices.clear();
+}
+
+FogUniforms OpenGLRenderer::forcedPerspectiveFog(float normalWeatherGrey) {
+    FogUniforms result;
+    if (config->graphics.Fog.value() && uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
+        Color fpfogcol = GetLevelFogColor();
+        if (fpfogcol != Color()) {
+            // Foggy weather.
+            result.weakDensity = 0.25;
+            result.strongDensity = 0.85;
+            result.weakDistance = fog.weakDistance;
+            result.strongDistance = fog.strongDistance;
+            result.clipDistance = fog.clipDistance;
+            result.color = Colorf(fpfogcol.r / 255.0f, fpfogcol.g / 255.0f, fpfogcol.b / 255.0f);
+        } else {
+            // Normal weather.
+            result.weakDensity = 0.0f;
+            result.strongDensity = 0.0f;
+            result.weakDistance = pCamera3D->GetFarClip();
+            result.strongDistance = pCamera3D->GetFarClip();
+            result.clipDistance = pCamera3D->GetFarClip();
+            result.color = Colorf(normalWeatherGrey, normalWeatherGrey, normalWeatherGrey);
+        }
+    } else {
+        result.weakDensity = 0.0f;
+        result.strongDensity = 0.0f;
+        result.weakDistance = pCamera3D->GetFarClip();
+        result.strongDistance = pCamera3D->GetFarClip();
+        result.clipDistance = pCamera3D->GetFarClip();
+        result.color = Colorf();
+    }
+    return result;
 }
 
 // TODO(pskelton): move ?
@@ -1864,8 +1883,18 @@ void OpenGLRenderer::SetFogParametersGL() {
     }
 }
 
+static constexpr float PROJECTILE_HALF_WIDTH = 20.0f; // World units on each side of a projectile beam's axis.
+static constexpr float SKY_TILT = 16 * 2 * M_PI / 2048; // The forced perspective sky plane tilts by 16 of the 2048 units of a turn.
+static constexpr float OUTDOOR_SKY_PLANE_HEIGHT = 64.0f;
+static constexpr float INDOOR_SKY_PLANE_HEIGHT = 512.0f / 16.0f; // DrawIndoorSky intersects at 512 and scales down by 16.
+
 //----- (004A1C1E) --------------------------------------------------------
 void OpenGLRenderer::DoRenderBillboards_D3D() {
+    if (worldSpaceBillboards()) {
+        drawWorldBillboards();
+        return;
+    }
+
     glEnable(GL_BLEND);
     glDepthMask(GL_FALSE);  // in theory billboards all sorted by depth so dont cull by depth test
     glDisable(GL_CULL_FACE);  // some quads are reversed to reuse sprites opposite hand
@@ -1896,19 +1925,7 @@ void OpenGLRenderer::DoRenderBillboards_D3D() {
 
         //int palette{ pBillboardRenderListD3D[i].PaletteID};
         int paletteId = billboard->paletteId;
-
-        if (billboard->texture) {
-            auto texture = billboard->texture;
-            if (GraphicsImage *variant = assets->getSpriteVariant(texture, paletteId)) {
-                texture = variant;
-                paletteId = 0; // The variant has the palette applied.
-            }
-            gltexid = texture->renderId().value();
-        } else {
-            // TODO(captainurist): function-local static caching an asset, make it a member.
-            static GraphicsImage *effpar03 = assets->getBitmap("effpar03");
-            gltexid = static_cast<float>(effpar03->renderId().value());
-        }
+        gltexid = billboardTextureId(billboard->texture, &paletteId);
 
         //if (gltexid != testtexid) {
         //    gltexid = testtexid;
@@ -1990,6 +2007,237 @@ void OpenGLRenderer::DoRenderBillboards_D3D() {
 
     //glDisable(GL_BLEND);
     glDepthMask(GL_TRUE);
+}
+
+float OpenGLRenderer::billboardTextureId(GraphicsImage *texture, int *paletteId) {
+    if (texture) {
+        if (GraphicsImage *variant = assets->getSpriteVariant(texture, *paletteId)) {
+            texture = variant;
+            *paletteId = 0; // The variant has the palette applied.
+        }
+        return texture->renderId().value();
+    }
+
+    // TODO(captainurist): function-local static caching an asset, make it a member.
+    static GraphicsImage *effpar03 = assets->getBitmap("effpar03");
+    return static_cast<float>(effpar03->renderId().value());
+}
+
+std::pair<Vec3f, Vec3f> OpenGLRenderer::billboardAxes() const {
+    // Rows of the view matrix are the view's right, up and backward axes in world space.
+    const glm::mat4 &view = _view.viewMatrix;
+    glm::vec3 viewRight(view[0][0], view[1][0], view[2][0]);
+    glm::vec3 viewBack(view[0][2], view[1][2], view[2][2]);
+
+    glm::vec3 right = glm::vec3(viewRight.x, viewRight.y, 0);
+    right = glm::length(right) > 0.001f ? glm::normalize(right) : viewRight; // Rolled on its side, keep the roll.
+    glm::vec3 up = glm::normalize(glm::cross(viewBack, right));
+    return {Vec3f(right.x, right.y, right.z), Vec3f(up.x, up.y, up.z)};
+}
+
+void OpenGLRenderer::drawWorldBillboards() {
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE); // Mirrored quads are wound the other way.
+
+    _set_3d_projection_matrix();
+    _set_3d_modelview_matrix();
+
+    auto [right, up] = billboardAxes();
+
+    for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
+        const WorldBillboard &billboard = _worldBillboards[pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D];
+
+        int paletteId = billboard.paletteId;
+        float texid = billboardTextureId(billboard.texture, &paletteId);
+        float distance = (billboard.pos - _view.position).length();
+
+        std::array<Vec3f, 4> corners;
+        for (int j = 0; j < billboard.numVertices; j++)
+            corners[j] = billboard.pos + billboard.offsets[j] + right * billboard.facing[j].x + up * billboard.facing[j].y;
+
+        auto addVertex = [&](int j) {
+            BillboardVertex &vertex = _billboardVertices.emplace_back();
+            vertex.pos = corners[j];
+            vertex.texuv = Vec2f(std::clamp(billboard.texcoords[j].x, 0.01f, 0.99f), std::clamp(billboard.texcoords[j].y, 0.01f, 0.99f));
+            vertex.color = billboard.colors[j].toColorf();
+            vertex.screenspace = distance;
+            vertex.texid = texid;
+            vertex.blend = static_cast<float>(billboard.opacity);
+            vertex.paletteId = paletteId;
+        };
+
+        addVertex(0);
+        addVertex(1);
+        addVertex(2);
+        if (billboard.numVertices == 4) {
+            addVertex(0);
+            addVertex(2);
+            addVertex(3);
+        }
+        worldBillboardsDrawn++;
+    }
+
+    DrawBillboards();
+
+    glDepthMask(GL_TRUE);
+}
+
+void OpenGLRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) {
+    // Across the beam and across the line of sight, so that the beam is seen at its full width.
+    Vec3f side = cross(_view.position - (src + dst) / 2, dst - src);
+    float sideLength = side.length();
+    if (sideLength == 0)
+        return;
+    side *= PROJECTILE_HALF_WIDTH / sideLength;
+
+    std::array<Vec3f, 4> corners = {{src + side, dst + side, dst - side, src - side}};
+    std::array<Vec2f, 4> texcoords = {{{1, 0}, {1, 1}, {0, 1}, {0, 0}}};
+    float texid = texture ? texture->renderId().value() : 0;
+    for (int j : {0, 1, 2, 0, 2, 3}) {
+        BillboardVertex &vertex = _billboardVertices.emplace_back();
+        vertex.pos = corners[j];
+        vertex.texuv = texcoords[j];
+        vertex.color = colorTable.White.toColorf();
+        vertex.screenspace = (corners[j] - _view.position).length();
+        vertex.texid = texid;
+        vertex.blend = static_cast<float>(RenderBillboardD3D::Opaque_1);
+        vertex.paletteId = 0;
+    }
+
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    glDisable(GL_CULL_FACE);
+
+    _set_3d_projection_matrix();
+    _set_3d_modelview_matrix();
+    DrawBillboards();
+
+    glDisable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ZERO);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_CULL_FACE);
+}
+
+/**
+ * @param texture                       Sky texture.
+ * @return                              Offset of the sky animation in texels, wrapped to the texture size.
+ */
+static Vec2f skyTimeOffset(GraphicsImage *texture) {
+    float time = animTimer->time().realtimeMillisecondsFloat();
+    return Vec2f(std::fmod(time, static_cast<float>(texture->width())), std::fmod(time, static_cast<float>(texture->height())));
+}
+
+void OpenGLRenderer::drawWorldOutdoorSky() {
+    GraphicsImage *texture = pOutdoor->sky_texture;
+    Colorf tint = GetActorTintColor(31, 0, pCamera3D->GetFarClip(), 1, 0).toColorf();
+    Vec2f timeOffset = skyTimeOffset(texture);
+
+    // Corners of the view at a depth well inside the far plane, the shader only needs the direction to each pixel.
+    glm::mat4 inverse = glm::inverse(_view.projectionMatrix * _view.viewMatrix);
+    std::array<glm::vec2, 4> ndc = {{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}}};
+    std::array<Vec3f, 4> corners;
+    for (int i = 0; i < 4; i++) {
+        glm::vec4 corner = inverse * glm::vec4(ndc[i], 0.999f, 1.0f);
+        corners[i] = Vec3f(corner.x / corner.w, corner.y / corner.w, corner.z / corner.w);
+    }
+
+    for (int i : {0, 1, 2, 0, 2, 3}) {
+        SkyVertex &vertex = _skyVertices.emplace_back();
+        vertex.pos = corners[i];
+        vertex.color = tint;
+        vertex.texsize = Vec2f(texture->width(), texture->height());
+        vertex.timeoffset = timeOffset;
+        vertex.texid = texture->renderId().value();
+    }
+
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    drawSkyVertices(OUTDOOR_SKY_PLANE_HEIGHT, config->graphics.Fog.value());
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+}
+
+void OpenGLRenderer::queueWorldIndoorSky(BLVFace *face) {
+    GraphicsImage *texture = face->GetTexture();
+    float depth = pCamera3D->ViewTransform(&pIndoor->vertices[face->vertexIds[0]]).x;
+    Colorf tint = GetActorTintColor(0, 0, depth, 1, 0).toColorf();
+    Vec2f timeOffset = skyTimeOffset(texture);
+
+    for (int z = 0; z + 2 < static_cast<int>(face->vertexIds.size()); z++) {
+        for (int i : {0, z + 1, z + 2}) {
+            SkyVertex &vertex = _skyVertices.emplace_back();
+            vertex.pos = pIndoor->vertices[face->vertexIds[i]];
+            vertex.color = tint;
+            vertex.texsize = Vec2f(texture->width(), texture->height());
+            vertex.timeoffset = timeOffset;
+            vertex.texid = texture->renderId().value();
+        }
+    }
+}
+
+void OpenGLRenderer::drawSkyVertices(float planeHeight, bool fade) {
+    if (_skyVertices.empty())
+        return;
+
+    if (!_skyBuffer) {
+        _skyBuffer.reset(GL_DYNAMIC_DRAW,
+            &SkyVertex::pos,
+            &SkyVertex::color,
+            &SkyVertex::texsize,
+            &SkyVertex::timeoffset,
+            &SkyVertex::texid);
+    }
+
+    _skyBuffer.update(_skyVertices);
+    _skyBuffer.bind();
+
+    skyshader.use();
+
+    // These follow DrawOutdoorSky and DrawIndoorSky, with the screen rows they use measured on a level view.
+    float viewPlaneDist = pCamera3D->ViewPlaneDistPixels;
+    float farClip = pCamera3D->GetFarClip();
+    float cameraZ = pCamera3D->vCameraPos.z;
+
+    SkyUniforms uniforms;
+    uniforms.projection = _view.projectionMatrix;
+    uniforms.view = _view.viewMatrix;
+    uniforms.eye = _view.position;
+    uniforms.planeHeight = planeHeight / std::cos(SKY_TILT);
+    uniforms.elevationBias = std::tan(SKY_TILT) + cameraZ / (viewPlaneDist + farClip);
+    uniforms.fade = fade;
+    uniforms.fadeTop = (pViewport.center().y - pViewport.y) / viewPlaneDist;
+    uniforms.fadeBottom = config->graphics.FogHorizon.value() / viewPlaneDist - cameraZ / farClip;
+    uniforms.horizon = -cameraZ / farClip - 1 / viewPlaneDist;
+    uniforms.fog = forcedPerspectiveFog(_skyVertices[0].color.r);
+    uniforms.fogDistance = farClip;
+    uniforms.submit(skyshader);
+
+    GLboolean blend = glIsEnabled(GL_BLEND);
+    glDisable(GL_BLEND);
+
+    size_t offset = 0;
+    while (offset < _skyVertices.size()) {
+        float texid = _skyVertices[offset].texid;
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(texid));
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+        size_t count = 0;
+        while (offset + count < _skyVertices.size() && _skyVertices[offset + count].texid == texid)
+            count += 3;
+
+        glDrawArrays(GL_TRIANGLES, static_cast<GLint>(offset), static_cast<GLsizei>(count));
+        drawcalls++;
+        offset += count;
+    }
+
+    if (blend)
+        glEnable(GL_BLEND);
+
+    skyshader.unuse();
+    _skyBuffer.unbind();
+    _skyVertices.clear();
 }
 
 void OpenGLRenderer::ensurePaletteTexture() {
@@ -3337,6 +3585,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
             _set_3d_projection_matrix();
             _set_3d_modelview_matrix();
         }
+        drawSkyVertices(INDOOR_SKY_PLANE_HEIGHT, false);
 
 
         //end terrain debug
@@ -3588,6 +3837,9 @@ bool OpenGLRenderer::ReloadShaders() {
     _forcePerBuffer.reset();
     _forcePerVertices.clear();
 
+    _skyBuffer.reset();
+    _skyVertices.clear();
+
     static constexpr std::string_view materialDefines[] = {"MATERIAL_MAPS"};
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          {}},
@@ -3599,6 +3851,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&billbshader,            "glbillbshader",    "Billboards",                       {}},
         {&decalshader,            "gldecalshader",    "Decals",                           {}},
         {&forcepershader,         "glforcepershader", "Forced perspective",               {}},
+        {&skyshader,              "glskyshader",      "Sky",                              {}},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           materialDefines},
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", materialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}
