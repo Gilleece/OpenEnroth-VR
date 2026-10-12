@@ -61,6 +61,9 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
     app->add_flag(
         "--headless", result.headless,
         "Run in headless mode.");
+    app->add_flag(
+        "--vr", result.vr,
+        "Render to a VR headset, same as setting 'vr.enabled' in the config.");
     retrace->add_option(
         "TRACE", result.retrace.traces,
         "Path to trace file(s) to retrace.")->option_text("...");
