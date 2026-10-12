@@ -23,6 +23,7 @@
 #include "Engine/Objects/CharacterEnumFunctions.h"
 #include "Engine/Objects/MonsterEnumFunctions.h"
 #include "Engine/Party.h"
+#include "Engine/SpellFxRenderer.h"
 #include "Engine/Data/HouseEnumFunctions.h"
 #include "Engine/Tables/ItemTable.h"
 #include "Engine/Evt/Processor.h"
@@ -280,12 +281,14 @@ void prepareArenaFight(ArenaLevel level) {
 
     // TODO(pskelton): This doesnt work properly and we dont want draw calls here
     render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
+    render->resetBillboardRenderList();
     if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
         pIndoor->Draw();
     } else if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
         pOutdoor->Draw();
     }
     render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
+    engine->spell_fx_renedrer->finishFrame();
     render->BeginScene2D();
     pDialogueWindow->DrawDialoguePanel(localization->str(LSTR_PLEASE_WAIT_WHILE_I_SUMMON_THE_MONSTERS));
     render->Present();

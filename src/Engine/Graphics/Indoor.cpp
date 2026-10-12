@@ -199,6 +199,7 @@ void IndoorLocation::Draw() {
     render->TransformBillboards();
     engine->DrawParticles();
     trail_particle_generator.UpdateParticles();
+    render->sortBillboardRenderList();
 }
 
 //----- (004AE5BA) --------------------------------------------------------
