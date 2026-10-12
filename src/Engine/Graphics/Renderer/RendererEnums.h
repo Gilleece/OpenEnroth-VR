@@ -10,6 +10,16 @@ enum class RendererType {
 using enum RendererType;
 MM_DECLARE_SERIALIZATION_FUNCTIONS(RendererType)
 
+/**
+ * Antialiasing of the 3D world, applied when it's composited into the game viewport.
+ */
+enum class AntialiasingMode {
+    ANTIALIASING_OFF,
+    ANTIALIASING_FXAA, // Fast approximate antialiasing on the tonemapped colour.
+};
+using enum AntialiasingMode;
+MM_DECLARE_SERIALIZATION_FUNCTIONS(AntialiasingMode)
+
 enum class TextureFilter {
     TEXTURE_FILTER_LINEAR,
     TEXTURE_FILTER_MIPMAPPED, // Trilinear, plus anisotropic where the driver supports it.

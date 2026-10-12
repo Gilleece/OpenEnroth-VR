@@ -512,6 +512,8 @@ class GameConfig : public Config {
         Float BloomThreshold = {this, "bloom_threshold", 1.0f, &ValidateBloomThreshold,
                                 "Linear brightness above which light blooms. At 1 only light stacked past white and additive effects bloom."};
         Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
+        ConfigEntry<AntialiasingMode> Antialiasing = {this, "antialiasing", ANTIALIASING_OFF,
+                                                      "Antialiasing of the 3D world, 'off' or 'fxaa'. Only applies with linear_pipeline."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
                                      "Draw sprites, particles, projectiles and the sky in world space through the camera matrices instead of in"
                                      " screen space. Always on in VR, where the screen space versions are wrong in stereo."};
