@@ -5,6 +5,8 @@
 #include <al.h> // NOLINT: not a C system header.
 #include <alc.h> // NOLINT: not a C system header.
 
+#include "Library/Geometry/Vec.h"
+
 // Sound attenuation factors
 constexpr float MAX_SOUND_DIST = 60000.0f;
 constexpr float REFERENCE_DIST = 300.0f;
@@ -30,8 +32,15 @@ class OpenALSoundProvider {
                                                  int bytes_per_sample);
     void Stream16(StreamingTrackBuffer *buffer, int num_samples,
                   const void *samples, bool wait = false);
-    void SetListenerPosition(float x, float y, float z);
-    void SetOrientation(float yaw, float pitch);
+
+    /**
+     * Places the listener in the world.
+     *
+     * @param position                  Listener position in world coordinates.
+     * @param forward                   Direction the listener faces, unit length.
+     * @param up                        Listener's up direction, unit length and perpendicular to `forward`.
+     */
+    void SetListener(const Vec3f &position, const Vec3f &forward, const Vec3f &up);
 
  protected:
     void DeleteBuffers(StreamingTrackBuffer *track, int type);

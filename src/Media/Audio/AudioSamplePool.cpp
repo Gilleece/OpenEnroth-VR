@@ -1,16 +1,18 @@
 #include "AudioSamplePool.h"
 
-SoundPlaybackResult AudioSamplePool::playNew(PAudioSample sample, PAudioDataSource source, bool positional) {
+#include "Media/Audio/OpenALSoundProvider.h"
+
+SoundPlaybackResult AudioSamplePool::playNew(PAudioSample sample, PAudioDataSource source, bool positional, Pid pid) {
     update();
     if (!sample->Open(source)) {
         return SOUND_PLAYBACK_FAILED;
     }
     sample->Play(_looping, positional);
-    _samplePool.push_back(AudioSamplePoolEntry(sample, SOUND_Invalid, Pid()));
+    _samplePool.push_back(AudioSamplePoolEntry(sample, SOUND_Invalid, pid, positional));
     return SOUND_PLAYBACK_SUCCEEDED;
 }
 
-SoundPlaybackResult AudioSamplePool::playUniqueSoundId(PAudioSample sample, PAudioDataSource source, SoundId id, bool positional) {
+SoundPlaybackResult AudioSamplePool::playUniqueSoundId(PAudioSample sample, PAudioDataSource source, SoundId id, bool positional, Pid pid) {
     update();
     for (AudioSamplePoolEntry &entry : _samplePool) {
         if (entry.id == id) {
@@ -21,7 +23,7 @@ SoundPlaybackResult AudioSamplePool::playUniqueSoundId(PAudioSample sample, PAud
         return SOUND_PLAYBACK_FAILED;
     }
     sample->Play(_looping, positional);
-    _samplePool.push_back(AudioSamplePoolEntry(sample, id, Pid()));
+    _samplePool.push_back(AudioSamplePoolEntry(sample, id, pid, positional));
     return SOUND_PLAYBACK_SUCCEEDED;
 }
 
@@ -36,7 +38,7 @@ SoundPlaybackResult AudioSamplePool::playUniquePid(PAudioSample sample, PAudioDa
         return SOUND_PLAYBACK_FAILED;
     }
     sample->Play(_looping, positional);
-    _samplePool.push_back(AudioSamplePoolEntry(sample, SOUND_Invalid, pid));
+    _samplePool.push_back(AudioSamplePoolEntry(sample, SOUND_Invalid, pid, positional));
     return SOUND_PLAYBACK_SUCCEEDED;
 }
 
@@ -92,6 +94,15 @@ void AudioSamplePool::stopPid(Pid pid) {
 void AudioSamplePool::update() {
     auto it = _samplePool.begin();
     std::erase_if(_samplePool, [](const AudioSamplePoolEntry& entry) { return entry.samplePtr->IsStopped(); });
+}
+
+void AudioSamplePool::updatePositions(const std::function<std::optional<Vec3f>(Pid)> &positionOf) {
+    for (AudioSamplePoolEntry &entry : _samplePool) {
+        if (!entry.positional || !entry.pid)
+            continue;
+        if (std::optional<Vec3f> position = positionOf(entry.pid))
+            entry.samplePtr->SetPosition(position->x, position->y, position->z, MAX_SOUND_DIST);
+    }
 }
 
 void AudioSamplePool::setVolume(float value) {

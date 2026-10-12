@@ -1,7 +1,6 @@
 #include "OpenALSoundProvider.h"
 
 #include <cassert>
-#include <cmath>
 
 #include <alext.h> // For ALC_HRTF_SOFT. NOLINT: not a C system header.
 
@@ -69,7 +68,6 @@ bool OpenALSoundProvider::Initialize() {
         attrs[5] = 512;
         attrs[6] = 0; // end of list
     } else {
-        ALCint attrs[5] = {};
         attrs[0] = ALC_MONO_SOURCES;
         attrs[1] = 512;
         attrs[2] = ALC_STEREO_SOURCES;
@@ -98,17 +96,10 @@ bool OpenALSoundProvider::Initialize() {
     return true;
 }
 
-void OpenALSoundProvider::SetListenerPosition(float x, float y, float z) {
-    alListener3f(AL_POSITION, x, y, z);
-}
-
-void OpenALSoundProvider::SetOrientation(float yaw, float pitch) {
-    float x = std::cos(pitch) * std::cos(yaw);
-    float y = std::cos(pitch) * std::sin(yaw);
-    float z = -std::sin(pitch);
-
-    ALfloat listenerOri[] = {x, y, z, 0.f, 0.f, 1.f};
-    alListenerfv(AL_ORIENTATION, listenerOri);
+void OpenALSoundProvider::SetListener(const Vec3f &position, const Vec3f &forward, const Vec3f &up) {
+    alListener3f(AL_POSITION, position.x, position.y, position.z);
+    ALfloat orientation[] = {forward.x, forward.y, forward.z, up.x, up.y, up.z};
+    alListenerfv(AL_ORIENTATION, orientation);
 }
 
 void OpenALSoundProvider::Release() {
