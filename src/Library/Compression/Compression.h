@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "Utility/Memory/Blob.h"
 
 namespace zlib {
@@ -28,4 +30,10 @@ Blob uncompress(const Blob &source, size_t sizeHint = 0);
  *                                     bytes could be recovered at all.
  */
 Blob uncompressBestEffort(const Blob &source, size_t sizeHint = 0);
+
+/**
+ * @param data                         Blob to checksum.
+ * @return                             Standard CRC-32 of `data`, as zlib's `crc32()` computes it.
+ */
+uint32_t crc32(const Blob &data);
 };  // namespace zlib
