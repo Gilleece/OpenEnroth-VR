@@ -111,7 +111,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
 
 # Install lua-language-server, which the check_style target picks up from PATH. Without it the lua half of the target
 # silently checks nothing, so style breakages that CI rejects don't reproduce locally. Keep the version in sync with
-# LLS_TAG in .github/workflows/style.yml. Unpacked outside /workspace on purpose, inside it the server lints its own
+# LLS_TAG in .github/workflows/lint.yml. Unpacked outside /workspace on purpose, inside it the server lints its own
 # lua sources.
 ARG LLS_VERSION=3.19.1
 RUN ARCH=$(dpkg --print-architecture) && \
