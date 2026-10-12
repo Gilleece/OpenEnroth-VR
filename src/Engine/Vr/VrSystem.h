@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -154,4 +155,8 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     bool _viewsLocated = false; // This frame, by `locateViews`.
     int64_t _frameIndex = 0;
     int64_t _worldFrameCount = 0;
+    std::chrono::steady_clock::time_point _summaryTime; // Of the last frame summary in the log.
+    int64_t _summaryFrameIndex = 0;
+    int64_t _summaryWorldFrameCount = 0;
+    std::chrono::steady_clock::time_point _lastFrameTime;
 };

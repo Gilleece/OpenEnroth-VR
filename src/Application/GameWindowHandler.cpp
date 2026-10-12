@@ -380,6 +380,8 @@ void GameWindowHandler::OnActivated() {
 }
 
 void GameWindowHandler::OnDeactivated() {
+    if (engine && engine->_worldFrameViews)
+        return; // The world goes to the views' own display, so the window losing focus doesn't pause the game.
     if (!(engineFlags & ENGINE_APP_INACTIVE)) {
         // dword_4E98BC_bApplicationActive = 0;
 
