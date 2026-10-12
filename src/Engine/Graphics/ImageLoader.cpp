@@ -19,6 +19,10 @@ Sizei Icon_LOD_Loader::loadSize() {
     return result;
 }
 
+RgbaImage Icon_LOD_Loader::loadTextureRgba() {
+    return resources()->packIcon(name());
+}
+
 RgbaImage Buff_LOD_Loader::loadRgba() {
     LodImage tex = resources()->rawIcon(name());
     if (!tex.image)
@@ -86,6 +90,10 @@ Sizei Bitmaps_LOD_Loader::loadSize() {
     if (!result)
         result = resources()->bitmapSize("pending");
     return result;
+}
+
+RgbaImage Bitmaps_LOD_Loader::loadTextureRgba() {
+    return resources()->packBitmap(name());
 }
 
 RgbaImage Bitmaps_GEN_Loader::loadRgba() {

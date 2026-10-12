@@ -15,6 +15,7 @@
 #include "Library/LodFormats/LodFont.h"
 #include "Library/LodFormats/LodImage.h"
 
+class TexturePack;
 class TileGenerator;
 class TileTable;
 
@@ -27,7 +28,7 @@ class ResourceManager {
     ~ResourceManager();
 
     /**
-     * Opens the LODs in `data` and loads the mask table.
+     * Opens the LODs in `data`, loads the mask table, and opens the texture pack in `tfs` if there is one.
      *
      * @param saturation                Saturation multiplier for the bitmaps and palettes this class returns.
      * @param lightness                 Lightness multiplier for the bitmaps and palettes this class returns.
@@ -50,6 +51,13 @@ class ResourceManager {
     Sizei iconSize(std::string_view filename);
 
     /**
+     * @param filename                  Name of an image in `icons.lod`, case-insensitive.
+     * @return                          The texture pack's replacement for the icon, or an empty image if there is
+     *                                  none.
+     */
+    RgbaImage packIcon(std::string_view filename);
+
+    /**
      * @param filename                  Name of an image in `bitmaps.lod`, case-insensitive.
      * @return                          The desaturated bitmap, or an empty image if there is no such bitmap.
      */
@@ -61,6 +69,13 @@ class ResourceManager {
      *                                  such bitmap.
      */
     Sizei bitmapSize(std::string_view filename);
+
+    /**
+     * @param filename                  Name of an image in `bitmaps.lod`, case-insensitive.
+     * @return                          The texture pack's replacement for the bitmap, desaturated unless the pack
+     *                                  says its colors are final, or an empty image if there is none.
+     */
+    RgbaImage packBitmap(std::string_view filename);
 
     /**
      * @param filename                  Name of a generated transition tile, as `addGeneratedTiles()` put it into the
@@ -138,4 +153,5 @@ class ResourceManager {
     float _saturation = 1.0f;
     float _lightness = 1.0f;
     std::unique_ptr<TileGenerator> _tileGenerator;
+    std::unique_ptr<TexturePack> _texturePack;
 };

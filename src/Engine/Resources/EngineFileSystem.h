@@ -4,3 +4,4 @@
 
 extern FileSystem *dfs;
 extern FileSystem *ufs;
+extern FileSystem *tfs; // Texture pack, null if there is none.

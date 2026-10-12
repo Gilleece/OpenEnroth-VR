@@ -46,6 +46,7 @@ class Icon_LOD_Loader : public ImageLoader {
 
     virtual RgbaImage loadRgba() override;
     virtual Sizei loadSize() override;
+    virtual RgbaImage loadTextureRgba() override;
 };
 
 class Buff_LOD_Loader : public ImageLoader {
@@ -62,6 +63,7 @@ class Bitmaps_LOD_Loader : public ImageLoader {
 
     virtual RgbaImage loadRgba() override;
     virtual Sizei loadSize() override;
+    virtual RgbaImage loadTextureRgba() override;
 };
 
 class Bitmaps_GEN_Loader : public ImageLoader {
