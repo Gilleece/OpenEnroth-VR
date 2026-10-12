@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -38,7 +39,7 @@
 static constexpr XrViewConfigurationType VIEW_CONFIGURATION = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
 static constexpr float GAME_UNITS_PER_METRE = 100.0f; // The party's eye level of 160 units is a 1.6 m standing eye height.
 static constexpr int64_t LOGGED_FRAME_COUNT = 5;
-static constexpr int64_t FRAME_SUMMARY_INTERVAL = 900;
+static constexpr std::chrono::seconds FRAME_SUMMARY_INTERVAL(5);
 static constexpr int64_t CULLING_LOG_INTERVAL = 90;
 static constexpr float CULLING_MARGIN_RAD = 5 * M_PI / 180; // Slack for the culling yaw and pitch, rounded to the party's units.
 static constexpr float MAX_CULLING_HALF_FOV_RAD = 85 * M_PI / 180;
@@ -565,8 +566,18 @@ void VrSystem::endFrame() {
         MM_INFO("VR: frame {} ended with {} layer(s).", _frameIndex, endInfo.layerCount);
 
     _frameIndex++;
-    if (_frameIndex % FRAME_SUMMARY_INTERVAL == 0)
-        MM_INFO("VR: {} frames submitted, {} of them with the world drawn.", _frameIndex, _worldFrameCount);
+    auto now = std::chrono::steady_clock::now();
+    _lastFrameTime = now;
+    if (_frameIndex == 1) {
+        _summaryTime = now;
+    } else if (now - _summaryTime >= FRAME_SUMMARY_INTERVAL) {
+        double seconds = std::chrono::duration<double>(now - _summaryTime).count();
+        MM_INFO("VR: {} frames submitted, {} in the last {:.1f} s at {:.1f} per second, {} of them with the world drawn.", _frameIndex,
+                _frameIndex - _summaryFrameIndex, seconds, (_frameIndex - _summaryFrameIndex) / seconds, _worldFrameCount - _summaryWorldFrameCount);
+        _summaryTime = now;
+        _summaryFrameIndex = _frameIndex;
+        _summaryWorldFrameCount = _worldFrameCount;
+    }
 
     _frameBegun = false;
     _layerReady = false;
@@ -688,7 +699,8 @@ void VrSystem::shutdown() {
         xrDestroySession(_session);
     if (_instance != XR_NULL_HANDLE) {
         xrDestroyInstance(_instance);
-        MM_INFO("VR: shut down.");
+        double sinceLastFrame = std::chrono::duration<double>(std::chrono::steady_clock::now() - _lastFrameTime).count();
+        MM_INFO("VR: shut down after {} frames, the last one {:.1f} s ago.", _frameIndex, _frameIndex ? sinceLastFrame : 0.0);
     }
     _space = XR_NULL_HANDLE;
     _viewSpace = XR_NULL_HANDLE;
