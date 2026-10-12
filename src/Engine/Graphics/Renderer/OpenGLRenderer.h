@@ -172,6 +172,7 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<ShaderVertex, 127 * 127 * 6> _terrainVertices;
     // all terrain textures are square
     GLuint terraintextures[8]{};
+    GLuint terrainmaterials[8]{}; // Material arrays next to terraintextures, 0 for units without materials.
     unsigned int numterraintexloaded[8]{};
     unsigned int terraintexturesizes[8]{};
     std::map<std::string, int> terraintexmap;

@@ -66,6 +66,7 @@
 
 static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
+static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
 static constexpr int PALETTE_COUNT = 1000; // pal000 to pal999 in bitmaps.lod.
 
 
@@ -1362,6 +1363,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
             glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, terraintexturesizes[unit] * scale, terraintexturesizes[unit] * scale, numterraintexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
             // loop through texture map
+            std::vector<std::pair<GraphicsImage *, int>> layers;
             std::map<std::string, int>::iterator it = terraintexmap.begin();
             while (it != terraintexmap.end()) {
                 int comb = it->second;
@@ -1373,6 +1375,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
                     auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
                     // send texture data to gpu
                     uploadArrayLayer(texture, tlayer, terraintexturesizes[unit], terraintexturesizes[unit], scale);
+                    layers.emplace_back(texture, tlayer);
                 }
 
                 it++;
@@ -1386,6 +1389,8 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
             glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
             if (scale > 1)
                 setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
+
+            terrainmaterials[unit] = createMaterialArray(layers, numterraintexloaded[unit], terraintexturesizes[unit], terraintexturesizes[unit], scale, GL_CLAMP_TO_EDGE);
         }
     }
 
@@ -1411,7 +1416,9 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _terrainBuffer.bind();
 
     // use the terrain shader
-    terrainshader.use();
+    GLuint tileMaterials = terrainmaterials[TERRAIN_TILE_TEXTURE_UNIT];
+    OpenGLShader &shader = tileMaterials ? terrainmaterialshader : terrainshader;
+    shader.use();
 
     // set base uniforms
     TerrainUniforms uniforms;
@@ -1500,14 +1507,19 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     }
 
     // remaining lights are default-initialized (type = 0)
-    uniforms.submit(terrainshader);
+    uniforms.submit(shader);
+    if (tileMaterials) {
+        glUniform1i(shader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
+        glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, tileMaterials);
+    }
 
     // actually draw the whole terrain
     glDrawArrays(GL_TRIANGLES, 0, (127 * 127 * 6));
     drawcalls++;
 
     // unload
-    terrainshader.unuse();
+    shader.unuse();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -3631,6 +3643,8 @@ void OpenGLRenderer::ReleaseTerrain() {
     for (int i = 0; i < 8; i++) {
         glDeleteTextures(1, &terraintextures[i]);
         terraintextures[i] = 0;
+        glDeleteTextures(1, &terrainmaterials[i]);
+        terrainmaterials[i] = 0;
         numterraintexloaded[i] = 0;
         terraintexturesizes[i] = 0;
     }
