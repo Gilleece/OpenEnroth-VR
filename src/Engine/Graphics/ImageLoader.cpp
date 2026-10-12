@@ -111,3 +111,15 @@ RgbaImage Sprites_LOD_Loader::loadRgba() {
 Sizei Sprites_LOD_Loader::loadSize() {
     return resources()->spriteSize(name());
 }
+
+RgbaImage SpriteVariant_LOD_Loader::loadRgba() {
+    return resources()->spriteWithPalette(name(), _paletteId);
+}
+
+Sizei SpriteVariant_LOD_Loader::loadSize() {
+    return resources()->spriteSize(name());
+}
+
+RgbaImage SpriteVariant_LOD_Loader::loadTextureRgba() {
+    return resources()->packSprite(name(), _paletteId);
+}

@@ -28,6 +28,15 @@ class AssetsManager {
     GraphicsImage *getBitmap(std::string_view name, bool generated = false);
     GraphicsImage *getSprite(std::string_view name);
 
+    /**
+     * @param sprite                    Image to draw with a palette. Only images returned by `getSprite()` have
+     *                                  variants.
+     * @param paletteId                 Palette the image is drawn with.
+     * @return                          The texture pack's true colour image of the sprite drawn with this palette, to
+     *                                  be drawn without a palette, or `nullptr` if there is none.
+     */
+    GraphicsImage *getSpriteVariant(GraphicsImage *sprite, int paletteId);
+
     std::unique_ptr<GUIFont> pFontBookOnlyShadow;
     std::unique_ptr<GUIFont> pFontBookLloyds;
     std::unique_ptr<GUIFont> pFontArrus;
@@ -43,6 +52,7 @@ class AssetsManager {
     std::unordered_map<std::string, std::unique_ptr<GraphicsImage>> bitmaps;
     std::unordered_map<std::string, std::unique_ptr<GraphicsImage>> sprites;
     std::unordered_map<std::string, std::unique_ptr<GraphicsImage>> images;
+    std::unordered_map<std::string, std::unordered_map<int, std::unique_ptr<GraphicsImage>>> spriteVariants; // By sprite name, then palette id.
 };
 
 extern AssetsManager *assets;

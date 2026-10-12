@@ -141,6 +141,30 @@ class ResourceManager {
      */
     Sizei spriteSize(std::string_view filename);
 
+    /**
+     * @param filename                  Name of a sprite in `sprites.lod`, case-insensitive.
+     * @param paletteId                 Palette to apply, see `palette()`.
+     * @return                          The sprite with the palette applied as the sprite shaders apply it, with palette
+     *                                  index 0 transparent, or an empty image if there is no such sprite.
+     */
+    RgbaImage spriteWithPalette(std::string_view filename, int paletteId);
+
+    /**
+     * @param filename                  Name of a sprite in `sprites.lod`, case-insensitive.
+     * @param paletteId                 Palette the sprite is drawn with.
+     * @return                          Whether the texture pack lists a true colour image for this sprite and palette.
+     *                                  Doesn't touch the file system.
+     */
+    bool hasPackSprite(std::string_view filename, int paletteId) const;
+
+    /**
+     * @param filename                  Name of a sprite in `sprites.lod`, case-insensitive.
+     * @param paletteId                 Palette the sprite is drawn with.
+     * @return                          The texture pack's true colour image for this sprite and palette, desaturated
+     *                                  unless the pack says its colors are final, or an empty image if there is none.
+     */
+    RgbaImage packSprite(std::string_view filename, int paletteId);
+
  private:
     void desaturate(std::span<Color> colors) const;
 

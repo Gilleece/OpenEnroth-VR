@@ -544,6 +544,11 @@ void OpenGLRenderer::DrawImage(GraphicsImage *img, const Recti &rect, int palett
         return;
     }
 
+    if (GraphicsImage *variant = assets->getSpriteVariant(img, paletteid)) {
+        img = variant;
+        paletteid = 0; // The variant has the palette applied.
+    }
+
     Colorf cf = uColor32.toColorf();
 
     int width = img->width();
@@ -1796,6 +1801,10 @@ void OpenGLRenderer::DoRenderBillboards_D3D() {
 
         if (billboard->texture) {
             auto texture = billboard->texture;
+            if (GraphicsImage *variant = assets->getSpriteVariant(texture, paletteId)) {
+                texture = variant;
+                paletteId = 0; // The variant has the palette applied.
+            }
             gltexid = texture->renderId().value();
         } else {
             // TODO(captainurist): function-local static caching an asset, make it a member.

@@ -122,8 +122,8 @@ void ResourceManager::open(float saturation, float lightness) {
     if (tfs) {
         try {
             _texturePack = std::make_unique<TexturePack>(tfs);
-            MM_INFO("Using texture pack '{}' with {} bitmaps and {} icons.", tfs->displayPath(""),
-                    _texturePack->count(TEXTURE_PACK_BITMAPS), _texturePack->count(TEXTURE_PACK_ICONS));
+            MM_INFO("Using texture pack '{}' with {} bitmaps, {} icons and {} sprite images.", tfs->displayPath(""),
+                    _texturePack->count(TEXTURE_PACK_BITMAPS), _texturePack->count(TEXTURE_PACK_ICONS), _texturePack->spriteImageCount());
         } catch (const std::exception &e) {
             MM_ERROR("{} Using the original textures.", e.what());
         }
@@ -297,6 +297,35 @@ Sizei ResourceManager::spriteSize(std::string_view filename) {
         return {};
     }
     return lod::decodeSpriteSize(_spritesLodReader.read(name));
+}
+
+RgbaImage ResourceManager::spriteWithPalette(std::string_view filename, int paletteId) {
+    std::string name = ascii::toLower(filename);
+    if (!_spritesLodReader.exists(name)) {
+        MM_ERROR("Trying to load non-existent LOD entry '{}'.", _spritesLodReader.displayPath(name));
+        return {};
+    }
+
+    Palette spritePalette = palette(paletteId);
+    spritePalette.colors[0] = Color();
+    for (size_t i = 1; i < spritePalette.colors.size(); i++)
+        spritePalette.colors[i].a = 255;
+    return makeRgbaImage(lod::decodeSprite(_spritesLodReader.read(name)).image, spritePalette);
+}
+
+bool ResourceManager::hasPackSprite(std::string_view filename, int paletteId) const {
+    return _texturePack && _texturePack->hasSpriteImage(filename, paletteId);
+}
+
+RgbaImage ResourceManager::packSprite(std::string_view filename, int paletteId) {
+    std::string name = ascii::toLower(filename);
+    if (!_texturePack || !_spritesLodReader.exists(name))
+        return {};
+
+    RgbaImage result = _texturePack->spriteImage(name, paletteId, _spritesLodReader.read(name), spriteSize(name));
+    if (result && _texturePack->colors() == TEXTURE_PACK_COLORS_RAW)
+        desaturate(result.pixels());
+    return result;
 }
 
 void ResourceManager::desaturate(std::span<Color> colors) const {

@@ -81,3 +81,18 @@ class Sprites_LOD_Loader : public ImageLoader {
     virtual RgbaImage loadRgba() override;
     virtual Sizei loadSize() override;
 };
+
+/**
+ * A sprite drawn with one palette, as a true colour image. Its texture is the texture pack's image for that palette.
+ */
+class SpriteVariant_LOD_Loader : public ImageLoader {
+ public:
+    SpriteVariant_LOD_Loader(ResourceManager *resources, std::string_view name, int paletteId) : ImageLoader(resources, name), _paletteId(paletteId) {}
+
+    virtual RgbaImage loadRgba() override;
+    virtual Sizei loadSize() override;
+    virtual RgbaImage loadTextureRgba() override;
+
+ private:
+    int _paletteId = 0;
+};
