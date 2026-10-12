@@ -11,6 +11,12 @@
 
 class FileSystem;
 
+/**
+ * Material alpha used when a pack has a normal map but no roughness map. At this roughness the material lighting
+ * comes closest to the fixed specular exponent of the stock shaders.
+ */
+inline constexpr int DEFAULT_MATERIAL_ROUGHNESS = 91;
+
 enum class TexturePackSection {
     TEXTURE_PACK_BITMAPS,
     TEXTURE_PACK_ICONS,
@@ -51,6 +57,18 @@ class TexturePack {
      *                                  LOD entry, is missing, or has a wrong size is logged and not returned.
      */
     [[nodiscard]] RgbaImage image(TexturePackSection section, std::string_view name, const Blob &lodEntry, Sizei lodSize) const;
+
+    /**
+     * @param name                      `bitmaps.lod` entry name, case-insensitive.
+     * @param lodEntry                  The LOD entry the maps belong to, as stored in the LOD.
+     * @param colorSize                 Size of the pack's color image for this entry. The maps must match it.
+     * @return                          The entry's normal and roughness maps combined into one image, or an empty
+     *                                  image if the pack has no maps for it or a listed map is missing or invalid.
+     *                                  RGB is the tangent space normal, flat if there's no normal map. Alpha is
+     *                                  `1 + roughness * 254 / 255`, `DEFAULT_MATERIAL_ROUGHNESS` if there's no
+     *                                  roughness map, so that alpha 0 can mean "no material" elsewhere.
+     */
+    [[nodiscard]] RgbaImage materialImage(std::string_view name, const Blob &lodEntry, Sizei colorSize) const;
 
     /**
      * @return                          Number of sprite images the manifest lists, over all sprites and palettes.

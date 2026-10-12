@@ -143,3 +143,67 @@ UNIT_TEST(TexturePack, SpriteImages) {
     EXPECT_FALSE(pack.spriteImage("m452wa0", 456, lodEntry, {3, 2}));
     EXPECT_FALSE(pack.spriteImage("m452wa0", 453, Blob::fromString("patched lod sprite"), {3, 2}));
 }
+
+static RgbaImage solidImage(Sizei size, Color color) {
+    return RgbaImage::solid(color, size);
+}
+
+UNIT_TEST(TexturePack, MaterialImage) {
+    // Normal and roughness maps combine into one image, and a missing kind takes its default.
+    MemoryFileSystem fs("pack");
+    Blob lodEntry = Blob::fromString("lod entry");
+    std::string crc = crcString(lodEntry);
+    writeManifest(&fs, fmt::format(R"("both": {{"crc32": "{0}", "maps": ["normal", "roughness"]}}, )"
+                                   R"("normal": {{"crc32": "{0}", "maps": ["normal"]}}, )"
+                                   R"("rough": {{"crc32": "{0}", "maps": ["roughness"]}}, )"
+                                   R"("plain": {{"crc32": "{0}"}})", crc));
+    for (std::string_view name : {"both", "normal"})
+        fs.write(fmt::format("normal/bitmaps/{}.png", name), png::encode(solidImage({6, 4}, Color(10, 20, 30))));
+    for (std::string_view name : {"both", "rough"})
+        fs.write(fmt::format("roughness/bitmaps/{}.png", name), png::encode(solidImage({6, 4}, Color(255, 255, 255))));
+    TexturePack pack(&fs);
+
+    EXPECT_EQ(pack.materialImage("both", lodEntry, {6, 4})[0][0], Color(10, 20, 30, 255));
+    EXPECT_EQ(pack.materialImage("normal", lodEntry, {6, 4})[0][0], Color(10, 20, 30, DEFAULT_MATERIAL_ROUGHNESS));
+    EXPECT_EQ(pack.materialImage("rough", lodEntry, {6, 4})[0][0], Color(128, 128, 255, 255));
+    EXPECT_EQ(pack.materialImage("rough", lodEntry, {6, 4}).size(), Sizei(6, 4));
+    EXPECT_FALSE(pack.materialImage("plain", lodEntry, {6, 4}));
+    EXPECT_FALSE(pack.materialImage("unlisted", lodEntry, {6, 4}));
+}
+
+UNIT_TEST(TexturePack, MaterialRoughnessEncoding) {
+    // Roughness maps to alpha 1 to 255, alpha 0 stays free to mean "no material".
+    MemoryFileSystem fs("pack");
+    Blob lodEntry = Blob::fromString("lod entry");
+    writeManifest(&fs, fmt::format(R"("rough": {{"crc32": "{}", "maps": ["roughness"]}})", crcString(lodEntry)));
+    TexturePack pack(&fs);
+
+    for (auto [gray, alpha] : {std::pair(0, 1), std::pair(90, 91), std::pair(128, 128), std::pair(255, 255)}) {
+        fs.write("roughness/bitmaps/rough.png", png::encode(solidImage({2, 2}, Color(gray, gray, gray))));
+        EXPECT_EQ(pack.materialImage("rough", lodEntry, {2, 2})[0][0].a, alpha) << "for gray " << gray;
+    }
+}
+
+UNIT_TEST(TexturePack, MaterialRejected) {
+    // A listed map that is missing, has the wrong size or was made from another LOD entry gives no material at all.
+    MemoryFileSystem fs("pack");
+    Blob lodEntry = Blob::fromString("lod entry");
+    std::string crc = crcString(lodEntry);
+    writeManifest(&fs, fmt::format(R"("missing": {{"crc32": "{0}", "maps": ["normal", "roughness"]}}, )"
+                                   R"("small": {{"crc32": "{0}", "maps": ["normal"]}})", crc));
+    fs.write("normal/bitmaps/missing.png", png::encode(solidImage({6, 4}, Color(10, 20, 30))));
+    fs.write("normal/bitmaps/small.png", png::encode(solidImage({3, 2}, Color(10, 20, 30))));
+    TexturePack pack(&fs);
+
+    EXPECT_FALSE(pack.materialImage("missing", lodEntry, {6, 4}));
+    EXPECT_FALSE(pack.materialImage("small", lodEntry, {6, 4}));
+    EXPECT_TRUE(pack.materialImage("small", lodEntry, {3, 2}));
+    EXPECT_FALSE(pack.materialImage("small", Blob::fromString("patched lod entry"), {3, 2}));
+}
+
+UNIT_TEST(TexturePack, MaterialBadMapName) {
+    // An unknown map kind makes the manifest invalid.
+    MemoryFileSystem fs("pack");
+    writeManifest(&fs, R"("wall": {"crc32": "00000000", "maps": ["height"]})");
+    EXPECT_ANY_THROW(TexturePack{&fs});
+}

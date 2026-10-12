@@ -19,10 +19,22 @@ MM_DECLARE_SERIALIZATION_FUNCTIONS(TexturePackColors)
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackColors)
 
 /**
+ * Material map that a texture pack can provide next to a bitmap.
+ */
+enum class TexturePackMap {
+    TEXTURE_PACK_MAP_NORMAL,    // Tangent space normal map, `normal/bitmaps/<name>.png`.
+    TEXTURE_PACK_MAP_ROUGHNESS, // Grayscale roughness map, `roughness/bitmaps/<name>.png`.
+};
+using enum TexturePackMap;
+MM_DECLARE_SERIALIZATION_FUNCTIONS(TexturePackMap)
+MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackMap)
+
+/**
  * One image in a texture pack, as the manifest lists it.
  */
 struct TexturePackEntry {
     std::string crc32; // CRC-32 of the LOD entry the image replaces, as 8 hex digits.
+    std::vector<TexturePackMap> maps; // Only bitmaps have maps.
 };
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackEntry)
 
