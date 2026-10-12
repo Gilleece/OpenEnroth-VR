@@ -124,7 +124,8 @@ class RealEsrganBackend:
         item = Prepared(f"{index:06d}", rgb.size, alpha is not None, self._border_for(job, rgb.size))
         self._pad(job, rgb, item.border).save(in_dir / f"{item.stem}.png")
         if alpha is not None:
-            self._pad(job, alpha, item.border).convert("RGB").save(in_dir / f"{item.stem}a.png")
+            # Wrapping the alpha would pull the cutout on one edge into the opposite edge of the upscaled image.
+            imageops.clamp_pad(alpha, *item.border).convert("RGB").save(in_dir / f"{item.stem}a.png")
         return item
 
     def _run_binary(self, binary: Path, in_dir: Path, out_dir: Path) -> None:
