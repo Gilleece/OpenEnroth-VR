@@ -1,10 +1,23 @@
-# Which backend and scale the upscale step uses for which images. The first [[rule]] whose section and entry name
-# glob both match decides, anything else falls back to [default]. --backend and --scale on the command line override
-# all of this.
+# Which backend and scale the upscale step uses for which images. The first [[rule]] whose section, entry name glob
+# and max_width in source pixels (optional) all match decides, anything else falls back to [default]. --backend and
+# --scale on the command line override all of this.
 
 [default]
 backend = "realesrgan"
 scale = 4
+
+# Super-resolution smears tiny glyphs like the minimap direction arrows, so those are only scaled.
+[[rule]]
+section = "icons"
+match = "mapdir[1-8]"
+backend = "nearest"
+scale = 2
+
+[[rule]]
+section = "icons"
+max_width = 11
+backend = "nearest"
+scale = 2
 
 # The UI is drawn at a fixed size on screen, 2x already covers 1280x960 and the frame stays sharp.
 [[rule]]
@@ -17,3 +30,12 @@ scale = 2
 model = "realesrgan-x4plus"
 model_scale = 4
 wrap_border = 16
+preserve_brightness = ["bitmaps"]  # Sections whose upscaled images are rescaled to the mean brightness of the source.
+max_brightness_factor = 3.0  # Cap per channel, so a channel the model left nearly black does not turn into speckles.
+
+[maps]
+strength = 2.0  # How steep the normal map makes luminance edges. These are stone and wood walls, keep it low.
+blur = 1.0  # Gaussian blur radius on the height, in pixels of the upscaled image.
+roughness_baseline = 90  # Reproduces the stock specular.
+roughness_range = 40  # Most the roughness strays from the baseline, for the busiest and the calmest areas.
+wrap_border = 8

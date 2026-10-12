@@ -20,14 +20,22 @@ def load_config(path: Path | None) -> dict:
         return tomllib.load(file)
 
 
-def choose(config: dict, section: str, name: str, backend: str | None = None, scale: int | None = None) -> Choice:
-    """Picks the backend and scale for one image. Explicit `backend` and `scale` win over the config."""
-    rule = next((rule for rule in config.get("rule", []) if _rule_matches(rule, section, name)), config["default"])
+def choose(
+    config: dict, section: str, name: str, width: int, backend: str | None = None, scale: int | None = None
+) -> Choice:
+    """Picks the backend and scale for one image of `width` pixels. Explicit `backend` and `scale` win."""
+    rule = next(
+        (rule for rule in config.get("rule", []) if _rule_matches(rule, section, name, width)), config["default"]
+    )
     choice = Choice(backend or rule["backend"], scale or rule["scale"])
     if choice.scale not in SCALES:
         raise ValueError(f"scale must be one of {SCALES}, got {choice.scale}")
     return choice
 
 
-def _rule_matches(rule: dict, section: str, name: str) -> bool:
-    return rule.get("section", section) == section and fnmatch.fnmatchcase(name, rule.get("match", "*"))
+def _rule_matches(rule: dict, section: str, name: str, width: int) -> bool:
+    return (
+        rule.get("section", section) == section
+        and fnmatch.fnmatchcase(name, rule.get("match", "*"))
+        and width <= rule.get("max_width", width)
+    )
