@@ -95,6 +95,14 @@ add_subdirectory(generator EXCLUDE_FROM_ALL)
 # lambda2
 add_subdirectory(lambda2)
 
+# openxr
+if(OE_BUILD_VR)
+    set(DYNAMIC_LOADER OFF)
+    set(BUILD_TESTS OFF) # cmrc declares a global BUILD_TESTS cache option that defaults to ON.
+    add_subdirectory(openxr EXCLUDE_FROM_ALL)
+    set_target_properties(openxr_loader PROPERTIES MSVC_RUNTIME_LIBRARY "${CMAKE_MSVC_RUNTIME_LIBRARY}") # The loader hardcodes /MD for static builds.
+endif()
+
 # ztd.text
 set(ZTD_IDK_EXCLUDE_FROM_ALL ON)
 add_subdirectory(ztd_text EXCLUDE_FROM_ALL)

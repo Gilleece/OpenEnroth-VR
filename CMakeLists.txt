@@ -40,9 +40,18 @@ set(OE_USE_LD_MOLD ON CACHE BOOL "Use mold linker if available.")
 set(OE_USE_LD_LLD ON CACHE BOOL "Use lld linker if available, note that mold takes precedence.")
 set(OE_DISTRIBUTION_BUILD OFF CACHE BOOL "Specify that this is a build for distribution, not a dev build.")
 set(OE_USE_SANITIZERS "" CACHE STRING "Sanitizers to build with, passed on to -fsanitize=. Empty string disables sanitizers.")
+set(OE_BUILD_VR OFF CACHE BOOL "Build OpenXR VR support, windows only.")
 
 if(OE_DISTRIBUTION_BUILD)
     add_compile_definitions(OE_DISTRIBUTION_BUILD)
+endif()
+
+if(OE_BUILD_VR AND NOT OE_BUILD_PLATFORM STREQUAL "windows")
+    message(STATUS "OE_BUILD_VR is only supported on windows, turning it off.")
+    set(OE_BUILD_VR OFF CACHE BOOL "Build OpenXR VR support, windows only." FORCE)
+endif()
+if(OE_BUILD_VR)
+    add_compile_definitions(OE_BUILD_VR)
 endif()
 
 # Find ccache / sccache.
