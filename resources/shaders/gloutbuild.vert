@@ -10,6 +10,10 @@ flat out float olayer;
 out vec3 vsPos;
 out vec3 vsNorm;
 flat out int vsAttrib;
+#ifdef MATERIAL_MAPS
+out vec3 vsCameraOffset;
+uniform vec3 CameraPos;
+#endif
 out vec4 viewspace;
 
 uniform mat4 view;
@@ -27,4 +31,7 @@ void main() {
     vsPos = vaPos;
     vsNorm = vaNormal;
     vsAttrib = int(vaAttrib);
+#ifdef MATERIAL_MAPS
+    vsCameraOffset = vaPos - CameraPos;
+#endif
 }

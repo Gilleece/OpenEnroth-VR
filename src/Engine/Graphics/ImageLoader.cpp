@@ -96,6 +96,10 @@ RgbaImage Bitmaps_LOD_Loader::loadTextureRgba() {
     return resources()->packBitmap(name());
 }
 
+RgbaImage Bitmaps_LOD_Loader::loadMaterialRgba(Sizei textureSize) {
+    return resources()->packBitmapMaterial(name(), textureSize);
+}
+
 RgbaImage Bitmaps_GEN_Loader::loadRgba() {
     return resources()->generated(name());
 }

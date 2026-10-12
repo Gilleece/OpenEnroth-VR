@@ -175,6 +175,7 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<OpenGLVertexBuffer<ShaderVertex>, 16> _outbuildBuffers;
     std::array<std::vector<ShaderVertex>, 16> _outbuildVertices;
     GLuint outbuildtextures[16]{};
+    GLuint outbuildmaterials[16]{}; // Material arrays next to outbuildtextures, 0 for units without materials.
     unsigned int numoutbuildtexloaded[16]{};
     unsigned int outbuildtexturewidths[16]{};
     unsigned int outbuildtextureheights[16]{};
@@ -184,6 +185,7 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<OpenGLVertexBuffer<ShaderVertex>, 16> _bspBuffers;
     std::array<std::vector<ShaderVertex>, 16> _bspVertices;
     GLuint bsptextures[16]{};
+    GLuint bspmaterials[16]{}; // Material arrays next to bsptextures, 0 for units without materials.
     unsigned int bsptexloaded[16]{};
     unsigned int bsptexturewidths[16]{};
     unsigned int bsptextureheights[16]{};

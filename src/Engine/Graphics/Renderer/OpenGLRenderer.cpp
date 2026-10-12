@@ -65,6 +65,7 @@
 #endif
 
 static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
+static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
 static constexpr int PALETTE_COUNT = 1000; // pal000 to pal999 in bitmaps.lod.
 
 
@@ -209,6 +210,26 @@ static void setMipmappedFilter(GLenum target) {
 }
 
 /**
+ * Uploads pixels into a layer of the bound texture array.
+ *
+ * @param pixels                        Pixels to upload, `pixelScale` times the logical size of the array's layers.
+ * @param pixelScale                    Scale of `pixels`.
+ * @param layer                         Array layer to upload into.
+ * @param width                         Logical width of the array's layers.
+ * @param height                        Logical height of the array's layers.
+ * @param scale                         Scale of the array, a multiple of `pixelScale`. The pixels are upscaled to it.
+ */
+static void uploadArrayLayer(RgbaImageView pixels, int pixelScale, int layer, int width, int height, int scale) {
+    RgbaImage scaled;
+    if (pixelScale != scale) {
+        scaled = scaleNearest(pixels, scale / pixelScale);
+        pixels = scaled;
+    }
+
+    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width * scale, height * scale, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels.pixels().data());
+}
+
+/**
  * Uploads a texture into a layer of the bound texture array.
  *
  * @param texture                       Texture to upload.
@@ -219,14 +240,50 @@ static void setMipmappedFilter(GLenum target) {
  *                                      upscaled to it.
  */
 static void uploadArrayLayer(GraphicsImage *texture, int layer, int width, int height, int scale) {
-    RgbaImageView pixels = texture->textureRgba();
-    RgbaImage scaled;
-    if (texture->textureScale() != scale) {
-        scaled = scaleNearest(pixels, scale / texture->textureScale());
-        pixels = scaled;
+    uploadArrayLayer(texture->textureRgba(), texture->textureScale(), layer, width, height, scale);
+}
+
+/**
+ * Creates the material array that goes next to a texture array. Each layer holds the material of the texture in the
+ * same layer of the texture array, or zeros if that texture has no material.
+ *
+ * @param layers                        The texture array's textures, each with the layer it's in.
+ * @param layerCount                    Number of layers in the texture array.
+ * @param width                         Logical width of the array's layers.
+ * @param height                        Logical height of the array's layers.
+ * @param scale                         Scale of the texture array.
+ * @param wrap                          Wrap mode of the texture array.
+ * @return                              The material array, bound to `GL_TEXTURE0`, or 0 if none of the textures has
+ *                                      a material.
+ */
+static GLuint createMaterialArray(std::span<const std::pair<GraphicsImage *, int>> layers, int layerCount, int width, int height, int scale, GLint wrap) {
+    bool hasMaterials = std::ranges::any_of(layers, [](const auto &layer) { return static_cast<bool>(layer.first->materialRgba()); });
+    if (!hasMaterials)
+        return 0;
+
+    GLuint result = 0;
+    glGenTextures(1, &result);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, result);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, width * scale, height * scale, layerCount, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    RgbaImage noMaterial = RgbaImage::solid(Color(), width * scale, height * scale);
+    for (const auto &[texture, layer] : layers) {
+        if (RgbaImageView material = texture->materialRgba()) {
+            uploadArrayLayer(material, texture->textureScale(), layer, width, height, scale);
+        } else {
+            uploadArrayLayer(noMaterial, scale, layer, width, height, scale);
+        }
     }
 
-    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width * scale, height * scale, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels.pixels().data());
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, wrap);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, wrap);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    if (scale > 1)
+        setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
+    return result;
 }
 
 static int waterAnimationFrame() {
@@ -2446,6 +2503,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
 
             // create blank memory for later texture submission
             glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, outbuildtexturewidths[unit] * scale, outbuildtextureheights[unit] * scale, numoutbuildtexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            std::vector<std::pair<GraphicsImage *, int>> layers;
             std::map<std::string, int>::iterator it = outbuildtexmap.begin();
             while (it != outbuildtexmap.end()) {
                 // skip if wtrtyl
@@ -2464,6 +2522,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
                     auto texture = assets->getBitmap(it->first);
 
                     uploadArrayLayer(texture, tlayer, outbuildtexturewidths[unit], outbuildtextureheights[unit], scale);
+                    layers.emplace_back(texture, tlayer);
                 }
 
                 it++;
@@ -2485,6 +2544,8 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
             glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
             if (scale > 1)
                 setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
+
+            outbuildmaterials[unit] = createMaterialArray(layers, numoutbuildtexloaded[unit], outbuildtexturewidths[unit], outbuildtextureheights[unit], scale, GL_REPEAT);
         }
     }
 
@@ -2682,19 +2743,30 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
 
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(outbuildshader);
+    bool hasMaterials = std::ranges::any_of(outbuildmaterials, [](GLuint id) { return id != 0; });
+    if (hasMaterials) {
+        outbuildmaterialshader.use();
+        uniforms.submit(outbuildmaterialshader);
+        glUniform1i(outbuildmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
+    }
 
     glActiveTexture(GL_TEXTURE0);
 
     for (int unit = 0; unit < 16; unit++) {
         // skip if textures are empty
         //if (numoutbuildtexloaded[unit] > 0) {
-            if (unit == 1) {
-                glUniform1i(outbuildshader.uniformLocation("watertiles"), GLint(0));
+            OpenGLShader &shader = outbuildmaterials[unit] ? outbuildmaterialshader : outbuildshader;
+            shader.use();
+            glUniform1i(shader.uniformLocation("watertiles"), GLint(unit == 0));
+            if (outbuildmaterials[unit]) {
+                glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
+                glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildmaterials[unit]);
+                glActiveTexture(GL_TEXTURE0);
             }
 
             // draw each set of triangles
             glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildtextures[unit]);
-            glUniform2i(outbuildshader.uniformLocation("logicaltexsize"), outbuildtexturewidths[unit], outbuildtextureheights[unit]);
+            glUniform2i(shader.uniformLocation("logicaltexsize"), outbuildtexturewidths[unit], outbuildtextureheights[unit]);
             _outbuildBuffers[unit].bind();
             glDrawArrays(GL_TRIANGLES, 0, _outbuildVertices[unit].size());
             drawcalls++;
@@ -2864,6 +2936,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
                 glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, bsptexturewidths[unit] * scale, bsptextureheights[unit] * scale, bsptexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
+                std::vector<std::pair<GraphicsImage *, int>> layers;
                 std::map<std::string, int>::iterator it = bsptexmap.begin();
                 while (it != bsptexmap.end()) {
                     int comb = it->second;
@@ -2875,6 +2948,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
                         auto texture = assets->getBitmap(it->first);
 
                         uploadArrayLayer(texture, tlayer, bsptexturewidths[unit], bsptextureheights[unit], scale);
+                        layers.emplace_back(texture, tlayer);
 
                         //numterraintexloaded[0]++;
                     }
@@ -2893,6 +2967,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
                 glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
                 if (scale > 1)
                     setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
+
+                bspmaterials[unit] = createMaterialArray(layers, bsptexloaded[unit], bsptexturewidths[unit], bsptextureheights[unit], scale, GL_REPEAT);
             }
         }
 
@@ -3148,22 +3224,30 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
         // remaining lights are default-initialized (type = 0)
         uniforms.submit(bspshader);
-
-        // toggle for water faces or not
-        glUniform1i(bspshader.uniformLocation("watertiles"), GLint(1));
+        bool hasMaterials = std::ranges::any_of(bspmaterials, [](GLuint id) { return id != 0; });
+        if (hasMaterials) {
+            bspmaterialshader.use();
+            uniforms.submit(bspmaterialshader);
+            glUniform1i(bspmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
+        }
 
         glActiveTexture(GL_TEXTURE0);
 
         for (int unit = 0; unit < 16; unit++) {
             // skip if textures are empty
             //if (numoutbuildtexloaded[unit] > 0) {
-            if (unit == 1) {
-                glUniform1i(bspshader.uniformLocation("watertiles"), GLint(0));
+            OpenGLShader &shader = bspmaterials[unit] ? bspmaterialshader : bspshader;
+            shader.use();
+            glUniform1i(shader.uniformLocation("watertiles"), GLint(unit == 0)); // toggle for water faces or not
+            if (bspmaterials[unit]) {
+                glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
+                glBindTexture(GL_TEXTURE_2D_ARRAY, bspmaterials[unit]);
+                glActiveTexture(GL_TEXTURE0);
             }
 
             // draw each set of triangles
             glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
-            glUniform2i(bspshader.uniformLocation("logicaltexsize"), bsptexturewidths[unit], bsptextureheights[unit]);
+            glUniform2i(shader.uniformLocation("logicaltexsize"), bsptexturewidths[unit], bsptextureheights[unit]);
             _bspBuffers[unit].bind();
             glDrawArrays(GL_TRIANGLES, 0, _bspVertices[unit].size());
             drawcalls++;
@@ -3511,6 +3595,8 @@ void OpenGLRenderer::ReleaseTerrain() {
     for (int i = 0; i < 16; i++) {
         glDeleteTextures(1, &outbuildtextures[i]);
         outbuildtextures[i] = 0;
+        glDeleteTextures(1, &outbuildmaterials[i]);
+        outbuildmaterials[i] = 0;
         numoutbuildtexloaded[i] = 0;
         outbuildtexturewidths[i] = 0;
         outbuildtextureheights[i] = 0;
@@ -3532,6 +3618,8 @@ void OpenGLRenderer::ReleaseBSP() {
     for (int i = 0; i < 16; i++) {
         glDeleteTextures(1, &bsptextures[i]);
         bsptextures[i] = 0;
+        glDeleteTextures(1, &bspmaterials[i]);
+        bspmaterials[i] = 0;
         bsptexloaded[i] = 0;
         bsptexturewidths[i] = 0;
         bsptextureheights[i] = 0;

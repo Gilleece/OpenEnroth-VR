@@ -32,6 +32,14 @@ class ImageLoader {
      */
     virtual RgbaImage loadTextureRgba() { return {}; }
 
+    /**
+     * @param textureSize               Size of the image the material belongs to, the one `loadTextureRgba()`
+     *                                  returns, or `loadSize()` if there is no replacement.
+     * @return                          Normal and roughness maps for the image as `TexturePack::materialImage()`
+     *                                  combines them, sized `textureSize`, or an empty image if there are none.
+     */
+    virtual RgbaImage loadMaterialRgba(Sizei textureSize) { return {}; }
+
  protected:
     ResourceManager *resources() const { return _resources; }
 
@@ -64,6 +72,7 @@ class Bitmaps_LOD_Loader : public ImageLoader {
     virtual RgbaImage loadRgba() override;
     virtual Sizei loadSize() override;
     virtual RgbaImage loadTextureRgba() override;
+    virtual RgbaImage loadMaterialRgba(Sizei textureSize) override;
 };
 
 class Bitmaps_GEN_Loader : public ImageLoader {

@@ -28,6 +28,7 @@ std::unique_ptr<GraphicsImage> GraphicsImage::Create(RgbaImage image) {
     result->_size = image.size();
     result->_rgba = std::move(image);
     result->_textureRgba = RgbaImage();
+    result->_materialRgba = RgbaImage();
     result->_renderId = render->CreateTexture(*result->_rgba, TEXTURE_FILTER_LINEAR);
     return result;
 }
@@ -84,6 +85,15 @@ RgbaImageView GraphicsImage::textureRgba() {
 int GraphicsImage::textureScale() {
     RgbaImageView texture = textureRgba();
     return texture.width() == width() ? 1 : texture.width() / width();
+}
+
+RgbaImageView GraphicsImage::materialRgba() {
+    if (!_materialRgba) {
+        Sizei textureSize = textureRgba().size();
+        _materialRgba = _loader->loadMaterialRgba(textureSize);
+        assert(!*_materialRgba || _materialRgba->size() == textureSize);
+    }
+    return *_materialRgba;
 }
 
 const std::string &GraphicsImage::name() {
