@@ -7,6 +7,7 @@
 #include <utility>
 #include <thread>
 #include <memory>
+#include <optional>
 
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Objects/Decoration.h"
@@ -272,7 +273,7 @@ void AudioPlayer::playSound(SoundId eSoundID, SoundPlaybackMode mode, Pid pid) {
 
                 // TODO(pskelton): Vanilla sounds like it does unique id but as exclusives
                 // Actors play unique sounds between them. Avoids issues where in a real time mob you are hit with a cacophony of overlapping attack noises.
-                result = _regularSoundPool.playUniqueSoundId(sample, si->dataSource, eSoundID, true);
+                result = _regularSoundPool.playUniqueSoundId(sample, si->dataSource, eSoundID, true, pid);
 
                 break;
             }
@@ -284,7 +285,7 @@ void AudioPlayer::playSound(SoundId eSoundID, SoundPlaybackMode mode, Pid pid) {
                                     pLevelDecorations[object_id].vPosition.y,
                                     pLevelDecorations[object_id].vPosition.z, MAX_SOUND_DIST);
 
-                result = _loopingSoundPool.playNew(sample, si->dataSource, true);
+                result = _loopingSoundPool.playNew(sample, si->dataSource, true, pid);
 
                 break;
             }
@@ -374,16 +375,38 @@ bool AudioPlayer::loadSoundDataSource(SoundInfo* si) {
     return true;
 }
 
-void AudioPlayer::UpdateSounds() {
-    float pitch = M_PI * pParty->_viewPitch / 1024.f;
-    float yaw = M_PI * pParty->_viewYaw / 1024.f;
+static std::optional<Vec3f> objectPosition(Pid pid) {
+    int id = pid.id();
+    switch (pid.type()) {
+        case OBJECT_Actor:
+            if (id < pActors.size())
+                return pActors[id].pos;
+            break;
+        case OBJECT_Sprite:
+            if (id < pSpriteObjects.size() && pSpriteObjects[id].uObjectDescID)
+                return pSpriteObjects[id].vPosition;
+            break;
+        case OBJECT_Decoration:
+            if (id < pLevelDecorations.size())
+                return pLevelDecorations[id].vPosition;
+            break;
+        default:
+            break;
+    }
+    return std::nullopt;
+}
 
-    provider->SetOrientation(yaw, pitch);
-    provider->SetListenerPosition(pParty->pos.x, pParty->pos.y, pParty->pos.z);
+void AudioPlayer::UpdateSounds() {
+    Vec3f eyePosition = pParty->pos + Vec3f(0, 0, pParty->eyeLevel);
+    Vec3f forward = Vec3f::fromPolar(1.0f, pParty->_viewYaw, pParty->_viewPitch);
+    Vec3f up = Vec3f::fromPolar(1.0f, pParty->_viewYaw, pParty->_viewPitch + TrigLUT.uIntegerHalfPi);
+    provider->SetListener(eyePosition, forward, up);
 
     _voiceSoundPool.update();
     _regularSoundPool.update();
     _loopingSoundPool.update();
+    _regularSoundPool.updatePositions(objectPosition);
+    _loopingSoundPool.updatePositions(objectPosition);
 
     if (current_screen_type != SCREEN_GAME) {
         stopWalkingSounds();
