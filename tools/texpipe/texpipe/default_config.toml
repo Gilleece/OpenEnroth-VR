@@ -26,6 +26,13 @@ match = "*"
 backend = "realesrgan"
 scale = 2
 
+# Sprites have no wrapped border and get the same narrow image padding as icons.
+[[rule]]
+section = "sprites"
+match = "*"
+backend = "realesrgan"
+scale = 2
+
 [realesrgan]
 model = "realesrgan-x4plus"
 model_scale = 4

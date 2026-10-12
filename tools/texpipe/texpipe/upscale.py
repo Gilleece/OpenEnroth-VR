@@ -10,9 +10,19 @@ from texpipe.backends.nearest import NearestBackend
 from texpipe.backends.realesrgan import RealEsrganBackend
 from texpipe.brightness import match_brightness
 from texpipe.config import Choice, choose
-from texpipe.workdir import UpscaledImage, WorkImage, images_dir, load_image_infos, save_upscaled_info, upscaled_dir
+from texpipe.workdir import (
+    UpscaledImage,
+    WorkImage,
+    images_dir,
+    is_up_to_date,
+    load_image_infos,
+    load_upscaled_info,
+    save_upscaled_info,
+    upscaled_dir,
+)
 
 BACKENDS = ("nearest", "realesrgan")
+BATCH_SIZE = 1000
 
 
 def make_backend(name: str, config: dict, binary: Path | None):
@@ -40,26 +50,55 @@ def preserve_brightness(job: Job, max_factor: float) -> list[float]:
     return [round(factor, 4) for factor in factors]
 
 
-def plan(work: Path, config: dict, only: list[str] | None, backend: str | None, scale: int | None):
-    """Groups the images to upscale by the backend and scale they get."""
+def is_done(work: Path, image: WorkImage, choice: Choice) -> bool:
+    """True if the image was already upscaled the same way, from the source as it is now."""
+    info = load_upscaled_info(work, image)
+    if info is None or (info.backend, info.scale) != (choice.backend, choice.scale):
+        return False
+    job = make_job(work, image, choice.scale)
+    return is_up_to_date([job.target], [job.source])
+
+
+def plan(work: Path, config: dict, only: list[str] | None, backend: str | None, scale: int | None, force: bool = False):
+    """Groups the images to upscale by the backend and scale they get. Returns the groups and how many were done."""
     groups: dict[Choice, list[WorkImage]] = defaultdict(list)
+    done = 0
     for image in load_image_infos(work, only):
-        groups[choose(config, image.section, image.name, image.width, backend, scale)].append(image)
-    return groups
+        choice = choose(config, image.section, image.name, image.width, backend, scale)
+        if not force and is_done(work, image, choice):
+            done += 1
+        else:
+            groups[choice].append(image)
+    return groups, done
 
 
 def run_upscale(
-    work: Path, config: dict, only: list[str] | None, backend: str | None, scale: int | None, binary: Path | None
+    work: Path,
+    config: dict,
+    only: list[str] | None,
+    backend: str | None,
+    scale: int | None,
+    binary: Path | None,
+    force: bool = False,
 ) -> dict[str, int]:
-    """Upscales and returns how many images each backend and scale handled."""
-    counts = {}
-    for choice, images in plan(work, config, only, backend, scale).items():
-        jobs = [make_job(work, image, choice.scale) for image in images]
-        make_backend(choice.backend, config, binary).run(jobs)
+    """Upscales what is not done yet and returns how many images each backend and scale handled."""
+    groups, done = plan(work, config, only, backend, scale, force)
+    counts = {"up to date": done}
+    for choice, images in groups.items():
+        backend_object = make_backend(choice.backend, config, binary)
         options = config.get(choice.backend, {})
-        preserve, max_factor = options.get("preserve_brightness", []), options.get("max_brightness_factor", 3.0)
-        for image, job in zip(images, jobs, strict=True):
-            factors = preserve_brightness(job, max_factor) if image.section in preserve else None
-            save_upscaled_info(work, image, UpscaledImage(choice.backend, choice.scale, factors))
+        batch_size = options.get("batch_size", BATCH_SIZE)
+        for start in range(0, len(images), batch_size):
+            _run_batch(work, backend_object, choice, options, images[start : start + batch_size])
         counts[f"{choice.backend} {choice.scale}x"] = len(images)
     return counts
+
+
+def _run_batch(work: Path, backend, choice: Choice, options: dict, images: list[WorkImage]) -> None:
+    """Upscales one batch and records it as done, so an interrupted run keeps every finished batch."""
+    jobs = [make_job(work, image, choice.scale) for image in images]
+    backend.run(jobs)
+    preserve, max_factor = options.get("preserve_brightness", []), options.get("max_brightness_factor", 3.0)
+    for image, job in zip(images, jobs, strict=True):
+        factors = preserve_brightness(job, max_factor) if image.section in preserve else None
+        save_upscaled_info(work, image, UpscaledImage(choice.backend, choice.scale, factors))

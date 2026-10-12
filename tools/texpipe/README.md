@@ -33,6 +33,16 @@ check that a pack matches the installed game. `summary.json` lists what was skip
 python -m texpipe extract --data ../../mm7 --out ../../mm7_hd/work --lodtool <path to LodTool>
 ```
 
+With `--sprites --palettes <file>`, extract also writes one image per sprite and palette it is drawn with. The game
+colors a sprite with palettes from the sprite frame table, which only the engine reads, so make the file first with
+`OpenEnroth dump-sprite-palettes <file>`. Palette index 0 is transparent, and like other transparent pixels it takes
+the average color of its opaque neighbours, so filtering does not darken the edges.
+
+Extract and upscale skip what is already done. LodTool only runs again when a LOD file changed, and an image is only
+redone when its output is older than its inputs, or for upscale was made with another backend or scale. Pass
+`--force` to redo everything. The realesrgan backend works in batches of 1000 images, so an interrupted run keeps the
+batches it finished.
+
 **upscale** runs the extracted images through a backend at 2x or 4x:
 
 - `nearest` is plain nearest neighbour scaling. It changes nothing but the size, which makes it the way to test the
@@ -64,8 +74,9 @@ python -m texpipe maps --work ../../mm7_hd/work
 ```
 
 **pack** writes the pack folder: `manifest.json`, `bitmaps/` and `icons/` with one PNG per LOD entry, the maps under
-`normal/bitmaps/` and `roughness/bitmaps/`, and a `README.txt`. `--colors raw`, the default, says the images have the LOD palette colors, and the engine applies its
-saturation and lightness to bitmaps as it does for the originals. Use `--colors final` only if you have graded the
+`normal/bitmaps/` and `roughness/bitmaps/`, sprites as `sprites/<entry>/<palette id>.png`, and a `README.txt`.
+`--colors raw`, the default, says the images have the LOD palette colors, and the engine applies its saturation and
+lightness settings to the pack's bitmaps and sprites. Use `--colors final` only if you have graded the
 upscaled images yourself.
 
 ```
