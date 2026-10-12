@@ -1,7 +1,6 @@
 name: Linux (Flatpak)
 
 on:
-  pull_request:
   workflow_dispatch:
     inputs:
       myCommit:
