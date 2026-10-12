@@ -62,8 +62,10 @@ void CompositeUniforms::submit(const OpenGLShader &shader) const {
 void BloomUniforms::submit(const OpenGLShader &shader) const {
     glUniform1i(shader.uniformLocation("source"), source);
     glUniform2f(shader.uniformLocation("texelSize"), texelSize.x, texelSize.y);
-    glUniform1i(shader.uniformLocation("brightPass"), brightPass);
-    glUniform1f(shader.uniformLocation("threshold"), threshold);
+    if (!shader.hasDefine("BLOOM_UPSAMPLE")) {
+        glUniform1i(shader.uniformLocation("brightPass"), brightPass);
+        glUniform1f(shader.uniformLocation("threshold"), threshold);
+    }
 }
 
 void SkyUniforms::submit(const OpenGLShader &shader) const {
@@ -84,7 +86,8 @@ void SkyUniforms::submit(const OpenGLShader &shader) const {
 void BillboardUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);
-    glUniform1f(shader.uniformLocation("gamma"), gamma);
+    if (!shader.hasDefine("LINEAR_PIPELINE"))
+        glUniform1f(shader.uniformLocation("gamma"), gamma); // The composite applies gamma with the linear pipeline.
     glUniform1i(shader.uniformLocation("paltex2D"), paltex2D);
     glUniform1i(shader.uniformLocation("texture0"), texture0);
     fog.submit(shader);
@@ -117,7 +120,8 @@ void TerrainUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);
     glUniform3f(shader.uniformLocation("CameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
-    glUniform1f(shader.uniformLocation("gamma"), gamma);
+    if (!shader.hasDefine("LINEAR_PIPELINE"))
+        glUniform1f(shader.uniformLocation("gamma"), gamma); // The composite applies gamma with the linear pipeline.
     glUniform1i(shader.uniformLocation("waterframe"), waterframe);
     glUniform1i(shader.uniformLocation("textureArray0"), textureArray0);
     glUniform1i(shader.uniformLocation("textureArray1"), textureArray1);
@@ -130,7 +134,8 @@ void OutBuildUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);
     glUniform3f(shader.uniformLocation("CameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
-    glUniform1f(shader.uniformLocation("gamma"), gamma);
+    if (!shader.hasDefine("LINEAR_PIPELINE"))
+        glUniform1f(shader.uniformLocation("gamma"), gamma); // The composite applies gamma with the linear pipeline.
     glUniform1i(shader.uniformLocation("waterframe"), waterframe);
     glUniform1i(shader.uniformLocation("flowtimer"), flowtimer);
     glUniform1i(shader.uniformLocation("flowtimerms"), flowtimerms);
@@ -145,7 +150,8 @@ void BSPUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);
     glUniform3f(shader.uniformLocation("CameraPos"), cameraPos.x, cameraPos.y, cameraPos.z);
-    glUniform1f(shader.uniformLocation("gamma"), gamma);
+    if (!shader.hasDefine("LINEAR_PIPELINE"))
+        glUniform1f(shader.uniformLocation("gamma"), gamma); // The composite applies gamma with the linear pipeline.
     glUniform1i(shader.uniformLocation("waterframe"), waterframe);
     glUniform1i(shader.uniformLocation("flowtimer"), flowtimer);
     glUniform1i(shader.uniformLocation("flowtimerms"), flowtimerms);

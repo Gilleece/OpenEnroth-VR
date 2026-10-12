@@ -1,5 +1,6 @@
 #include "OpenGLShader.h"
 
+#include <algorithm>
 #include <cassert>
 #include <string>
 
@@ -66,6 +67,7 @@ bool OpenGLShader::load(const Blob &vertSource, const Blob &fragSource, bool ope
 
     _id = result;
     _paths = fmt::format("{}+{}", vertSource.displayPath(), fragSource.displayPath());
+    _defines.assign(defines.begin(), defines.end());
     return true;
 }
 
@@ -84,6 +86,10 @@ int OpenGLShader::uniformLocation(const char *name) const {
     if (location == -1)
         MM_ERROR("Uniform '{}' not found in shader program '{}'", name, _paths);
     return location;
+}
+
+bool OpenGLShader::hasDefine(std::string_view name) const {
+    return std::ranges::contains(_defines, name);
 }
 
 void OpenGLShader::use() {

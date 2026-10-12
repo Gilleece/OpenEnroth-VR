@@ -3,6 +3,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "Utility/Memory/Blob.h"
 
@@ -36,6 +37,14 @@ class OpenGLShader {
     void release();
 
     [[nodiscard]] int uniformLocation(const char *name) const;
+
+    /**
+     * @param name                      Macro name.
+     * @return                          Whether the program was compiled with `name` defined. Uniforms that only a
+     *                                  variant uses must only be set on that variant, `uniformLocation` logs every
+     *                                  uniform it can't find.
+     */
+    [[nodiscard]] bool hasDefine(std::string_view name) const;
     // No attribLocation() - use vertex buffers.
 
     void use();
@@ -48,4 +57,5 @@ class OpenGLShader {
  private:
     unsigned _id = 0;
     std::string _paths;
+    std::vector<std::string> _defines;
 };
