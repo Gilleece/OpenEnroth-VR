@@ -14,9 +14,11 @@ target_link_libraries(engine_vr
         engine
         engine_graphics
         engine_graphics_renderer
+        library_platform_filters
         library_platform_proxy
         openxr_loader
         PRIVATE
-        glad)
+        glad
+        io)
 
 target_compile_definitions(engine_vr PRIVATE XR_USE_PLATFORM_WIN32 XR_USE_GRAPHICS_API_OPENGL)

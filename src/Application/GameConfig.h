@@ -720,6 +720,13 @@ class GameConfig : public Config {
         Bool MinimalHud = {this, "minimal_hud", false,
             "Hide the frame around the world view and keep only the portraits, status bar and compass."};
 
+        Key Recenter = {this, INPUT_ACTION_VR_RECENTER, "recenter", PlatformKey::KEY_F8,
+            "Key that makes the current head position and facing the centre of the VR view."};
+
+        Float HeadOffsetRadius = {this, "head_offset_radius", 0.3f, &ValidateHeadOffsetRadius,
+            "How far in metres the eyes can move away from the centre of the VR view. The default keeps them inside "
+            "the party's collision volume, so that leaning can't put them past a wall or a ceiling the party touches."};
+
      private:
         static float ValidateUiDistance(float distance) {
             return std::clamp(distance, 0.3f, 10.0f);
@@ -729,6 +736,9 @@ class GameConfig : public Config {
         }
         static int ValidateSnapTurnDegrees(int degrees) {
             return std::clamp(degrees, 5, 180);
+        }
+        static float ValidateHeadOffsetRadius(float radius) {
+            return std::clamp(radius, 0.0f, 10.0f);
         }
     };
 

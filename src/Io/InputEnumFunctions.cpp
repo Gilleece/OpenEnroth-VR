@@ -164,6 +164,7 @@ static constexpr IndexedArray<InputActionTriggerMode, INPUT_ACTION_FIRST_VALID, 
     {INPUT_ACTION_ARCOMAGE_DISCARD,     TRIGGER_ONCE},
     {INPUT_ACTION_ARCOMAGE_LEFT,        TRIGGER_ONCE},
     {INPUT_ACTION_ARCOMAGE_RIGHT,       TRIGGER_ONCE},
+    {INPUT_ACTION_VR_RECENTER,          TRIGGER_ONCE},
 };
 
 InputActionTriggerMode triggerModeForInputAction(InputAction action) {

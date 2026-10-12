@@ -9,6 +9,7 @@
 #include "Engine/Graphics/WorldFrameViews.h"
 
 #include "Library/Geometry/Size.h"
+#include "Library/Platform/Filters/PlatformEventFilter.h"
 #include "Library/Platform/Proxy/ProxyOpenGLContext.h"
 
 struct CameraView;
@@ -19,8 +20,11 @@ struct CameraView;
  * Installed as an application component, it ends the headset frame before every buffer swap and waits for and begins
  * the next one after it, so that every path that presents a frame keeps the headset in step. In between, the engine
  * calls `drawViews` with the prepared world frame, and it's drawn once per eye.
+ *
+ * Eye poses are taken relative to a head origin, the head pose on the first tracked frame once the session is focused,
+ * levelled to its yaw. The `vr.recenter` key captures it again.
  */
-class VrSystem : private ProxyOpenGLContext, public WorldFrameViews {
+class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public WorldFrameViews {
  public:
     VrSystem();
     virtual ~VrSystem();
@@ -45,6 +49,7 @@ class VrSystem : private ProxyOpenGLContext, public WorldFrameViews {
     };
 
     virtual void swapBuffers() override;
+    virtual bool keyPressEvent(const PlatformKeyEvent *event) override;
 
     /**
      * @param result                    Result of an OpenXR call.
@@ -71,6 +76,15 @@ class VrSystem : private ProxyOpenGLContext, public WorldFrameViews {
     void endFrame();
 
     /**
+     * Locates the head in the runtime's LOCAL space and makes a reference space with its origin there, turned to the
+     * head's yaw. Eye views are located in that space from then on.
+     *
+     * @param time                      Time to locate the head at.
+     * @return                          Whether the head was tracked and the space was created.
+     */
+    bool captureOrigin(XrTime time);
+
+    /**
      * Draws the prepared world frame into the next image of an eye swapchain, and fills that eye's projection view.
      *
      * @param index                     Eye index, 0 is the left eye.
@@ -94,9 +108,13 @@ class VrSystem : private ProxyOpenGLContext, public WorldFrameViews {
     XrInstance _instance = XR_NULL_HANDLE;
     XrSystemId _systemId = XR_NULL_SYSTEM_ID;
     XrSession _session = XR_NULL_HANDLE;
-    XrSpace _space = XR_NULL_HANDLE;
+    XrSpace _localSpace = XR_NULL_HANDLE;
+    XrSpace _viewSpace = XR_NULL_HANDLE;
+    XrSpace _space = XR_NULL_HANDLE; // Head origin, null until it's captured.
     std::array<Eye, 2> _eyes;
     bool _running = false;
+    bool _focused = false;
+    bool _recenterRequested = false;
     int _desktopSwapInterval = 1;
     XrFrameState _frameState = {XR_TYPE_FRAME_STATE};
     bool _frameBegun = false;
