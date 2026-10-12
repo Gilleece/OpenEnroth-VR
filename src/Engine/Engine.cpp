@@ -14,6 +14,7 @@
 
 #include "Engine/Evt/Processor.h"
 #include "Engine/Graphics/Camera.h"
+#include "Engine/Graphics/CameraView.h"
 #include "Engine/Graphics/DecalBuilder.h"
 #include "Engine/Tables/DecorationTable.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
@@ -132,15 +133,7 @@ GameState uGameState;
 void Engine::drawWorld() {
     engine->SetSaturateFaces(pParty->checkPartyPerceptionAgainstCurrentMap());
 
-    pCamera3D->_viewPitch = pParty->_viewPitch;
-    pCamera3D->_viewYaw = pParty->_viewYaw;
-    pCamera3D->vCameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    pCamera3D->vCameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    pCamera3D->vCameraPos.z = pParty->pos.z + pParty->eyeLevel;  // 193, but real 353
-
-    pCamera3D->CalculateRotations(pParty->_viewYaw, pParty->_viewPitch);
-    pCamera3D->CreateViewMatrixAndProjectionScale();
-    pCamera3D->BuildViewFrustum();
+    pCamera3D->updateFromParty();
 
     if (pMovie_Track) {
         /*if ( !render->pRenderD3D )
@@ -150,7 +143,7 @@ void Engine::drawWorld() {
         render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
         }*/
     } else {
-        render->BeginScene3D();
+        render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
 
         // if ( !render->pRenderD3D )
         // pMouse->DrawCursorToTarget();

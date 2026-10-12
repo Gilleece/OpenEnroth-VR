@@ -9,6 +9,8 @@
 #include "Engine/ArenaEnumFunctions.h"
 #include "Engine/AssetsManager.h"
 #include "Engine/Engine.h"
+#include "Engine/Graphics/Camera.h"
+#include "Engine/Graphics/CameraView.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/Indoor.h"
@@ -277,7 +279,7 @@ void prepareArenaFight(ArenaLevel level) {
     pParty->arenaLevel = level;
 
     // TODO(pskelton): This doesnt work properly and we dont want draw calls here
-    render->BeginScene3D();
+    render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
     if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
         pIndoor->Draw();
     } else if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {

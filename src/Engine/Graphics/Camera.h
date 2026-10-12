@@ -43,6 +43,11 @@ struct Camera3D {
                            RenderVertexSoft *pVertices,
                            const Planef *CameraFrustrum);
 
+    /**
+     * Copies the party's eye position and view angles into the camera, then rebuilds the view matrix and frustum.
+     */
+    void updateFromParty();
+
     void BuildViewFrustum();
     void CreateViewMatrixAndProjectionScale();
 

@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "Engine/Engine.h"
+#include "Engine/Party.h"
 
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/Viewport.h"
@@ -99,6 +100,18 @@ void Camera3D::debug_outline_sw(RenderVertexSoft *a2,
             do_draw_debug_line_sw(&a2[i], uDiffuse32, &a2[i + 1], uDiffuse32, a5);
     }
     do_draw_debug_line_sw(&a2[uNumVertices - 1], uDiffuse32, a2, uDiffuse32, a5);
+}
+
+void Camera3D::updateFromParty() {
+    _viewPitch = pParty->_viewPitch;
+    _viewYaw = pParty->_viewYaw;
+    vCameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0);
+    vCameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0);
+    vCameraPos.z = pParty->pos.z + pParty->eyeLevel;  // 193, but real 353
+
+    CalculateRotations(pParty->_viewYaw, pParty->_viewPitch);
+    CreateViewMatrixAndProjectionScale();
+    BuildViewFrustum();
 }
 
 //----- (004376E7) --------------------------------------------------------

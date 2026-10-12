@@ -34,7 +34,7 @@ void NullRenderer::BeginLines2D() {}
 void NullRenderer::EndLines2D() {}
 void NullRenderer::RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor) {}
 
-void NullRenderer::BeginScene3D() {
+void NullRenderer::BeginScene3D(const CameraView &view) {
     // TODO(captainurist): doesn't belong here.
     uNumBillboardsToDraw = 0;
 }

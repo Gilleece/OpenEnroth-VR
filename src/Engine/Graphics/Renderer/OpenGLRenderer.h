@@ -9,6 +9,7 @@
 #include <glad/gl.h> // NOLINT: this is not a C system include.
 #include <glm/glm.hpp>
 
+#include "Engine/Graphics/CameraView.h"
 #include "Engine/Graphics/FrameLimiter.h"
 #include "BaseRenderer.h"
 
@@ -42,7 +43,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void EndLines2D() override;
     virtual void RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor) override;
 
-    virtual void BeginScene3D() override;
+    virtual void BeginScene3D(const CameraView &view) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,
@@ -206,6 +207,9 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<GraphicsImage *, 7> hd_water_tile_anim = {{}}; // Water animation textures.
 
     std::vector<GLuint> _texturesForDeletion;
+
+ private:
+    CameraView _view;
 };
 
 
