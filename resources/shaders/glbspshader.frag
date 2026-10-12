@@ -1,4 +1,7 @@
 #include "precision.glsl"
+#ifdef LINEAR_PIPELINE
+#include "colour.glsl"
+#endif
 #include "lighting.glsl"
 
 in vec4 vertexColour;
@@ -155,6 +158,10 @@ void main() {
 
     FragColour = vec4(clamps,1)  * vec4(dull,1); // result, 1.0);
 
+#ifdef LINEAR_PIPELINE
+    FragColour.rgb = srgbToLinear(FragColour.rgb);
+#else
     FragColour.rgb = pow(FragColour.rgb, vec3(1.0/gamma));
+#endif
 
 }

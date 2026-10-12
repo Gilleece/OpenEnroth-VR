@@ -6,6 +6,7 @@
 #include <cassert>
 #include <cmath>
 #include <algorithm>
+#include <array>
 #include <iterator>
 #include <memory>
 #include <utility>
@@ -69,6 +70,7 @@
 static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
+static constexpr float LINEAR_ADDITIVE_GAIN = 2.0f; // Additive billboards were made to add up in sRGB, where the sum is brighter than in linear.
 static constexpr int PALETTE_COUNT = 1000; // pal000 to pal999 in bitmaps.lod.
 
 
@@ -421,6 +423,13 @@ void OpenGLRenderer::EndScene3D() {
         return;
     }
 
+    if (_linearPipeline) {
+        _bindUiTarget(); // The 2D quads are display colours, the 2D pass draws them over the tonemapped world.
+        glEnable(GL_SCISSOR_TEST);
+        glViewport(0, 0, outputRender.w, outputRender.h);
+        return;
+    }
+
     // The queued 2D quads are in UI coordinates, this maps the game viewport onto the whole world target.
     glViewport(0, 0, target->size().w, target->size().h);
     projmat = glm::ortho(float(pViewport.x), float(pViewport.x + pViewport.w), float(pViewport.y + pViewport.h), float(pViewport.y), float(-1), float(1));
@@ -457,11 +466,49 @@ void OpenGLRenderer::compositeWorldTarget() {
 
     GLenum filter = config->graphics.WorldTargetFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
     int bottom = outputRender.h - (pViewport.y + pViewport.h);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, source->framebuffer());
-    glBlitFramebuffer(0, 0, source->size().w, source->size().h,
-                      pViewport.x, bottom, pViewport.x + pViewport.w, bottom + pViewport.h, GL_COLOR_BUFFER_BIT, filter);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    if (_linearPipeline && source == &_worldTarget) {
+        drawComposite(source->colorTexture(), Recti(pViewport.x, bottom, pViewport.w, pViewport.h), filter);
+    } else {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, source->framebuffer());
+        glBlitFramebuffer(0, 0, source->size().w, source->size().h,
+                          pViewport.x, bottom, pViewport.x + pViewport.w, bottom + pViewport.h, GL_COLOR_BUFFER_BIT, filter);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    }
     glEnable(GL_SCISSOR_TEST);
+}
+
+void OpenGLRenderer::drawComposite(GLuint source, const Recti &viewport, GLenum filter) {
+    if (!_compositeBuffer) {
+        _compositeBuffer.reset(GL_STATIC_DRAW, &CompositeVertex::pos);
+        std::array<CompositeVertex, 3> triangle = {{{Vec2f(-1, -1)}, {Vec2f(3, -1)}, {Vec2f(-1, 3)}}}; // Covers the viewport.
+        _compositeBuffer.update(triangle);
+    }
+
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glViewport(viewport.x, viewport.y, viewport.w, viewport.h);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, source);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    compositeshader.use();
+    CompositeUniforms uniforms;
+    uniforms.exposure = config->graphics.Exposure.value();
+    uniforms.gamma = GetGamma();
+    uniforms.submit(compositeshader);
+
+    _compositeBuffer.bind();
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    drawcalls++;
+    _compositeBuffer.unbind();
+
+    compositeshader.unuse();
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 TextureRenderId OpenGLRenderer::uiTargetTexture() {
@@ -865,7 +912,7 @@ void OpenGLRenderer::DrawIndoorSky(int /*uNumVertices*/, int uFaceID) {
     // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
     if (!pFace->GetTexture()) return;
 
-    if (worldSpaceBillboards()) {
+    if (worldSpaceBillboards() || _linearPipeline) { // The world space sky fades to the horizon in its shader, the fade polygons of the screen space sky come out lighter in linear.
         queueWorldIndoorSky(pFace);
         return;
     }
@@ -1231,8 +1278,20 @@ void OpenGLRenderer::_setUiBlendFunc() {
 
 RgbaImage OpenGLRenderer::makeWorldTargetScreenshot(int width, int height) {
     Sizei size = _worldTarget.size();
+    GLuint framebuffer = _worldTarget.framebuffer();
+    OpenGLRenderTarget tonemapped;
+    if (_linearPipeline) {
+        tonemapped.reset(size, RENDER_TARGET_FORMAT_RGBA8, false);
+        tonemapped.bind();
+        drawComposite(_worldTarget.colorTexture(), Recti(Pointi(0, 0), size), GL_NEAREST);
+        _bindUiTarget();
+        glEnable(GL_SCISSOR_TEST);
+        glViewport(0, 0, outputRender.w, outputRender.h);
+        framebuffer = tonemapped.framebuffer();
+    }
+
     RgbaImage pixels = RgbaImage::uninitialized(size.w, size.h);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, _worldTarget.framebuffer());
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer);
     glReadPixels(0, 0, size.w, size.h, GL_RGBA, GL_UNSIGNED_BYTE, pixels.pixels().data());
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
 
@@ -1608,7 +1667,7 @@ void OpenGLRenderer::DrawOutdoorSky() {
     if (!pOutdoor->sky_texture)
         pOutdoor->sky_texture = assets->getBitmap("plansky3"); // TODO(pskelton): do we need this?
 
-    if (worldSpaceBillboards()) {
+    if (worldSpaceBillboards() || _linearPipeline) { // The world space sky fades to the horizon in its shader, the fade polygons of the screen space sky come out lighter in linear.
         if (pOutdoor->sky_texture)
             drawWorldOutdoorSky();
         return;
@@ -2338,11 +2397,13 @@ void OpenGLRenderer::DrawBillboards() {
         if (thisblend == 0.0) {
             // disable alpha blending and enable fog for opaque items
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glUniform1f(billbshader.uniformLocation("additivegain"), 1.0f);
             glUniform1f(billbshader.uniformLocation("fog.weakDistance"), GLfloat(fog.weakDistance));
             glUniform1f(billbshader.uniformLocation("fog.strongDistance"), GLfloat(fog.strongDistance));
         } else {
             // enable blending and disable fog for transparent items
             glBlendFunc(GL_ONE, GL_ONE);
+            glUniform1f(billbshader.uniformLocation("additivegain"), LINEAR_ADDITIVE_GAIN);
             glUniform1f(billbshader.uniformLocation("fog.weakDistance"), GLfloat(fog.clipDistance));
             glUniform1f(billbshader.uniformLocation("fog.strongDistance"), GLfloat(fog.clipDistance));
         }
@@ -3805,6 +3866,12 @@ void OpenGLRenderer::_initWaterTiles() {
 bool OpenGLRenderer::Reinitialize(bool firstInit) {
     BaseRenderer::Reinitialize(firstInit);
 
+    if (firstInit) {
+        _linearPipeline = config->graphics.LinearPipeline.value() && !config->vr.Enabled.value();
+        if (config->graphics.LinearPipeline.value() && !_linearPipeline)
+            MM_INFO("The linear pipeline is not supported in VR yet, drawing the world without it.");
+    }
+
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);       // Black Background
     glClearDepthf(1.0f);
 
@@ -3820,8 +3887,13 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
 
     int worldTargetWidth = config->graphics.WorldTargetWidth.value();
     int worldTargetHeight = config->graphics.WorldTargetHeight.value();
+    if (_linearPipeline && (worldTargetWidth == 0 || worldTargetHeight == 0)) {
+        worldTargetWidth = pViewport.w;
+        worldTargetHeight = pViewport.h;
+    }
     if (worldTargetWidth > 0 && worldTargetHeight > 0) {
-        RenderTargetFormat format = config->graphics.WorldTargetHdr.value() ? RENDER_TARGET_FORMAT_RGBA16F : RENDER_TARGET_FORMAT_RGBA8;
+        bool hdr = config->graphics.WorldTargetHdr.value() || _linearPipeline;
+        RenderTargetFormat format = hdr ? RENDER_TARGET_FORMAT_RGBA16F : RENDER_TARGET_FORMAT_RGBA8;
         _worldTarget.reset(Sizei(worldTargetWidth, worldTargetHeight), format, true);
     } else {
         _worldTarget.reset();
@@ -3900,18 +3972,23 @@ bool OpenGLRenderer::ReloadShaders() {
     _skyBuffer.reset();
     _skyVertices.clear();
 
-    static constexpr std::string_view materialDefines[] = {"MATERIAL_MAPS"};
+    std::vector<std::string_view> worldDefines;
+    if (_linearPipeline)
+        worldDefines.push_back("LINEAR_PIPELINE");
+    std::vector<std::string_view> materialDefines = worldDefines;
+    materialDefines.push_back("MATERIAL_MAPS");
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
-        {&terrainshader,          "glterrain",        "Terrain",                          {}},
-        {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                {}},
-        {&bspshader,              "glbspshader",      "Indoor BSP",                       {}},
+        {&terrainshader,          "glterrain",        "Terrain",                          worldDefines},
+        {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                worldDefines},
+        {&bspshader,              "glbspshader",      "Indoor BSP",                       worldDefines},
         {&textshader,             "gltextshader",     "Text",                             {}},
         {&lineshader,             "gllinesshader",    "Lines",                            {}},
         {&twodshader,             "gltwodshader",     "2D",                               {}},
-        {&billbshader,            "glbillbshader",    "Billboards",                       {}},
-        {&decalshader,            "gldecalshader",    "Decals",                           {}},
-        {&forcepershader,         "glforcepershader", "Forced perspective",               {}},
-        {&skyshader,              "glskyshader",      "Sky",                              {}},
+        {&billbshader,            "glbillbshader",    "Billboards",                       worldDefines},
+        {&decalshader,            "gldecalshader",    "Decals",                           worldDefines},
+        {&forcepershader,         "glforcepershader", "Forced perspective",               worldDefines},
+        {&skyshader,              "glskyshader",      "Sky",                              worldDefines},
+        {&compositeshader,        "glcomposite",      "Composite",                        {}},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           materialDefines},
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", materialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}

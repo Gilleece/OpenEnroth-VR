@@ -51,6 +51,12 @@ void DecalUniforms::submit(const OpenGLShader &shader) const {
     fog.submit(shader, true);
 }
 
+void CompositeUniforms::submit(const OpenGLShader &shader) const {
+    glUniform1i(shader.uniformLocation("source"), source);
+    glUniform1f(shader.uniformLocation("exposure"), exposure);
+    glUniform1f(shader.uniformLocation("gamma"), gamma);
+}
+
 void SkyUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);

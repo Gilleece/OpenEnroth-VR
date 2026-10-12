@@ -1,4 +1,7 @@
 #include "precision.glsl"
+#ifdef LINEAR_PIPELINE
+#include "colour.glsl"
+#endif
 #include "fog.glsl"
 #include "lighting.glsl"
 
@@ -148,5 +151,9 @@ void main() {
     vec4 inter = vec4(clamps, vertexColour.a) * vec4(dull,1); // result, 1.0);
     float fograt = getFogRatio(fog, dist);
     FragColour = mix(inter, vec4(fog.color, alpha), fograt);
+#ifdef LINEAR_PIPELINE
+    FragColour.rgb = srgbToLinear(FragColour.rgb);
+#else
     FragColour.rgb = pow(FragColour.rgb, vec3(1.0/gamma));
+#endif
 }

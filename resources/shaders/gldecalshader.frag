@@ -1,4 +1,7 @@
 #include "precision.glsl"
+#ifdef LINEAR_PIPELINE
+#include "colour.glsl"
+#endif
 #include "fog.glsl"
 
 in vec4 vertexColour;
@@ -21,4 +24,7 @@ void main() {
     if (fragcol.a < 0.004) fograt = 0.0;
     
     FragColour = mix(fragcol, vec4(0.0), fograt);
+#ifdef LINEAR_PIPELINE
+    FragColour.rgb = srgbToLinear(FragColour.rgb);
+#endif
 }

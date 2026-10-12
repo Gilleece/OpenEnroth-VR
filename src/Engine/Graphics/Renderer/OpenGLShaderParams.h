@@ -107,6 +107,18 @@ struct SkyVertex {
     float texid = 0;
 };
 
+struct CompositeVertex {
+    Vec2f pos;
+};
+
+struct CompositeUniforms {
+    int source = 0;
+    float exposure = 1;
+    float gamma = 1;
+
+    void submit(const OpenGLShader &shader) const;
+};
+
 struct SkyUniforms {
     glm::mat4 projection = {};
     glm::mat4 view = {};
