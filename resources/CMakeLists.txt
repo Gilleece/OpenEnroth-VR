@@ -44,6 +44,8 @@ set(RESOURCE_SOURCES
         shaders/colour.glsl
         shaders/fog.glsl
         shaders/glbillbshader.frag
+        shaders/glbloom.frag
+        shaders/glbloom.vert
         shaders/glbillbshader.vert
         shaders/glbspshader.frag
         shaders/glbspshader.vert

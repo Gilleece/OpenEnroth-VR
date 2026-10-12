@@ -112,6 +112,10 @@ jobs:
               echo "Checking $shader with MATERIAL_MAPS and LINEAR_PIPELINE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" MATERIAL_MAPS LINEAR_PIPELINE
             done
+            for shader in resources/shaders/glbloom.{vert,frag}; do
+              echo "Checking $shader with BLOOM_UPSAMPLE against GLSL $glsl_version..."
+              ./scripts/check_shader.sh "$shader" "$glsl_version" BLOOM_UPSAMPLE
+            done
             for shader in resources/shaders/{glterrain,gloutbuild,glbspshader,glbillbshader,gldecalshader,glforcepershader,glskyshader}.{vert,frag}; do
               echo "Checking $shader with LINEAR_PIPELINE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" LINEAR_PIPELINE

@@ -8,6 +8,8 @@ out vec4 FragColour;
 uniform sampler2D source;
 uniform float exposure;
 uniform float gamma;
+uniform sampler2D bloom;
+uniform float bloomIntensity; // 0 when there is no bloom texture.
 
 const float KNEE = 0.6038; // Linear value of 0.8 sRGB encoded.
 
@@ -19,6 +21,8 @@ vec3 Shoulder(vec3 colour) {
 
 void main() {
     vec4 colour = texture(source, texuv);
+    if (bloomIntensity > 0.0)
+        colour.rgb += texture(bloom, texuv).rgb * bloomIntensity;
     vec3 encoded = linearToSrgb(Shoulder(colour.rgb * exposure));
     FragColour = vec4(pow(encoded, vec3(1.0 / gamma)), colour.a);
 }

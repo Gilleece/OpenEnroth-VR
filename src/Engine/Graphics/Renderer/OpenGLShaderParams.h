@@ -115,6 +115,17 @@ struct CompositeUniforms {
     int source = 0;
     float exposure = 1;
     float gamma = 1;
+    int bloom = 0;
+    float bloomIntensity = 0;
+
+    void submit(const OpenGLShader &shader) const;
+};
+
+struct BloomUniforms {
+    int source = 0;
+    Vec2f texelSize;
+    int brightPass = 0;
+    float threshold = 0;
 
     void submit(const OpenGLShader &shader) const;
 };

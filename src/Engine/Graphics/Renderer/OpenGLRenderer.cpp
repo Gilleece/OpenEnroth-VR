@@ -69,6 +69,9 @@
 static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
+static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
+static constexpr int BLOOM_MAX_LEVELS = 6;
+static constexpr int BLOOM_MIN_LEVEL_SIZE = 8; // In pixels, on the shorter side.
 static constexpr float LINEAR_ADDITIVE_GAIN = 2.0f; // Additive billboards were made to add up in sRGB, where the sum is brighter than in linear.
 static constexpr int PALETTE_COUNT = 1000; // pal000 to pal999 in bitmaps.lod.
 
@@ -466,7 +469,7 @@ void OpenGLRenderer::compositeWorldTarget() {
     GLenum filter = config->graphics.WorldTargetFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
     int bottom = outputRender.h - (pViewport.y + pViewport.h);
     if (_linearPipeline && source == &_worldTarget) {
-        drawComposite(source->colorTexture(), Recti(pViewport.x, bottom, pViewport.w, pViewport.h), filter);
+        drawComposite(*source, Recti(pViewport.x, bottom, pViewport.w, pViewport.h), filter);
     } else {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, source->framebuffer());
         glBlitFramebuffer(0, 0, source->size().w, source->size().h,
@@ -490,11 +493,15 @@ Colorf OpenGLRenderer::_worldColor(Colorf color) const {
     return Colorf(decode(color.r), decode(color.g), decode(color.b), color.a);
 }
 
-void OpenGLRenderer::drawComposite(GLuint source, const Recti &viewport, GLenum filter) {
-    if (!_compositeBuffer) {
-        _compositeBuffer.reset(GL_STATIC_DRAW, &CompositeVertex::pos);
-        std::array<CompositeVertex, 3> triangle = {{{Vec2f(-1, -1)}, {Vec2f(3, -1)}, {Vec2f(-1, 3)}}}; // Covers the viewport.
-        _compositeBuffer.update(triangle);
+void OpenGLRenderer::drawComposite(const OpenGLRenderTarget &source, const Recti &viewport, GLenum filter) {
+    _ensureFullscreenTriangle();
+
+    GLuint bloom = 0;
+    if (config->graphics.Bloom.value()) {
+        GLint framebuffer = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+        bloom = _drawBloom(source);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
     }
 
     glDisable(GL_BLEND);
@@ -502,8 +509,13 @@ void OpenGLRenderer::drawComposite(GLuint source, const Recti &viewport, GLenum 
     glDisable(GL_SCISSOR_TEST);
     glViewport(viewport.x, viewport.y, viewport.w, viewport.h);
 
+    if (bloom) {
+        glActiveTexture(GL_TEXTURE0 + BLOOM_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, bloom);
+    }
+
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, source);
+    glBindTexture(GL_TEXTURE_2D, source.colorTexture());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -513,6 +525,8 @@ void OpenGLRenderer::drawComposite(GLuint source, const Recti &viewport, GLenum 
     CompositeUniforms uniforms;
     uniforms.exposure = config->graphics.Exposure.value();
     uniforms.gamma = GetGamma();
+    uniforms.bloom = BLOOM_TEXTURE_UNIT;
+    uniforms.bloomIntensity = bloom ? config->graphics.BloomIntensity.value() : 0.0f;
     uniforms.submit(compositeshader);
 
     _compositeBuffer.bind();
@@ -522,6 +536,80 @@ void OpenGLRenderer::drawComposite(GLuint source, const Recti &viewport, GLenum 
 
     compositeshader.unuse();
     glBindTexture(GL_TEXTURE_2D, 0);
+    if (bloom) {
+        glActiveTexture(GL_TEXTURE0 + BLOOM_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glActiveTexture(GL_TEXTURE0);
+    }
+}
+
+GLuint OpenGLRenderer::_drawBloom(const OpenGLRenderTarget &source) {
+    Sizei first(source.size().w / 2, source.size().h / 2);
+    if (_bloomTargets.empty() || _bloomTargets[0]->size() != first) {
+        _bloomTargets.clear();
+        for (Sizei size = first; std::min(size.w, size.h) >= BLOOM_MIN_LEVEL_SIZE && _bloomTargets.size() < BLOOM_MAX_LEVELS; size = Sizei(size.w / 2, size.h / 2)) {
+            _bloomTargets.push_back(std::make_unique<OpenGLRenderTarget>());
+            _bloomTargets.back()->reset(size, RENDER_TARGET_FORMAT_RGBA16F, false);
+        }
+    }
+    if (_bloomTargets.empty())
+        return 0;
+
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glActiveTexture(GL_TEXTURE0);
+    _compositeBuffer.bind();
+
+    auto drawLevel = [&](OpenGLShader &shader, OpenGLRenderTarget &target, GLuint input, Sizei inputSize, bool brightPass) {
+        target.bind();
+        glViewport(0, 0, target.size().w, target.size().h);
+        glBindTexture(GL_TEXTURE_2D, input);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        BloomUniforms uniforms;
+        uniforms.texelSize = Vec2f(1.0f / inputSize.w, 1.0f / inputSize.h);
+        uniforms.brightPass = brightPass;
+        uniforms.threshold = config->graphics.BloomThreshold.value();
+        uniforms.submit(shader);
+
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        drawcalls++;
+    };
+
+    bloomdownshader.use();
+    GLuint input = source.colorTexture();
+    Sizei inputSize = source.size();
+    for (size_t i = 0; i < _bloomTargets.size(); i++) {
+        drawLevel(bloomdownshader, *_bloomTargets[i], input, inputSize, i == 0);
+        input = _bloomTargets[i]->colorTexture();
+        inputSize = _bloomTargets[i]->size();
+    }
+
+    bloomupshader.use();
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    for (size_t i = _bloomTargets.size() - 1; i > 0; i--)
+        drawLevel(bloomupshader, *_bloomTargets[i - 1], _bloomTargets[i]->colorTexture(), _bloomTargets[i]->size(), false);
+    glDisable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ZERO);
+
+    bloomupshader.unuse();
+    _compositeBuffer.unbind();
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return _bloomTargets[0]->colorTexture();
+}
+
+void OpenGLRenderer::_ensureFullscreenTriangle() {
+    if (_compositeBuffer)
+        return;
+
+    _compositeBuffer.reset(GL_STATIC_DRAW, &CompositeVertex::pos);
+    std::array<CompositeVertex, 3> triangle = {{{Vec2f(-1, -1)}, {Vec2f(3, -1)}, {Vec2f(-1, 3)}}}; // Covers the viewport.
+    _compositeBuffer.update(triangle);
 }
 
 TextureRenderId OpenGLRenderer::uiTargetTexture() {
@@ -1296,7 +1384,7 @@ RgbaImage OpenGLRenderer::makeWorldTargetScreenshot(int width, int height) {
     if (_linearPipeline) {
         tonemapped.reset(size, RENDER_TARGET_FORMAT_RGBA8, false);
         tonemapped.bind();
-        drawComposite(_worldTarget.colorTexture(), Recti(Pointi(0, 0), size), GL_NEAREST);
+        drawComposite(_worldTarget, Recti(Pointi(0, 0), size), GL_NEAREST);
         _bindUiTarget();
         glEnable(GL_SCISSOR_TEST);
         glViewport(0, 0, outputRender.w, outputRender.h);
@@ -3988,6 +4076,7 @@ bool OpenGLRenderer::ReloadShaders() {
     _skyBuffer.reset();
     _skyVertices.clear();
 
+    static constexpr std::string_view bloomUpsampleDefines[] = {"BLOOM_UPSAMPLE"};
     std::vector<std::string_view> worldDefines;
     if (_linearPipeline)
         worldDefines.push_back("LINEAR_PIPELINE");
@@ -4005,6 +4094,8 @@ bool OpenGLRenderer::ReloadShaders() {
         {&forcepershader,         "glforcepershader", "Forced perspective",               worldDefines},
         {&skyshader,              "glskyshader",      "Sky",                              worldDefines},
         {&compositeshader,        "glcomposite",      "Composite",                        {}},
+        {&bloomdownshader,        "glbloom",          "Bloom downsample",                 {}},
+        {&bloomupshader,          "glbloom",          "Bloom upsample",                   bloomUpsampleDefines},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           materialDefines},
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", materialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}
