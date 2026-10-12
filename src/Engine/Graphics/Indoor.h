@@ -222,7 +222,6 @@ struct IndoorLocation {
 
     void Release();
     void Load(std::string_view filename, int num_days_played, int respawn_interval_days, bool *indoor_was_respawned);
-    void Draw();
 
     /**
      * @offset 0x4488F7

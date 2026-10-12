@@ -107,11 +107,17 @@ class ParticleEngine {
     void AddParticle(Particle_sw *particle);
 
     /**
-     * Draw all active particles.
+     * Advances the particle clock and pushes the visible particles to the billboard list. Line particles are kept
+     * for `drawLines`.
      *
-     * @offset 0x48ABF3
+     * @offset 0x48ABF3, 0x47A815
      */
-    void Draw();
+    void prepareFrame();
+
+    /**
+     * Draws the line particles collected by the last `prepareFrame`.
+     */
+    void drawLines();
 
     /**
      * Update all active particles based on time elapsed since previous tick.

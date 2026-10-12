@@ -23,6 +23,7 @@ struct SpellFxRenderer;
 struct TileData;
 struct RenderVertexSoft;
 struct ODMRenderParams;
+struct LightsSnapshot;
 
 struct DMap {
     uint8_t field0 = 0;
@@ -41,8 +42,10 @@ struct OutdoorLocation {
 
     /**
      * Draws the sky, the terrain and the buildings.
+     *
+     * @param lights                    Lights to light the terrain and the buildings with.
      */
-    void drawStatic();
+    void drawStatic(const LightsSnapshot &lights);
 
     /**
      * Builds this frame's light stacks and billboard lists, marks the area around the party as discovered and decides
@@ -83,7 +86,6 @@ struct OutdoorLocation {
     int getNumFoodRequiredToRestInCurrentPos(const Vec3f &pos);
     void SetFog();
     void SetUnderwaterFog();
-    void Draw();
 
     double GetPolygonMaxZ(RenderVertexSoft *pVertex, unsigned int unumverts);
     double GetPolygonMinZ(RenderVertexSoft *pVertices, unsigned int unumverts);

@@ -201,19 +201,6 @@ int IndoorLocation::ambientLightLevel() const {
 
 
 
-//----- (00441BD4) --------------------------------------------------------
-void IndoorLocation::Draw() {
-    PrepareDrawLists_BLV();
-    if (pBLVRenderParams->uPartySectorID) {
-        DrawIndoorFaces(true);
-        render->buildBloodsplatDecals();
-    }
-    render->TransformBillboards();
-    engine->DrawParticles();
-    trail_particle_generator.UpdateParticles();
-    render->sortBillboardRenderList();
-}
-
 //----- (004AE5BA) --------------------------------------------------------
 GraphicsImage *BLVFace::GetTexture() const {
     if (this->IsAnimated())
@@ -966,6 +953,16 @@ void loadAndPrepareBLV(MapId mapid, bool bLoading) {
             }
         }
     }
+
+    // The renderer only sends the lights of the visible sectors to the shaders.
+    int cntnosect = 0;
+    for (int lightscnt = 0; lightscnt < pStationaryLightsStack->uNumLightsActive; ++lightscnt) {
+        StationaryLight &light = pStationaryLightsStack->pLights[lightscnt];
+        light.uSectorID = pIndoor->GetSector(light.vPosition);
+        if (light.uSectorID == 0) cntnosect++;
+    }
+    if (cntnosect)
+        MM_WARNING("{} lights - sector not found", cntnosect);
 
     pGameLoadingUI_ProgressBar->Progress();
 

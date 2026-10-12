@@ -31,6 +31,7 @@
 #include "Engine/Graphics/Viewport.h"
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
+#include "Engine/Graphics/WorldFrame.h"
 #include "Engine/Graphics/TurnBasedOverlay.h"
 #include "Engine/Resources/LodSpriteCache.h"
 #include "Engine/Localization.h"
@@ -149,18 +150,13 @@ void Engine::drawWorld() {
         // if ( !render->pRenderD3D )
         // pMouse->DrawCursorToTarget();
         if (!PauseGameDrawing()) {
-            if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
-                pIndoor->Draw();
-            } else {
-                assert(uCurrentlyLoadedLevelType == LEVEL_OUTDOOR);
+            assert(uCurrentlyLoadedLevelType == LEVEL_INDOOR || uCurrentlyLoadedLevelType == LEVEL_OUTDOOR);
+            if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)
                 render->uFogColor = GetLevelFogColor();
-                pOutdoor->Draw();
-            }
-
-            decal_builder->DrawBloodsplats();
+            _worldFrame->prepare();
         }
-        render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
-        spell_fx_renedrer->finishFrame();
+        _worldFrame->draw();
+        _worldFrame->finish();
     }
 }
 
@@ -290,11 +286,6 @@ void Engine::DrawGUI() {
 
         GUIWindow::DrawText(assets->pFontArrus.get(), {16, debug_info_offset}, colorTable.White, floor_level_str, pPrimaryWindow->frameRect);
     }
-}
-
-//----- (0047A815) --------------------------------------------------------
-void Engine::DrawParticles() {
-    particle_engine->Draw();
 }
 
 void Engine::StackPartyTorchLight() {
@@ -884,6 +875,7 @@ void Engine::Initialize() {
     _outdoor = std::make_unique<OutdoorLocation>();
     _stationaryLights = std::make_unique<LightsStack_StationaryLight_>();
     _mobileLights = std::make_unique<LightsStack_MobileLight_>();
+    _worldFrame = std::make_unique<WorldFrame>();
 
     ::pIndoor = _indoor.get();
     ::pOutdoor = _outdoor.get();

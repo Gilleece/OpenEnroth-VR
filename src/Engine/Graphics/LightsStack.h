@@ -61,3 +61,11 @@ struct LightsStack_MobileLight_ {
     std::array<MobileLight, 400> pLights;
     unsigned int uNumLightsActive = 0;
 };
+
+/**
+ * Copies of the mobile and stationary light stacks taken at one point in the frame.
+ */
+struct LightsSnapshot {
+    LightsStack_MobileLight_ mobile;
+    LightsStack_StationaryLight_ stationary;
+};

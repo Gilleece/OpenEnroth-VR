@@ -25,7 +25,8 @@ set(ENGINE_GRAPHICS_SOURCES
         TurnBasedOverlay.cpp
         Viewport.cpp
         Vis.cpp
-        Weather.cpp)
+        Weather.cpp
+        WorldFrame.cpp)
 
 set(ENGINE_GRAPHICS_HEADERS
         AtlasLayout.h
@@ -57,6 +58,7 @@ set(ENGINE_GRAPHICS_HEADERS
         Viewport.h
         Vis.h
         Weather.h
+        WorldFrame.h
         OutdoorTerrain.h
         OutdoorTerrain.cpp)
 
