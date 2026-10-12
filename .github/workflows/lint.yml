@@ -109,6 +109,12 @@ jobs:
             for shader in resources/shaders/{glterrain,gloutbuild,glbspshader}.{vert,frag}; do
               echo "Checking $shader with MATERIAL_MAPS against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" MATERIAL_MAPS
+              echo "Checking $shader with MATERIAL_MAPS and LINEAR_PIPELINE against GLSL $glsl_version..."
+              ./scripts/check_shader.sh "$shader" "$glsl_version" MATERIAL_MAPS LINEAR_PIPELINE
+            done
+            for shader in resources/shaders/{glterrain,gloutbuild,glbspshader,glbillbshader,gldecalshader,glforcepershader,glskyshader}.{vert,frag}; do
+              echo "Checking $shader with LINEAR_PIPELINE against GLSL $glsl_version..."
+              ./scripts/check_shader.sh "$shader" "$glsl_version" LINEAR_PIPELINE
             done
           done
 

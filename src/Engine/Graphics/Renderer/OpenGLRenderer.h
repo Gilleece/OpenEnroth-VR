@@ -217,6 +217,18 @@ class OpenGLRenderer : public BaseRenderer {
      */
     RgbaImage makeWorldTargetScreenshot(int width, int height);
 
+    /**
+     * Tonemaps a linear colour texture into the bound draw framebuffer: exposure, a shoulder that rolls the
+     * highlights off towards white, sRGB encoding and the user gamma. Leaves blending, depth test and scissor test
+     * disabled, and changes the viewport and the texture bound to unit 0.
+     *
+     * @param source                    Colour texture with linear colour, as the world shaders draw it with the linear
+     *                                  pipeline.
+     * @param viewport                  Rectangle to fill in the bound framebuffer, in OpenGL window coordinates.
+     * @param filter                    `GL_LINEAR` or `GL_NEAREST`, how the source is sampled.
+     */
+    void drawComposite(GLuint source, const Recti &viewport, GLenum filter);
+
     Recti clipRect;
 
     int GL_lastboundtex = 0;
@@ -237,6 +249,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader decalshader;
     OpenGLShader forcepershader;
     OpenGLShader skyshader;
+    OpenGLShader compositeshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -283,6 +296,7 @@ class OpenGLRenderer : public BaseRenderer {
 
     // sky shader
     OpenGLVertexBuffer<SkyVertex> _skyBuffer;
+    OpenGLVertexBuffer<CompositeVertex> _compositeBuffer;
     std::vector<SkyVertex> _skyVertices;
 
     // two d shader
@@ -323,6 +337,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _mirrorPending = false;
     bool _mirrorPresentPending = false; // The UI layer leaves the mirror for `flushAndScale`.
     bool _uiLayer = false;
+    bool _linearPipeline = false; // Decided once at startup, the world shaders are compiled for it.
     bool _externalFramePacing = false;
 };
 

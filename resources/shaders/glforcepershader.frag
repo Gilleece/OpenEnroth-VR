@@ -1,4 +1,7 @@
 #include "precision.glsl"
+#ifdef LINEAR_PIPELINE
+#include "colour.glsl"
+#endif
 #include "fog.glsl"
 
 in vec4 colour;
@@ -19,4 +22,7 @@ void main() {
     float alpha = 1.0; // Not getFogAlpha(fog, screenspace) b/c we need foggy sky.
 
     FragColour = mix(fragcol, vec4(fog.color, alpha), fograt);
+#ifdef LINEAR_PIPELINE
+    FragColour.rgb = srgbToLinear(FragColour.rgb);
+#endif
 }

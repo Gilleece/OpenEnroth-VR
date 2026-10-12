@@ -502,6 +502,12 @@ class GameConfig : public Config {
                                "Use a 16-bit floating point world render target. Only applies when the world target size is set."};
         Int WorldTargetFilter = {this, "world_target_filter", 1, &ValidateWorldTargetFilter,
                                  "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
+        Bool LinearPipeline = {this, "linear_pipeline", false,
+                               "Blend the 3D world in linear colour in a 16-bit floating point world target, then tonemap it into the"
+                               " game viewport. Uses a world target the size of the viewport when world_target_width and"
+                               " world_target_height are not set. Not supported in VR yet. Takes effect on restart."};
+        Float Exposure = {this, "exposure", 1.0f, &ValidateExposure,
+                          "Brightness multiplier for the 3D world before tonemapping. Only applies with linear_pipeline."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
                                      "Draw sprites, particles, projectiles and the sky in world space through the camera matrices instead of in"
                                      " screen space. Always on in VR, where the screen space versions are wrong in stereo."};
@@ -556,6 +562,9 @@ class GameConfig : public Config {
         }
         static int ValidateWorldTargetFilter(int filter) {
             return std::clamp(filter, 1, 2);
+        }
+        static float ValidateExposure(float exposure) {
+            return std::clamp(exposure, 0.0625f, 16.0f);
         }
     };
 

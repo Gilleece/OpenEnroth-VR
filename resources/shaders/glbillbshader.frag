@@ -1,4 +1,7 @@
 #include "precision.glsl"
+#ifdef LINEAR_PIPELINE
+#include "colour.glsl"
+#endif
 #include "fog.glsl"
 
 in vec4 colour;
@@ -12,6 +15,9 @@ uniform sampler2D texture0;
 uniform sampler2D paltex2D;
 uniform FogParam fog;
 uniform float gamma;
+#ifdef LINEAR_PIPELINE
+uniform float additivegain;
+#endif
 
 void main() {
     vec4 fragcol = texture(texture0, texuv);
@@ -30,5 +36,9 @@ void main() {
     float alpha = getFogAlpha(fog, screenspace);
 
     FragColour = mix(fragcol, vec4(fog.color, alpha), fograt);
+#ifdef LINEAR_PIPELINE
+    FragColour.rgb = srgbToLinear(FragColour.rgb) * additivegain;
+#else
     FragColour.rgb = pow(FragColour.rgb, vec3(1.0/gamma));
+#endif
 }

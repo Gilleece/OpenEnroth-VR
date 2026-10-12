@@ -41,11 +41,14 @@ set(RESOURCE_SOURCES
         scripts/dev/imgui_demo_overlay.lua
         scripts/init.lua
         scripts/utils.lua
+        shaders/colour.glsl
         shaders/fog.glsl
         shaders/glbillbshader.frag
         shaders/glbillbshader.vert
         shaders/glbspshader.frag
         shaders/glbspshader.vert
+        shaders/glcomposite.frag
+        shaders/glcomposite.vert
         shaders/gldecalshader.frag
         shaders/gldecalshader.vert
         shaders/glforcepershader.frag

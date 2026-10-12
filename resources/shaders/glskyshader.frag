@@ -1,4 +1,7 @@
 #include "precision.glsl"
+#ifdef LINEAR_PIPELINE
+#include "colour.glsl"
+#endif
 #include "fog.glsl"
 
 in vec3 worldPos;
@@ -36,4 +39,7 @@ void main() {
 
     float fograt = getFogRatio(fog, fogDistance);
     FragColour = vec4(mix(sky, fog.color, fograt), 1.0);
+#ifdef LINEAR_PIPELINE
+    FragColour.rgb = srgbToLinear(FragColour.rgb);
+#endif
 }
