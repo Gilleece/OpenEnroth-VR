@@ -27,6 +27,17 @@ class GraphicsImage {
 
     RgbaImage &rgba();
 
+    /**
+     * @return                          Pixels to upload to the GPU. Same as `rgba()`, unless the loader provides a
+     *                                  higher resolution replacement, sized `size()` times `textureScale()`.
+     */
+    RgbaImageView textureRgba();
+
+    /**
+     * @return                          How many times larger `textureRgba()` is than `size()`, a power of two.
+     */
+    int textureScale();
+
     const std::string &name();
 
     [[nodiscard]] TextureRenderId renderId();
@@ -40,5 +51,6 @@ class GraphicsImage {
     std::unique_ptr<ImageLoader> _loader;
     std::optional<Sizei> _size; // From the loader's loadSize() or from the loaded image, whichever comes first.
     std::optional<RgbaImage> _rgba; // Empty image if the loader failed.
+    std::optional<RgbaImage> _textureRgba; // Empty image if the loader has no replacement.
     TextureRenderId _renderId;
 };

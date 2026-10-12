@@ -10,6 +10,7 @@
 #include "Library/Geometry/Rect.h"
 #include "Engine/HitMap.h"
 
+#include "RendererEnums.h"
 #include "TextureRenderId.h"
 #include "Engine/Graphics/ParticleEngine.h"
 #include "Engine/Graphics/RenderEntities.h"
@@ -80,7 +81,7 @@ class Renderer {
                                 float dstX, float dstY, float a7, float a8,
                                 GraphicsImage *texture) = 0;
 
-    virtual TextureRenderId CreateTexture(RgbaImageView image) = 0;
+    virtual TextureRenderId CreateTexture(RgbaImageView image, TextureFilter filter) = 0;
     virtual void DeleteTexture(TextureRenderId id) = 0;
 
     virtual void BeginScene2D() = 0;

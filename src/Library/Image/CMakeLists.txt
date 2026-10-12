@@ -18,6 +18,7 @@ target_check_style(library_image)
 
 if(OE_BUILD_TESTS)
     set(TEST_LIBRARY_IMAGE_SOURCES
+            Tests/ImageFunctions_ut.cpp
             Tests/Pcx_ut.cpp
             Tests/Png_ut.cpp)
 
