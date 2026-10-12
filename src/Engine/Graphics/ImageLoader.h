@@ -26,6 +26,12 @@ class ImageLoader {
      */
     virtual Sizei loadSize() = 0;
 
+    /**
+     * @return                          Higher resolution replacement for the image `loadRgba()` returns, sized
+     *                                  `loadSize()` times a power of two, or an empty image if there is none.
+     */
+    virtual RgbaImage loadTextureRgba() { return {}; }
+
  protected:
     ResourceManager *resources() const { return _resources; }
 

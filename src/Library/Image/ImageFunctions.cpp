@@ -26,3 +26,18 @@ RgbaImage flipVertically(RgbaImageView image) {
         memcpy(result[h - y - 1].data(), image[y].data(), image[y].size_bytes());
     return result;
 }
+
+RgbaImage scaleNearest(RgbaImageView image, int factor) {
+    assert(factor > 0);
+    if (!image)
+        return RgbaImage();
+
+    RgbaImage result = RgbaImage::uninitialized(image.width() * factor, image.height() * factor);
+    for (size_t y = 0, h = result.height(); y < h; y++) {
+        std::span<const Color> src = image[y / factor];
+        std::span<Color> dst = result[y];
+        for (size_t x = 0, w = result.width(); x < w; x++)
+            dst[x] = src[x / factor];
+    }
+    return result;
+}

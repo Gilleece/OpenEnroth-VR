@@ -1,5 +1,6 @@
 #include "Engine/Graphics/Image.h"
 
+#include <bit>
 #include <cassert>
 #include <utility>
 #include <memory>
@@ -7,6 +8,13 @@
 
 #include "Engine/Graphics/ImageLoader.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
+
+static bool isPowerOfTwoMultiple(Sizei scaled, Sizei size) {
+    if (size.w == 0 || scaled.w % size.w != 0)
+        return false;
+    int scale = scaled.w / size.w;
+    return std::has_single_bit(static_cast<unsigned>(scale)) && scaled.h == size.h * scale;
+}
 
 GraphicsImage::GraphicsImage() = default;
 
@@ -19,7 +27,8 @@ std::unique_ptr<GraphicsImage> GraphicsImage::Create(RgbaImage image) {
     std::unique_ptr<GraphicsImage> result(new GraphicsImage());
     result->_size = image.size();
     result->_rgba = std::move(image);
-    result->_renderId = render->CreateTexture(*result->_rgba);
+    result->_textureRgba = RgbaImage();
+    result->_renderId = render->CreateTexture(*result->_rgba, TEXTURE_FILTER_LINEAR);
     return result;
 }
 
@@ -62,13 +71,28 @@ RgbaImage &GraphicsImage::rgba() {
     return *_rgba;
 }
 
+RgbaImageView GraphicsImage::textureRgba() {
+    if (!_textureRgba) {
+        _textureRgba = _loader->loadTextureRgba();
+        assert(!*_textureRgba || isPowerOfTwoMultiple(_textureRgba->size(), size()));
+    }
+    if (*_textureRgba)
+        return *_textureRgba;
+    return rgba();
+}
+
+int GraphicsImage::textureScale() {
+    RgbaImageView texture = textureRgba();
+    return texture.width() == width() ? 1 : texture.width() / width();
+}
+
 const std::string &GraphicsImage::name() {
     return _name;
 }
 
 [[nodiscard]] TextureRenderId GraphicsImage::renderId() {
     if (!_renderId)
-        _renderId = render->CreateTexture(rgba());
+        _renderId = render->CreateTexture(textureRgba(), textureScale() > 1 ? TEXTURE_FILTER_MIPMAPPED : TEXTURE_FILTER_LINEAR);
 
     return _renderId;
 }

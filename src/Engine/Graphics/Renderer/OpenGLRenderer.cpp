@@ -9,6 +9,7 @@
 #include <utility>
 #include <map>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -65,6 +66,10 @@ static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr int PALETTE_COUNT = 1000; // pal000 to pal999 in bitmaps.lod.
 
 static constexpr int DEFAULT_AMBIENT_LIGHT_LEVEL = 0;
+
+static constexpr GLenum TEXTURE_MAX_ANISOTROPY = 0x84FE; // From GL_ARB_texture_filter_anisotropic and GL_EXT_texture_filter_anisotropic.
+static constexpr GLenum MAX_TEXTURE_MAX_ANISOTROPY = 0x84FF; // From the same extensions.
+static constexpr float ANISOTROPY_LIMIT = 16.0f;
 
 // globals
 //TODO(pskelton): Combine and contain
@@ -186,6 +191,64 @@ void SkyBillboardStruct::CalcSkyFrustumVec(int x1, int y1, int z1, int x2, int y
         (this->CamVecFront_X * this->field_0_party_dir_x) +
         (this->CamVecFront_Y * this->field_4_party_dir_y) +
         (this->CamVecFront_Z * this->field_8_party_dir_z);
+}
+
+/**
+ * @return                              Anisotropy level for `TEXTURE_FILTER_MIPMAPPED`, 1 if the driver doesn't support
+ *                                      anisotropic filtering.
+ */
+static float maxTextureAnisotropy() {
+    static const float result = [] {
+        GLint count = 0;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &count);
+        for (GLint i = 0; i < count; i++) {
+            const char *name = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, i));
+            if (!name)
+                continue;
+
+            std::string_view extension = name;
+            if (extension == "GL_ARB_texture_filter_anisotropic" || extension == "GL_EXT_texture_filter_anisotropic") {
+                float max = 1.0f;
+                glGetFloatv(MAX_TEXTURE_MAX_ANISOTROPY, &max);
+                return std::min(max, ANISOTROPY_LIMIT);
+            }
+        }
+        return 1.0f;
+    }();
+    return result;
+}
+
+/**
+ * Switches the bound texture to `TEXTURE_FILTER_MIPMAPPED`.
+ *
+ * @param target                        Target the texture is bound to. Its mipmaps must already be generated.
+ */
+static void setMipmappedFilter(GLenum target) {
+    glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    float anisotropy = maxTextureAnisotropy();
+    if (anisotropy > 1.0f)
+        glTexParameterf(target, TEXTURE_MAX_ANISOTROPY, anisotropy);
+}
+
+/**
+ * Uploads a texture into a layer of the bound texture array.
+ *
+ * @param texture                       Texture to upload.
+ * @param layer                         Array layer to upload into.
+ * @param width                         Logical width of the array's layers.
+ * @param height                        Logical height of the array's layers.
+ * @param scale                         Scale of the array, a multiple of `texture->textureScale()`. The texture is
+ *                                      upscaled to it.
+ */
+static void uploadArrayLayer(GraphicsImage *texture, int layer, int width, int height, int scale) {
+    RgbaImageView pixels = texture->textureRgba();
+    RgbaImage scaled;
+    if (texture->textureScale() != scale) {
+        scaled = scaleNearest(pixels, scale / texture->textureScale());
+        pixels = scaled;
+    }
+
+    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, layer, width * scale, height * scale, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixels.pixels().data());
 }
 
 static int waterAnimationFrame() {
@@ -895,7 +958,7 @@ void OpenGLRenderer::DrawDecal(Decal *pDecal, float z_bias) {
     }
 }
 
-TextureRenderId OpenGLRenderer::CreateTexture(RgbaImageView image) {
+TextureRenderId OpenGLRenderer::CreateTexture(RgbaImageView image, TextureFilter filter) {
     assert(image);
 
     GLuint glId;
@@ -906,6 +969,10 @@ TextureRenderId OpenGLRenderer::CreateTexture(RgbaImageView image) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    if (filter == TEXTURE_FILTER_MIPMAPPED) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+        setMipmappedFilter(GL_TEXTURE_2D);
+    }
     glBindTexture(GL_TEXTURE_2D, 0);
 
     return TextureRenderId(glId);
@@ -1103,8 +1170,13 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, terraintextures[unit]);
 
+            int scale = 1;
+            for (const auto &[name, comb] : terraintexmap)
+                if (((comb & 0xFF00) >> 8) == unit)
+                    scale = std::max(scale, assets->getBitmap(name, name.starts_with("generated"))->textureScale());
+
             // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, terraintexturesizes[unit], terraintexturesizes[unit], numterraintexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, terraintexturesizes[unit] * scale, terraintexturesizes[unit] * scale, numterraintexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
             // loop through texture map
             std::map<std::string, int>::iterator it = terraintexmap.begin();
@@ -1117,13 +1189,7 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
                     // get texture
                     auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
                     // send texture data to gpu
-                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
-                        0,
-                        0, 0, tlayer,
-                        terraintexturesizes[unit], terraintexturesizes[unit], 1,
-                        GL_RGBA,
-                        GL_UNSIGNED_BYTE,
-                        texture->rgba().pixels().data());
+                    uploadArrayLayer(texture, tlayer, terraintexturesizes[unit], terraintexturesizes[unit], scale);
                 }
 
                 it++;
@@ -1135,6 +1201,8 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
             glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
             glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+            if (scale > 1)
+                setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
         }
     }
 
@@ -2387,8 +2455,13 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildtextures[unit]);
 
+            int scale = 1;
+            for (const auto &[name, comb] : outbuildtexmap)
+                if (((comb & 0xFF00) >> 8) == unit)
+                    scale = std::max(scale, assets->getBitmap(name)->textureScale());
+
             // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, outbuildtexturewidths[unit], outbuildtextureheights[unit], numoutbuildtexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, outbuildtexturewidths[unit] * scale, outbuildtextureheights[unit] * scale, numoutbuildtexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
             std::map<std::string, int>::iterator it = outbuildtexmap.begin();
             while (it != outbuildtexmap.end()) {
                 // skip if wtrtyl
@@ -2406,13 +2479,7 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
                     // get texture
                     auto texture = assets->getBitmap(it->first);
 
-                    glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
-                        0,
-                        0, 0, tlayer,
-                        outbuildtexturewidths[unit], outbuildtextureheights[unit], 1,
-                        GL_RGBA,
-                        GL_UNSIGNED_BYTE,
-                        texture->rgba().pixels().data());
+                    uploadArrayLayer(texture, tlayer, outbuildtexturewidths[unit], outbuildtextureheights[unit], scale);
                 }
 
                 it++;
@@ -2432,6 +2499,8 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
             glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
             glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+            if (scale > 1)
+                setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
         }
     }
 
@@ -2872,7 +2941,13 @@ void OpenGLRenderer::DrawIndoorFaces() {
                 glGenTextures(1, &bsptextures[unit]);
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
-                glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, bsptexturewidths[unit], bsptextureheights[unit], bsptexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+                int scale = 1;
+                for (const auto &[name, comb] : bsptexmap)
+                    if (((comb & 0xFF00) >> 8) == unit)
+                        scale = std::max(scale, assets->getBitmap(name)->textureScale());
+
+                glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, bsptexturewidths[unit] * scale, bsptextureheights[unit] * scale, bsptexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
                 std::map<std::string, int>::iterator it = bsptexmap.begin();
                 while (it != bsptexmap.end()) {
@@ -2884,13 +2959,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
                         // get texture
                         auto texture = assets->getBitmap(it->first);
 
-                        glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
-                            0,
-                            0, 0, tlayer,
-                            bsptexturewidths[unit], bsptextureheights[unit], 1,
-                            GL_RGBA,
-                            GL_UNSIGNED_BYTE,
-                            texture->rgba().pixels().data());
+                        uploadArrayLayer(texture, tlayer, bsptexturewidths[unit], bsptextureheights[unit], scale);
 
                         //numterraintexloaded[0]++;
                     }
@@ -2907,6 +2976,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
                 glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
                 glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+                if (scale > 1)
+                    setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
             }
         }
 
