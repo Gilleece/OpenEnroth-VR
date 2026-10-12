@@ -22,6 +22,7 @@ class BaseRenderer : public Renderer {
     virtual void TransformBillboards() override;
     virtual void resetBillboardRenderList() override;
     virtual void sortBillboardRenderList() override;
+    virtual void buildBloodsplatDecals() override;
     virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) override;
 
     virtual void DrawSpriteObjects() override;
@@ -53,4 +54,7 @@ class BaseRenderer : public Renderer {
 
  private:
     void updateRenderDimensions();
+    void buildTerrainBloodsplatDecals();
+    void buildBuildingBloodsplatDecals();
+    void buildIndoorBloodsplatDecals();
 };

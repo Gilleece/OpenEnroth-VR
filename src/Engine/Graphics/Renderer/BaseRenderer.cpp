@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
+#include <cstring>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -14,9 +16,11 @@
 #include "Engine/Objects/SpriteObject.h"
 
 #include "Engine/Graphics/Camera.h"
+#include "Engine/Graphics/DecalBuilder.h"
 #include "Engine/Graphics/Lighting.h"
 #include "Engine/Graphics/LightsStack.h"
 #include "Engine/Graphics/Indoor.h"
+#include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/BspRenderer.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Viewport.h"
@@ -59,6 +63,15 @@ void BaseRenderer::sortBillboardRenderList() {
         });
 }
 
+
+void BaseRenderer::buildBloodsplatDecals() {
+    if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
+        buildIndoorBloodsplatDecals();
+    } else {
+        buildTerrainBloodsplatDecals();
+        buildBuildingBloodsplatDecals();
+    }
+}
 
 // TODO: Move this to sprites ?
 // combined with IndoorLocation::PrepareItemsRenderList_BLV() (0044028F)
@@ -615,4 +628,180 @@ Pointi BaseRenderer::MapToPresent(Pointi position) {
     }
 
     return result;
+}
+
+void BaseRenderer::buildTerrainBloodsplatDecals() {
+    // TODO(pskelton): clean up and move to seperate function in decal builder
+    if (!decal_builder->bloodsplat_container->uNumBloodsplats) return;
+    unsigned int NumBloodsplats = decal_builder->bloodsplat_container->uNumBloodsplats;
+
+    // loop over blood to lay
+    for (unsigned i = 0; i < NumBloodsplats; ++i) {
+        // approx location of bloodsplat
+        Vec2i gridPos = worldToGrid(decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].pos);
+        // use terrain squares in block surrounding to try and stack faces
+
+        int scope = std::ceil(decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].radius / 512);
+
+        for (int loopy = (gridPos.y - scope); loopy <= (gridPos.y + scope); ++loopy) {
+            for (int loopx = (gridPos.x - scope); loopx <= (gridPos.x + scope); ++loopx) {
+                if (loopy < 0) continue;
+                if (loopy > 126) continue;
+                if (loopx < 0) continue;
+                if (loopx > 126) continue;
+
+
+                // top tri
+                // x, y
+                VertexRenderList[0].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({loopx, loopy}).toFloat();
+                // x + 1, y + 1
+                VertexRenderList[1].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({loopx + 1, loopy + 1}).toFloat();
+                // x + 1, y
+                VertexRenderList[2].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({loopx + 1, loopy}).toFloat();
+
+                // bottom tri
+                // x, y
+                VertexRenderList[3].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({loopx, loopy}).toFloat();
+                // x, y + 1
+                VertexRenderList[4].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({loopx, loopy + 1}).toFloat();
+                // x + 1, y + 1
+                VertexRenderList[5].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({loopx + 1, loopy + 1}).toFloat();
+
+                float WorldMinZ = pOutdoor->GetPolygonMinZ(VertexRenderList, 6);
+                float WorldMaxZ = pOutdoor->GetPolygonMaxZ(VertexRenderList, 6);
+
+                // TODO(pskelton): terrain and boxes should be saved for easier retrieval
+                // test expanded box against bloodsplat
+                BBoxf thissquare{ VertexRenderList[0].vWorldPosition.x,
+                                  VertexRenderList[1].vWorldPosition.x,
+                                  VertexRenderList[1].vWorldPosition.y,
+                                  VertexRenderList[0].vWorldPosition.y,
+                                  WorldMinZ,
+                                  WorldMaxZ };
+
+                // skip this square if no splat over lap
+                if (!thissquare.intersectsCube(decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].pos, decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].radius))
+                    continue;
+
+                // splat hits this square of terrain
+                bool fading = pOutdoor->pTerrain.isWaterOrShoreByGrid({loopx, loopy});
+
+                const auto &[norm, norm2] = pOutdoor->pTerrain.normalsByGridUnsafe({loopx, loopy});
+
+                float Light_tile_dist = 0.0;
+
+                // top tri
+                float _f1 = norm.x * pOutdoor->vSunlight.x + norm.y * pOutdoor->vSunlight.y + norm.z * pOutdoor->vSunlight.z;
+                int dimming_level = std::clamp(static_cast<int>(20.0f - floorf(20.0f * _f1 + 0.5f)), 0, 31);
+
+                decal_builder->ApplyBloodSplatToTerrain(fading, norm, &Light_tile_dist, VertexRenderList, i);
+                Planef plane;
+                plane.normal = norm;
+                plane.dist = Light_tile_dist;
+                if (decal_builder->uNumSplatsThisFace > 0)
+                    decal_builder->BuildAndApplyDecals(31 - dimming_level, LocationTerrain, plane, 3, VertexRenderList, 0, -1);
+
+                //bottom tri
+                float _f = norm2.x * pOutdoor->vSunlight.x + norm2.y * pOutdoor->vSunlight.y + norm2.z * pOutdoor->vSunlight.z;
+                dimming_level = std::clamp(static_cast<int>(20.0 - floorf(20.0 * _f + 0.5f)), 0, 31);
+
+                decal_builder->ApplyBloodSplatToTerrain(fading, norm2, &Light_tile_dist, (VertexRenderList + 3), i);
+                plane.normal = norm2;
+                plane.dist = Light_tile_dist;
+                if (decal_builder->uNumSplatsThisFace > 0)
+                    decal_builder->BuildAndApplyDecals(31 - dimming_level, LocationTerrain, plane, 3, (VertexRenderList + 3), 0, -1);
+            }
+        }
+    }
+}
+
+void BaseRenderer::buildBuildingBloodsplatDecals() {
+    // TODO(pskelton): clean up
+    if (!decal_builder->bloodsplat_container->uNumBloodsplats) return;
+
+    for (BSPModel &model : pOutdoor->pBModels) {
+        if (model.faces.empty()) {
+            continue;
+        }
+
+        // check for any splat in this models box - if not continue
+        bool found = false;
+        for (int splat = 0; splat < decal_builder->bloodsplat_container->uNumBloodsplats; ++splat) {
+            Bloodsplat *thissplat = &decal_builder->bloodsplat_container->pBloodsplats_to_apply[splat];
+            if (model.boundingBox.intersectsCube(thissplat->pos, thissplat->radius)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) continue;
+
+        for (int faceId : model.faces) {
+            BLVFace &face = pOutdoor->faces[faceId];
+            if (face.Invisible()) {
+                continue;
+            }
+
+            float _f1 = face.facePlane.normal.x * pOutdoor->vSunlight.x + face.facePlane.normal.y * pOutdoor->vSunlight.y + face.facePlane.normal.z * pOutdoor->vSunlight.z;
+            int dimming_level = std::clamp(static_cast<int>(20.0 - floorf(20.0 * _f1 + 0.5f)), 0, 31);
+
+            for (unsigned vertex_id = 1; vertex_id <= face.vertexIds.size(); vertex_id++) {
+                array_73D150[vertex_id - 1].vWorldPosition = pOutdoor->vertices[face.vertexIds[vertex_id - 1]];
+            }
+
+            for (int vertex_id = 0; vertex_id < face.vertexIds.size(); ++vertex_id) {
+                memcpy(&VertexRenderList[vertex_id], &array_73D150[vertex_id], sizeof(VertexRenderList[vertex_id]));
+                VertexRenderList[vertex_id]._rhw = 1.0 / (array_73D150[vertex_id].vWorldViewPosition.x + 0.0000001);
+            }
+
+            decal_builder->ApplyBloodsplatDecalsToFace(&face);
+            if (decal_builder->uNumSplatsThisFace > 0) {
+                decal_builder->BuildAndApplyDecals(
+                    31 - dimming_level, LocationBuildings,
+                    face.facePlane,
+                    face.vertexIds.size(), VertexRenderList, 0, -1);
+            }
+        }
+    }
+}
+
+void BaseRenderer::buildIndoorBloodsplatDecals() {
+    if (!decal_builder->bloodsplat_container->uNumBloodsplats) return;
+    RenderVertexSoft static_vertices_buff_in[64];  // buff in
+    int uCurrentAmbientLightLevel = pIndoor->ambientLightLevel();
+
+    // loop over faces
+    for (int test = 0; test < pIndoor->faces.size(); test++) {
+        BLVFace *pface = &pIndoor->faces[test];
+
+        if (pface->isPortal()) continue;
+        // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
+        if (!pface->GetTexture()) continue;
+
+        // check if faces is visible
+        bool onlist = false;
+        for (unsigned i = 0; i < pBspRenderer->uNumVisibleNotEmptySectors; ++i) {
+            int listsector = pBspRenderer->pVisibleSectorIDs_toDrawDecorsActorsEtcFrom[i];
+            if (pface->sectorId == listsector) {
+                onlist = true;
+                break;
+            }
+        }
+        if (!onlist) continue;
+
+
+        decal_builder->ApplyBloodsplatDecalsToFace(pface);
+        if (!decal_builder->uNumSplatsThisFace) continue;
+
+        // copy to buff in
+        for (unsigned i = 0; i < pface->vertexIds.size(); ++i) {
+            static_vertices_buff_in[i].vWorldPosition = pIndoor->vertices[pface->vertexIds[i]];
+            static_vertices_buff_in[i].u = pface->textureUs[i];
+            static_vertices_buff_in[i].v = pface->textureVs[i];
+        }
+
+        // blood draw
+        decal_builder->BuildAndApplyDecals(uCurrentAmbientLightLevel, LocationIndoors, pface->facePlane,
+            pface->vertexIds.size(), static_vertices_buff_in,
+            0, pface->sectorId);
+    }
 }

@@ -77,6 +77,14 @@ class Renderer {
     virtual void TransformBillboards() = 0;
     virtual void resetBillboardRenderList() = 0;
     virtual void sortBillboardRenderList() = 0;
+
+    /**
+     * Adds decals for this frame's bloodsplats to the decal builder, clipped to the terrain and building faces
+     * outdoors or to the faces of the visible sectors indoors. Decals are lit by the light stacks as they are when
+     * this is called.
+     */
+    virtual void buildBloodsplatDecals() = 0;
+
     virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) = 0;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
