@@ -7,6 +7,7 @@ cmake_minimum_required(VERSION 3.27 FATAL_ERROR)
 set(ENGINE_DATA_SOURCES
         HouseEnumFunctions.cpp
         ResourceMask.cpp
+        TexturePackManifest.cpp
         TileEnums.cpp
         TileEnumFunctions.cpp)
 
@@ -36,6 +37,7 @@ set(ENGINE_DATA_HEADERS
         SpecialEnchantmentData.h
         StandardEnchantmentData.h
         TextureFrameData.h
+        TexturePackManifest.h
         TileData.h
         TileEnumFunctions.h
         TileEnums.h)

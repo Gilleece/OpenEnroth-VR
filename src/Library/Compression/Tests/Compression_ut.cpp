@@ -39,3 +39,9 @@ UNIT_TEST(Compression, UncompressBestEffort_CorruptChecksum) {
 UNIT_TEST(Compression, UncompressBestEffort_EmptyReturnsEmpty) {
     EXPECT_FALSE(zlib::uncompressBestEffort(Blob()));
 }
+
+UNIT_TEST(Compression, Crc32) {
+    // The CRC-32 check value from the standard, and the empty input.
+    EXPECT_EQ(zlib::crc32(Blob::fromString("123456789")), 0xCBF43926u);
+    EXPECT_EQ(zlib::crc32(Blob()), 0u);
+}

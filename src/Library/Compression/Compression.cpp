@@ -100,4 +100,8 @@ Blob uncompressBestEffort(const Blob &source, size_t sizeHint) {
     return Blob::fromMalloc(std::move(dest), outputSize).withDisplayPath(source.displayPath());
 }
 
+uint32_t crc32(const Blob &data) {
+    return ::crc32_z(::crc32_z(0, nullptr, 0), static_cast<const Bytef *>(data.data()), data.size());
+}
+
 };  // namespace zlib
