@@ -33,7 +33,23 @@ struct OutdoorLocation {
     OutdoorLocation();
     ~OutdoorLocation();
     // int New_SKY_NIGHT_ID;
-    void ExecDraw(unsigned int bRedraw);
+
+    /**
+     * Resets the per-frame render counters and updates the sunlight, the fog and the sky frustum.
+     */
+    void prepareFrameStatic();
+
+    /**
+     * Draws the sky, the terrain and the buildings.
+     */
+    void drawStatic();
+
+    /**
+     * Builds this frame's light stacks and billboard lists, marks the area around the party as discovered and decides
+     * whether it snows.
+     */
+    void prepareFrameLists();
+
     void PrepareActorsDrawList();
     void CreateDebugLocation();
     void Release();

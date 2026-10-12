@@ -47,7 +47,11 @@ unsigned int BaseRenderer::NextBillboardIndex() {
     return index;
 }
 
-void BaseRenderer::SortBillboards() {
+void BaseRenderer::resetBillboardRenderList() {
+    uNumBillboardsToDraw = 0;
+}
+
+void BaseRenderer::sortBillboardRenderList() {
     // we need to loop over all billboards from farthest to nearest
     std::stable_sort(pSortedBillboardRenderListD3D.begin(), pSortedBillboardRenderListD3D.begin() + uNumBillboardsToDraw,
         [](const auto& a, const auto& b) {
@@ -513,7 +517,7 @@ void BaseRenderer::DrawSpecialEffectsQuad(GraphicsImage *texture, int palette) {
 void BaseRenderer::DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene() {
     render->DoRenderBillboards_D3D();
     engine->draw_debug_outlines();
-    spell_fx_renderer->RenderSpecialEffects();
+    spell_fx_renderer->drawSpecialEffects();
 }
 
 // TODO: should this be combined / moved out of render

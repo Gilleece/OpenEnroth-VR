@@ -365,8 +365,6 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
     glClearDepthf(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    render->uNumBillboardsToDraw = 0;  // moved from drawbillboards - cant reset this until mouse picking finished
-
     SetFogParametersGL();
     gamma = GetGamma();
 }
@@ -825,6 +823,7 @@ RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int heig
     pCamera3D->updateFromParty();
 
     BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
+    resetBillboardRenderList();
     if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
         pIndoor->Draw();
     } else if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
@@ -832,6 +831,7 @@ RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int heig
         pOutdoor->Draw();
     }
     DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
+    spell_fx_renderer->finishFrame();
 
     // TODO(captainurist): subImage().scale()
     RgbaImage sPixels = ReadScreenPixels();
@@ -1778,8 +1778,6 @@ void OpenGLRenderer::DoRenderBillboards_D3D() {
 
     float oneon = 1.0f / (pCamera3D->GetNearClip() * 2.0f);
     float oneof = 1.0f / (pCamera3D->GetFarClip());
-
-    SortBillboards();
 
     for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
         //if (pBillboardRenderListD3D[i].opacity != RenderBillboardD3D::NoBlend) {

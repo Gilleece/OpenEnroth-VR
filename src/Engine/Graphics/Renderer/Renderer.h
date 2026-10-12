@@ -75,6 +75,8 @@ class Renderer {
     virtual void DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene() = 0;
     virtual void BillboardSphereSpellFX(SpellFX_Billboard *a1, Color diffuse) = 0;
     virtual void TransformBillboards() = 0;
+    virtual void resetBillboardRenderList() = 0;
+    virtual void sortBillboardRenderList() = 0;
     virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) = 0;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
@@ -172,7 +174,7 @@ class Renderer {
     static const int MAX_BILLBOARDS_D3D = 5000;
     RenderBillboardD3D pBillboardRenderListD3D[MAX_BILLBOARDS_D3D];
     std::array<RenderBillboardD3D*, MAX_BILLBOARDS_D3D> pSortedBillboardRenderListD3D;
-    unsigned int uNumBillboardsToDraw = 0; // TODO(captainurist): this is not properly cleared if BeginScene3D is not called,
+    unsigned int uNumBillboardsToDraw = 0; // TODO(captainurist): this is not properly cleared if resetBillboardRenderList is not called,
                                        //                     resulting in dangling textures in pBillboardRenderListD3D.
 
     int drawcalls = 0;

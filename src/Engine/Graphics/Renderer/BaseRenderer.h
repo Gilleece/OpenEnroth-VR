@@ -20,6 +20,8 @@ class BaseRenderer : public Renderer {
     virtual void Initialize() override;
 
     virtual void TransformBillboards() override;
+    virtual void resetBillboardRenderList() override;
+    virtual void sortBillboardRenderList() override;
     virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) override;
 
     virtual void DrawSpriteObjects() override;
@@ -43,7 +45,6 @@ class BaseRenderer : public Renderer {
 
  protected:
     unsigned int NextBillboardIndex();
-    void SortBillboards();
     void TransformBillboard(const RenderBillboard *pBillboard, int parent);
 
  protected:

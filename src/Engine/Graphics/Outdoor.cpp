@@ -152,7 +152,7 @@ static constexpr std::array<int, 9> skyTexturesIds1 = {{3, 3, 3, 3, 3, 3, 3, 3, 
 static constexpr std::array<int, 7> skyTexturesIds2 = {{3, 3, 3, 3, 3, 3, 3}};
 
 //----- (0047A59E) --------------------------------------------------------
-void OutdoorLocation::ExecDraw(unsigned int bRedraw) {
+void OutdoorLocation::prepareFrameStatic() {
     /*pCamera3D->debug_flags = 0;
     if (viewparams->draw_d3d_outlines)
         pCamera3D->debug_flags |= ODM_RENDER_DRAW_D3D_OUTLINES;*/
@@ -182,10 +182,15 @@ void OutdoorLocation::ExecDraw(unsigned int bRedraw) {
     // pCamera3D->sr_Reset_list_0037C();
 
     SkyBillboard.CalcSkyFrustumVec(1, 0, 0, 0, 1, 0);  // sky box frustum
+}
+
+void OutdoorLocation::drawStatic() {
     render->DrawOutdoorSky();
     render->DrawOutdoorTerrain();
     render->DrawOutdoorBuildings();
+}
 
+void OutdoorLocation::prepareFrameLists() {
     // TODO(pskelton): consider order of drawing / lighting
     pMobileLightsStack->uNumLightsActive = 0;
     pStationaryLightsStack->uNumLightsActive = 0;
@@ -221,11 +226,14 @@ void OutdoorLocation::ExecDraw(unsigned int bRedraw) {
 
 //----- (00441CFF) --------------------------------------------------------
 void OutdoorLocation::Draw() {
-    pOutdoor->ExecDraw(true);
+    pOutdoor->prepareFrameStatic();
+    pOutdoor->drawStatic();
+    pOutdoor->prepareFrameLists();
 
     engine->DrawParticles();
     // pWeather->Draw(); // Engine::DrawGUI already calls this once a frame, a second call doubles the snow speed.
     trail_particle_generator.UpdateParticles();
+    render->sortBillboardRenderList();
 }
 
 //----- (00488E23) --------------------------------------------------------
