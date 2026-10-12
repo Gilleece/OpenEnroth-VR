@@ -6,7 +6,6 @@
 #include <cassert>
 #include <cmath>
 #include <algorithm>
-#include <array>
 #include <iterator>
 #include <memory>
 #include <utility>
