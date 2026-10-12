@@ -1,4 +1,4 @@
-"""Command line entry point: texpipe extract | upscale | pack."""
+"""Command line entry point: texpipe extract | upscale | maps | pack."""
 
 import argparse
 import time
@@ -8,6 +8,7 @@ from texpipe import lodtool
 from texpipe.backends.realesrgan import resolve_binary
 from texpipe.config import SCALES, load_config
 from texpipe.extract import run_extract
+from texpipe.maps import run_maps
 from texpipe.pack import COLORS, run_pack
 from texpipe.upscale import BACKENDS, run_upscale
 
@@ -32,12 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
     upscale.add_argument("--config", type=Path, help="Config file, defaults to the bundled default_config.toml.")
     upscale.add_argument("--binary", help="realesrgan-ncnn-vulkan executable, downloaded on first use if omitted.")
 
+    maps = commands.add_parser("maps", help="Make normal and roughness maps for the upscaled bitmaps.")
+    maps.add_argument("--work", type=Path, required=True, help="Work folder made by extract and upscale.")
+    maps.add_argument("--config", type=Path, help="Config file, defaults to the bundled default_config.toml.")
+
     pack = commands.add_parser("pack", help="Write the texture pack from the upscaled images.")
     pack.add_argument("--work", type=Path, required=True, help="Work folder made by extract and upscale.")
     pack.add_argument("--out", type=Path, required=True, help="Pack folder to write.")
     pack.add_argument("--colors", choices=COLORS, default="raw", help="How the engine treats the pack's colors.")
 
-    for command in (extract, upscale, pack):
+    for command in (extract, upscale, maps, pack):
         command.add_argument(
             "--only", action="append", help="Only handle LOD entries matching this glob, e.g. 'ch1*'. Repeatable."
         )
@@ -59,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(args.config)
         counts = run_upscale(args.work, config, args.only, args.backend, args.scale, resolve_binary(args.binary))
         print(f"Upscaled {counts}.")
+    elif args.command == "maps":
+        print(f"Made maps for {run_maps(args.work, load_config(args.config), args.only)} bitmaps.")
     else:
         print(f"Packed {run_pack(args.work, args.out, args.colors, args.only)}.")
     print(f"Took {time.monotonic() - start:.1f} s.")

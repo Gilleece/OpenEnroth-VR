@@ -41,17 +41,30 @@ python -m texpipe extract --data ../../mm7 --out ../../mm7_hd/work --lodtool <pa
   `~/.cache/texpipe` on first use, or `TEXPIPE_CACHE` if set. Pass `--binary` to use one you already have. Alpha is
   upscaled separately from the color and put back afterwards. Bitmaps tile across walls and floors, so they are padded
   with a border wrapped around from the opposite edge before upscaling, and cropped back after, which keeps the seams
-  continuous.
+  continuous. The model also drops the bright speckles of dithered textures, so for the sections listed in
+  `preserve_brightness` each channel of the result is rescaled to the source's mean. The factors go into the image's
+  JSON file under `upscaled/`.
 
 ```
 python -m texpipe upscale --work ../../mm7_hd/work --backend nearest --scale 2
 ```
 
-Without `--backend` and `--scale`, each image gets what `texpipe/default_config.toml` says for its section and name.
-Pass `--config` to use your own copy.
+Without `--backend` and `--scale`, each image gets what `texpipe/default_config.toml` says for its section, name and
+width. The default sends icons narrower than 12 pixels and the minimap arrows to `nearest`, because the model smears
+tiny glyphs. Pass `--config` to use your own copy.
 
-**pack** writes the pack folder: `manifest.json`, `bitmaps/` and `icons/` with one PNG per LOD entry, and a
-`README.txt`. `--colors raw`, the default, says the images have the LOD palette colors, and the engine applies its
+**maps** makes a normal map and a roughness map for every upscaled bitmap, from its luminance. The normal map is a
+Sobel filter over the slightly blurred luminance, in tangent space with the OpenGL convention: red to the right, green
+to the top row, flat is (128, 128, 255). The roughness map sits at 90, the stock specular, where an area is as busy as
+the image's average, and goes rougher or smoother where it is busier or calmer. Both wrap around the edges like the
+upscale does. Their strength, blur and range are in the `[maps]` section of the config.
+
+```
+python -m texpipe maps --work ../../mm7_hd/work
+```
+
+**pack** writes the pack folder: `manifest.json`, `bitmaps/` and `icons/` with one PNG per LOD entry, the maps under
+`normal/bitmaps/` and `roughness/bitmaps/`, and a `README.txt`. `--colors raw`, the default, says the images have the LOD palette colors, and the engine applies its
 saturation and lightness to bitmaps as it does for the originals. Use `--colors final` only if you have graded the
 upscaled images yourself.
 
@@ -59,7 +72,7 @@ upscaled images yourself.
 python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x
 ```
 
-All three commands take `--only <glob>`, which can be repeated, to handle only the LOD entries matching it, e.g.
+All commands take `--only <glob>`, which can be repeated, to handle only the LOD entries matching it, e.g.
 `--only "ch1*" --only "ib-*"` for a quick run.
 
 ## Using the pack

@@ -31,6 +31,7 @@ class WorkImage:
 class UpscaledImage:
     backend: str
     scale: int
+    brightness: list[float] | None = None  # Per channel factors the brightness correction applied, if it ran.
 
 
 def images_dir(work: Path, section: str) -> Path:

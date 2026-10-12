@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from texpipe.maps import MAPS, map_path
 from texpipe.workdir import SECTIONS, load_image_infos, load_upscaled_info, upscaled_dir, write_json
 
 MANIFEST_FORMAT = 1
@@ -12,40 +13,60 @@ COLORS = ("raw", "final")
 README_TEXT = """\
 This texture pack was generated on this computer from the user's own copy of Might and Magic VII.
 
-It contains only upscaled derivatives of the game's images, none of the original game data. It does nothing on its
+It contains only upscaled derivatives of the game's images and material maps computed from
+them, none of the original game data. It does nothing on its
 own: the game has to be installed, and OpenEnroth loads these images in place of the ones in the game's LOD files.
 """
 
 
-def build_manifest(crcs: dict[str, dict[str, str]], colors: str) -> dict:
-    """Builds manifest.json from {section: {entry name: crc32}}."""
+def build_manifest(entries: dict[str, dict[str, dict]], colors: str) -> dict:
+    """Builds manifest.json from {section: {entry name: manifest entry}}."""
     if colors not in COLORS:
         raise ValueError(f"colors must be one of {COLORS}, got '{colors}'")
     manifest = {"format": MANIFEST_FORMAT, "colors": colors}
     for section in SECTIONS:
-        manifest[section] = {name: {"crc32": crc} for name, crc in sorted(crcs.get(section, {}).items())}
+        manifest[section] = dict(sorted(entries.get(section, {}).items()))
     return manifest
 
 
 def run_pack(work: Path, out: Path, colors: str, only: list[str] | None) -> dict[str, int]:
-    """Copies every upscaled image into the pack and writes the manifest and README. Returns counts per section."""
-    crcs: dict[str, dict[str, str]] = {section: {} for section in SECTIONS}
+    """Copies every upscaled image and its maps into the pack and writes the manifest and README.
+
+    Returns the number of images per section, and of bitmaps with maps.
+    """
+    entries: dict[str, dict[str, dict]] = {section: {} for section in SECTIONS}
     for image in load_image_infos(work, only):
         upscaled = load_upscaled_info(work, image)
         if upscaled is None:
             continue
         source = upscaled_dir(work, image.section) / f"{image.name}.png"
-        _check_scaled(source, (image.width, image.height), upscaled.scale)
-        target = out / image.section / f"{image.name}.png"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        crcs[image.section][image.name] = image.crc32
-    write_json(out / "manifest.json", build_manifest(crcs, colors))
+        size = _check_scaled(source, (image.width, image.height), upscaled.scale)
+        _copy(source, out / image.section / f"{image.name}.png")
+        entry = {"crc32": image.crc32}
+        if image.section == "bitmaps" and all(map_path(work, kind, image.name).is_file() for kind in MAPS):
+            for kind in MAPS:
+                _check_size(map_path(work, kind, image.name), size)
+                _copy(map_path(work, kind, image.name), out / kind / "bitmaps" / f"{image.name}.png")
+            entry["maps"] = list(MAPS)
+        entries[image.section][image.name] = entry
+    write_json(out / "manifest.json", build_manifest(entries, colors))
     (out / "README.txt").write_text(README_TEXT, encoding="utf-8")
-    return {section: len(entries) for section, entries in crcs.items()}
+    counts = {section: len(section_entries) for section, section_entries in entries.items()}
+    counts["maps"] = sum(1 for entry in entries["bitmaps"].values() if "maps" in entry)
+    return counts
 
 
-def _check_scaled(path: Path, size: tuple[int, int], scale: int) -> None:
+def _copy(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
+
+
+def _check_scaled(path: Path, size: tuple[int, int], scale: int) -> tuple[int, int]:
+    return _check_size(path, (size[0] * scale, size[1] * scale))
+
+
+def _check_size(path: Path, size: tuple[int, int]) -> tuple[int, int]:
     with Image.open(path) as image:
-        if image.size != (size[0] * scale, size[1] * scale):
-            raise ValueError(f"{path} is {image.size}, expected {size} times {scale}")
+        if image.size != size:
+            raise ValueError(f"{path} is {image.size}, expected {size}")
+    return size
