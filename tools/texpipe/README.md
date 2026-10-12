@@ -24,9 +24,10 @@ data may be committed.
 
 **extract** dumps every bitmap and icon as a PNG, with the palette applied and transparency taken from the image's own
 flag and `resources/data/resource_mask_table.json`, the same way the engine does it. Palettes and the few entries that
-are not images are skipped. So are the few entries whose names would collide as files, like `hhm3el2` and `hhm3el2 ` with a trailing space, because Windows writes both to the same file and the CRC-32 could not be trusted. Next to each PNG goes a JSON file with the entry name, section, size, transparency and the
-CRC-32 of the raw LOD entry, which the engine uses to check that a pack matches the installed game.
-`summary.json` lists what was skipped and what failed.
+are not images are skipped. So are the eight bitmaps whose names collide as files, like `hhm3el2` and `hhm3el2 ` with
+a trailing space: Windows writes both to the same file, so neither CRC-32 could be trusted. Next to each PNG goes a
+JSON file with the entry name, section, size, transparency and the CRC-32 of the raw LOD entry, which the engine uses to
+check that a pack matches the installed game. `summary.json` lists what was skipped, left out and failed.
 
 ```
 python -m texpipe extract --data ../../mm7 --out ../../mm7_hd/work --lodtool <path to LodTool>
