@@ -1,5 +1,6 @@
 #include "TexturePack.h"
 
+#include <algorithm>
 #include <string>
 #include <exception>
 #include <unordered_map>
@@ -18,8 +19,9 @@
 static constexpr int TEXTURE_PACK_FORMAT = 1;
 static constexpr int MAX_TEXTURE_PACK_SCALE = 4;
 
-static std::unordered_map<std::string, TexturePackEntry> lowercaseKeys(std::unordered_map<std::string, TexturePackEntry> entries) {
-    std::unordered_map<std::string, TexturePackEntry> result;
+template<class Entry>
+static std::unordered_map<std::string, Entry> lowercaseKeys(std::unordered_map<std::string, Entry> entries) {
+    std::unordered_map<std::string, Entry> result;
     for (auto &[name, entry] : entries)
         result.emplace(ascii::toLower(name), std::move(entry));
     return result;
@@ -30,6 +32,36 @@ static bool isPackScale(Sizei size, Sizei lodSize) {
         if (size == Sizei(lodSize.w * scale, lodSize.h * scale))
             return true;
     return false;
+}
+
+static RgbaImage loadImage(const FileSystem *fs, std::string_view path, std::string_view crc, const Blob &lodEntry, Sizei lodSize) {
+    std::string lodCrc = fmt::format("{:08x}", zlib::crc32(lodEntry));
+    if (ascii::toLower(crc) != lodCrc) {
+        MM_WARNING("Texture pack image '{}' was made from a different LOD entry. The manifest says CRC-32 {}, the LOD entry has {}. Using the original.",
+                   fs->displayPath(path), crc, lodCrc);
+        return {};
+    }
+
+    if (!fs->exists(path)) {
+        MM_WARNING("Texture pack image '{}' is listed in the manifest but doesn't exist. Using the original.", fs->displayPath(path));
+        return {};
+    }
+
+    RgbaImage result;
+    try {
+        result = png::decode(fs->read(path));
+    } catch (const std::exception &e) {
+        MM_WARNING("Could not decode texture pack image '{}': {}. Using the original.", fs->displayPath(path), e.what());
+        return {};
+    }
+
+    if (!isPackScale(result.size(), lodSize)) {
+        MM_WARNING("Texture pack image '{}' is {}x{}, but must be {}x{} times 1, 2 or 4. Using the original.",
+                   fs->displayPath(path), result.width(), result.height(), lodSize.w, lodSize.h);
+        return {};
+    }
+
+    return result;
 }
 
 TexturePack::TexturePack(const FileSystem *fs) : _fs(fs) {
@@ -45,6 +77,7 @@ TexturePack::TexturePack(const FileSystem *fs) : _fs(fs) {
 
     _manifest.bitmaps = lowercaseKeys(std::move(_manifest.bitmaps));
     _manifest.icons = lowercaseKeys(std::move(_manifest.icons));
+    _manifest.sprites = lowercaseKeys(std::move(_manifest.sprites));
 }
 
 TexturePack::~TexturePack() = default;
@@ -65,31 +98,26 @@ RgbaImage TexturePack::image(TexturePackSection section, std::string_view name, 
         return {};
 
     std::string path = fmt::format("{}/{}.png", section == TEXTURE_PACK_BITMAPS ? "bitmaps" : "icons", lowercaseName);
-    std::string lodCrc = fmt::format("{:08x}", zlib::crc32(lodEntry));
-    if (ascii::toLower(pos->second.crc32) != lodCrc) {
-        MM_WARNING("Texture pack image '{}' was made from a different LOD entry. The manifest says CRC-32 {}, the LOD entry has {}. Using the original.",
-                   _fs->displayPath(path), pos->second.crc32, lodCrc);
-        return {};
-    }
+    return loadImage(_fs, path, pos->second.crc32, lodEntry, lodSize);
+}
 
-    if (!_fs->exists(path)) {
-        MM_WARNING("Texture pack image '{}' is listed in the manifest but doesn't exist. Using the original.", _fs->displayPath(path));
-        return {};
-    }
-
-    RgbaImage result;
-    try {
-        result = png::decode(_fs->read(path));
-    } catch (const std::exception &e) {
-        MM_WARNING("Could not decode texture pack image '{}': {}. Using the original.", _fs->displayPath(path), e.what());
-        return {};
-    }
-
-    if (!isPackScale(result.size(), lodSize)) {
-        MM_WARNING("Texture pack image '{}' is {}x{}, but must be {}x{} times 1, 2 or 4. Using the original.",
-                   _fs->displayPath(path), result.width(), result.height(), lodSize.w, lodSize.h);
-        return {};
-    }
-
+int TexturePack::spriteImageCount() const {
+    int result = 0;
+    for (const auto &[name, entry] : _manifest.sprites)
+        result += static_cast<int>(entry.palettes.size());
     return result;
+}
+
+bool TexturePack::hasSpriteImage(std::string_view name, int paletteId) const {
+    auto pos = _manifest.sprites.find(ascii::toLower(name));
+    return pos != _manifest.sprites.end() && std::ranges::contains(pos->second.palettes, paletteId);
+}
+
+RgbaImage TexturePack::spriteImage(std::string_view name, int paletteId, const Blob &lodEntry, Sizei lodSize) const {
+    if (!hasSpriteImage(name, paletteId) || !lodEntry)
+        return {};
+
+    std::string lowercaseName = ascii::toLower(name);
+    std::string path = fmt::format("sprites/{}/{}.png", lowercaseName, paletteId);
+    return loadImage(_fs, path, _manifest.sprites.find(lowercaseName)->second.crc32, lodEntry, lodSize);
 }

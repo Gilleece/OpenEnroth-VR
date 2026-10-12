@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "Library/Json/JsonFwd.h"
 #include "Library/Serialization/SerializationFwd.h"
@@ -26,6 +27,15 @@ struct TexturePackEntry {
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackEntry)
 
 /**
+ * One sprite in a texture pack, as the manifest lists it. A sprite has one image per palette it's drawn with.
+ */
+struct TexturePackSpriteEntry {
+    std::string crc32; // CRC-32 of the `sprites.lod` entry the images replace, as 8 hex digits.
+    std::vector<int> palettes; // Ids of the palettes the pack has an image for.
+};
+MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackSpriteEntry)
+
+/**
  * Contents of a texture pack's `manifest.json`.
  */
 struct TexturePackManifest {
@@ -33,5 +43,6 @@ struct TexturePackManifest {
     TexturePackColors colors = TEXTURE_PACK_COLORS_RAW;
     std::unordered_map<std::string, TexturePackEntry> bitmaps; // Keyed by `bitmaps.lod` entry name.
     std::unordered_map<std::string, TexturePackEntry> icons; // Keyed by `icons.lod` entry name.
+    std::unordered_map<std::string, TexturePackSpriteEntry> sprites; // Keyed by `sprites.lod` entry name.
 };
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackManifest)
