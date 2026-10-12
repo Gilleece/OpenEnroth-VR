@@ -55,6 +55,15 @@ void CompositeUniforms::submit(const OpenGLShader &shader) const {
     glUniform1i(shader.uniformLocation("source"), source);
     glUniform1f(shader.uniformLocation("exposure"), exposure);
     glUniform1f(shader.uniformLocation("gamma"), gamma);
+    glUniform1i(shader.uniformLocation("bloom"), bloom);
+    glUniform1f(shader.uniformLocation("bloomIntensity"), bloomIntensity);
+}
+
+void BloomUniforms::submit(const OpenGLShader &shader) const {
+    glUniform1i(shader.uniformLocation("source"), source);
+    glUniform2f(shader.uniformLocation("texelSize"), texelSize.x, texelSize.y);
+    glUniform1i(shader.uniformLocation("brightPass"), brightPass);
+    glUniform1f(shader.uniformLocation("threshold"), threshold);
 }
 
 void SkyUniforms::submit(const OpenGLShader &shader) const {

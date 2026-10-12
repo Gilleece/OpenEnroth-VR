@@ -508,6 +508,10 @@ class GameConfig : public Config {
                                " world_target_height are not set. Not supported in VR yet. Takes effect on restart."};
         Float Exposure = {this, "exposure", 1.0f, &ValidateExposure,
                           "Brightness multiplier for the 3D world before tonemapping. Only applies with linear_pipeline."};
+        Bool Bloom = {this, "bloom", false, "Let light brighter than bloom_threshold glow into its surroundings. Only applies with linear_pipeline."};
+        Float BloomThreshold = {this, "bloom_threshold", 1.0f, &ValidateBloomThreshold,
+                                "Linear brightness above which light blooms. At 1 only light stacked past white and additive effects bloom."};
+        Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
                                      "Draw sprites, particles, projectiles and the sky in world space through the camera matrices instead of in"
                                      " screen space. Always on in VR, where the screen space versions are wrong in stereo."};
@@ -565,6 +569,12 @@ class GameConfig : public Config {
         }
         static float ValidateExposure(float exposure) {
             return std::clamp(exposure, 0.0625f, 16.0f);
+        }
+        static float ValidateBloomThreshold(float threshold) {
+            return std::clamp(threshold, 0.0f, 16.0f);
+        }
+        static float ValidateBloomIntensity(float intensity) {
+            return std::clamp(intensity, 0.0f, 4.0f);
         }
     };
 

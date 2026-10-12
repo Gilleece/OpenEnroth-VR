@@ -222,12 +222,24 @@ class OpenGLRenderer : public BaseRenderer {
      * highlights off towards white, sRGB encoding and the user gamma. Leaves blending, depth test and scissor test
      * disabled, and changes the viewport and the texture bound to unit 0.
      *
-     * @param source                    Colour texture with linear colour, as the world shaders draw it with the linear
-     *                                  pipeline.
+     * @param source                    Target with linear colour, as the world shaders draw it with the linear
+     *                                  pipeline. Bloom, when enabled, is drawn from it first.
      * @param viewport                  Rectangle to fill in the bound framebuffer, in OpenGL window coordinates.
      * @param filter                    `GL_LINEAR` or `GL_NEAREST`, how the source is sampled.
      */
-    void drawComposite(GLuint source, const Recti &viewport, GLenum filter);
+    void drawComposite(const OpenGLRenderTarget &source, const Recti &viewport, GLenum filter);
+
+    /**
+     * Draws the bloom of a linear colour target into `_bloomTargets`. Leaves the last of them bound as the draw
+     * framebuffer.
+     *
+     * @param source                    Target with linear colour.
+     * @return                          Texture with the bloom at half the size of `source`, or 0 if `source` is too
+     *                                  small to bloom.
+     */
+    GLuint _drawBloom(const OpenGLRenderTarget &source);
+
+    void _ensureFullscreenTriangle();
 
     /**
      * @return                          Internal format for the colour texture arrays of the world, sRGB with the
@@ -263,6 +275,8 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader forcepershader;
     OpenGLShader skyshader;
     OpenGLShader compositeshader;
+    OpenGLShader bloomdownshader;
+    OpenGLShader bloomupshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -310,6 +324,7 @@ class OpenGLRenderer : public BaseRenderer {
     // sky shader
     OpenGLVertexBuffer<SkyVertex> _skyBuffer;
     OpenGLVertexBuffer<CompositeVertex> _compositeBuffer;
+    std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
     std::vector<SkyVertex> _skyVertices;
 
     // two d shader
