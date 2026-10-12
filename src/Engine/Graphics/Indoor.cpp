@@ -55,6 +55,8 @@
 #include "Utility/Exception.h"
 
 
+static constexpr int DEFAULT_AMBIENT_LIGHT_LEVEL = 0;
+
 IndoorLocation *pIndoor = nullptr;
 BLVRenderParams *pBLVRenderParams = new BLVRenderParams;
 
@@ -189,13 +191,23 @@ void IndoorLocation::DrawIndoorFaces(bool bD3D) {
     render->DrawIndoorFaces();
 }
 
+int IndoorLocation::ambientLightLevel() const {
+    int16_t mintest = 0;
+    for (int i = 0; i < sectors.size(); i++) {
+        mintest = std::max(mintest, sectors[i].minAmbientLightLevel);
+    }
+    return DEFAULT_AMBIENT_LIGHT_LEVEL + mintest;
+}
+
 
 
 //----- (00441BD4) --------------------------------------------------------
 void IndoorLocation::Draw() {
     PrepareDrawLists_BLV();
-    if (pBLVRenderParams->uPartySectorID)
+    if (pBLVRenderParams->uPartySectorID) {
         DrawIndoorFaces(true);
+        render->buildBloodsplatDecals();
+    }
     render->TransformBillboards();
     engine->DrawParticles();
     trail_particle_generator.UpdateParticles();

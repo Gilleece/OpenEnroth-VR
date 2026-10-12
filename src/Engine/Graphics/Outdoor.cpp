@@ -228,6 +228,7 @@ void OutdoorLocation::prepareFrameLists() {
 void OutdoorLocation::Draw() {
     pOutdoor->prepareFrameStatic();
     pOutdoor->drawStatic();
+    render->buildBloodsplatDecals();
     pOutdoor->prepareFrameLists();
 
     engine->DrawParticles();

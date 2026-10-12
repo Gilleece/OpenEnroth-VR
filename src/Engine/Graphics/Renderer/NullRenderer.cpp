@@ -99,6 +99,8 @@ bool NullRenderer::ReloadShaders() { return true; }
 
 void NullRenderer::DoRenderBillboards_D3D() {}
 
+void NullRenderer::buildBloodsplatDecals() {}
+
 void NullRenderer::beginOverlays() {}
 void NullRenderer::endOverlays() {}
 void NullRenderer::flushAndScale() {}

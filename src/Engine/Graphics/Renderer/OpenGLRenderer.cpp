@@ -64,7 +64,6 @@
 static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr int PALETTE_COUNT = 1000; // pal000 to pal999 in bitmaps.lod.
 
-static constexpr int DEFAULT_AMBIENT_LIGHT_LEVEL = 0;
 
 // globals
 //TODO(pskelton): Combine and contain
@@ -1265,95 +1264,6 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
         // TODO: OpenGL ES doesn't provide wireframe functionality so enable it only for classic OpenGL for now
         if (!OpenGLES)
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-    // stack new decals onto terrain faces ////////////////////////////////////////////////
-    // TODO(pskelton): clean up and move to seperate function in decal builder
-    if (!decal_builder->bloodsplat_container->uNumBloodsplats) return;
-    unsigned int NumBloodsplats = decal_builder->bloodsplat_container->uNumBloodsplats;
-
-    // loop over blood to lay
-    for (unsigned i = 0; i < NumBloodsplats; ++i) {
-        // approx location of bloodsplat
-        Vec2i gridPos = worldToGrid(decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].pos);
-        // use terrain squares in block surrounding to try and stack faces
-
-        int scope = std::ceil(decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].radius / 512);
-
-        for (int loopy = (gridPos.y - scope); loopy <= (gridPos.y + scope); ++loopy) {
-            for (int loopx = (gridPos.x - scope); loopx <= (gridPos.x + scope); ++loopx) {
-                if (loopy < 0) continue;
-                if (loopy > 127) continue;
-                if (loopx < 0) continue;
-                if (loopx > 127) continue;
-
-
-                // top tri
-                // x, y
-                VertexRenderList[0].vWorldPosition = _terrainVertices[6 * (loopx + (127 * loopy))].pos;
-                // x + 1, y + 1
-                VertexRenderList[1].vWorldPosition = _terrainVertices[6 * (loopx + (127 * loopy)) + 1].pos;
-                // x + 1, y
-                VertexRenderList[2].vWorldPosition = _terrainVertices[6 * (loopx + (127 * loopy)) + 2].pos;
-
-                // bottom tri
-                // x, y
-                VertexRenderList[3].vWorldPosition = _terrainVertices[6 * (loopx + (127 * loopy)) + 3].pos;
-                // x, y + 1
-                VertexRenderList[4].vWorldPosition = _terrainVertices[6 * (loopx + (127 * loopy)) + 4].pos;
-                // x + 1, y + 1
-                VertexRenderList[5].vWorldPosition = _terrainVertices[6 * (loopx + (127 * loopy)) + 5].pos;
-
-                float WorldMinZ = pOutdoor->GetPolygonMinZ(VertexRenderList, 6);
-                float WorldMaxZ = pOutdoor->GetPolygonMaxZ(VertexRenderList, 6);
-
-                // TODO(pskelton): terrain and boxes should be saved for easier retrieval
-                // test expanded box against bloodsplat
-                BBoxf thissquare{ _terrainVertices[6 * (loopx + (127 * loopy))].pos.x ,
-                                  _terrainVertices[6 * (loopx + (127 * loopy)) + 1].pos.x,
-                                  _terrainVertices[6 * (loopx + (127 * loopy)) + 1].pos.y,
-                                  _terrainVertices[6 * (loopx + (127 * loopy))].pos.y,
-                                  WorldMinZ,
-                                  WorldMaxZ };
-
-                // skip this square if no splat over lap
-                if (!thissquare.intersectsCube(decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].pos, decal_builder->bloodsplat_container->pBloodsplats_to_apply[i].radius))
-                    continue;
-
-                // splat hits this square of terrain
-                bool fading = pOutdoor->pTerrain.isWaterOrShoreByGrid({loopx, loopy});
-
-                const auto &[norm, norm2] = pOutdoor->pTerrain.normalsByGridUnsafe({loopx, loopy});
-
-                float Light_tile_dist = 0.0;
-
-                // top tri
-                float _f1 = norm.x * pOutdoor->vSunlight.x + norm.y * pOutdoor->vSunlight.y + norm.z * pOutdoor->vSunlight.z;
-                int dimming_level = std::clamp(static_cast<int>(20.0f - floorf(20.0f * _f1 + 0.5f)), 0, 31);
-
-                decal_builder->ApplyBloodSplatToTerrain(fading, norm, &Light_tile_dist, VertexRenderList, i);
-                Planef plane;
-                plane.normal = norm;
-                plane.dist = Light_tile_dist;
-                if (decal_builder->uNumSplatsThisFace > 0)
-                    decal_builder->BuildAndApplyDecals(31 - dimming_level, LocationTerrain, plane, 3, VertexRenderList, 0, -1);
-
-                //bottom tri
-                float _f = norm2.x * pOutdoor->vSunlight.x + norm2.y * pOutdoor->vSunlight.y + norm2.z * pOutdoor->vSunlight.z;
-                dimming_level = std::clamp(static_cast<int>(20.0 - floorf(20.0 * _f + 0.5f)), 0, 31);
-
-                decal_builder->ApplyBloodSplatToTerrain(fading, norm2, &Light_tile_dist, (VertexRenderList + 3), i);
-                plane.normal = norm2;
-                plane.dist = Light_tile_dist;
-                if (decal_builder->uNumSplatsThisFace > 0)
-                    decal_builder->BuildAndApplyDecals(31 - dimming_level, LocationTerrain, plane, 3, (VertexRenderList + 3), 0, -1);
-            }
-        }
-    }
-
-    // end of new system test
-    return;
-
-    // end shder version
 }
 
 // TODO(pskelton): renderbase
@@ -2656,60 +2566,6 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
         // TODO: OpenGL ES doesn't provide wireframe functionality so enable it only for classic OpenGL for now
         if (!OpenGLES)
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-    // TODO(pskelton): clean up
-    // need to stack decals
-    if (!decal_builder->bloodsplat_container->uNumBloodsplats) return;
-
-    for (BSPModel &model : pOutdoor->pBModels) {
-        if (model.faces.empty()) {
-            continue;
-        }
-
-        // check for any splat in this models box - if not continue
-        bool found = false;
-        for (int splat = 0; splat < decal_builder->bloodsplat_container->uNumBloodsplats; ++splat) {
-            Bloodsplat *thissplat = &decal_builder->bloodsplat_container->pBloodsplats_to_apply[splat];
-            if (model.boundingBox.intersectsCube(thissplat->pos, thissplat->radius)) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) continue;
-
-        for (int faceId : model.faces) {
-            BLVFace &face = pOutdoor->faces[faceId];
-            if (face.Invisible()) {
-                continue;
-            }
-
-            float _f1 = face.facePlane.normal.x * pOutdoor->vSunlight.x + face.facePlane.normal.y * pOutdoor->vSunlight.y + face.facePlane.normal.z * pOutdoor->vSunlight.z;
-            int dimming_level = std::clamp(static_cast<int>(20.0 - floorf(20.0 * _f1 + 0.5f)), 0, 31);
-
-            for (unsigned vertex_id = 1; vertex_id <= face.vertexIds.size(); vertex_id++) {
-                array_73D150[vertex_id - 1].vWorldPosition = pOutdoor->vertices[face.vertexIds[vertex_id - 1]];
-            }
-
-            for (int vertex_id = 0; vertex_id < face.vertexIds.size(); ++vertex_id) {
-                memcpy(&VertexRenderList[vertex_id], &array_73D150[vertex_id], sizeof(VertexRenderList[vertex_id]));
-                VertexRenderList[vertex_id]._rhw = 1.0 / (array_73D150[vertex_id].vWorldViewPosition.x + 0.0000001);
-            }
-
-            decal_builder->ApplyBloodsplatDecalsToFace(&face);
-            if (decal_builder->uNumSplatsThisFace > 0) {
-                decal_builder->BuildAndApplyDecals(
-                    31 - dimming_level, LocationBuildings,
-                    face.facePlane,
-                    face.vertexIds.size(), VertexRenderList, 0, -1);
-            }
-        }
-    }
-
-    return;
-
-
-
-    ///////////////// shader end
 }
 
 void OpenGLRenderer::DrawIndoorFaces() {
@@ -3061,11 +2917,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
         uniforms.flowtimerms = animTimer->time().realtimeMilliseconds();
 
         // lighting stuff
-        int16_t mintest = 0;
-        for (int i = 0; i < pIndoor->sectors.size(); i++) {
-            mintest = std::max(mintest, pIndoor->sectors[i].minAmbientLightLevel);
-        }
-        int uCurrentAmbientLightLevel = (DEFAULT_AMBIENT_LIGHT_LEVEL + mintest);
+        int uCurrentAmbientLightLevel = pIndoor->ambientLightLevel();
         float ambient = (248.0f - (uCurrentAmbientLightLevel << 3)) / 255.0f;
         float diffuseon = 0.0f;
 
@@ -3210,54 +3062,6 @@ void OpenGLRenderer::DrawIndoorFaces() {
             // TODO: OpenGL ES doesn't provide wireframe functionality so enable it only for classic OpenGL for now
             if (!OpenGLES)
                 glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-
-        // stack decals start
-
-        if (!decal_builder->bloodsplat_container->uNumBloodsplats) return;
-        RenderVertexSoft static_vertices_buff_in[64];  // buff in
-
-        // loop over faces
-        for (int test = 0; test < pIndoor->faces.size(); test++) {
-            BLVFace *pface = &pIndoor->faces[test];
-
-            if (pface->isPortal()) continue;
-            // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
-            if (!pface->GetTexture()) continue;
-
-            // check if faces is visible
-            bool onlist = false;
-            for (unsigned i = 0; i < pBspRenderer->uNumVisibleNotEmptySectors; ++i) {
-                int listsector = pBspRenderer->pVisibleSectorIDs_toDrawDecorsActorsEtcFrom[i];
-                if (pface->sectorId == listsector) {
-                    onlist = true;
-                    break;
-                }
-            }
-            if (!onlist) continue;
-
-
-            decal_builder->ApplyBloodsplatDecalsToFace(pface);
-            if (!decal_builder->uNumSplatsThisFace) continue;
-
-            // copy to buff in
-            for (unsigned i = 0; i < pface->vertexIds.size(); ++i) {
-                static_vertices_buff_in[i].vWorldPosition = pIndoor->vertices[pface->vertexIds[i]];
-                static_vertices_buff_in[i].u = pface->textureUs[i];
-                static_vertices_buff_in[i].v = pface->textureVs[i];
-            }
-
-            // blood draw
-            decal_builder->BuildAndApplyDecals(uCurrentAmbientLightLevel, LocationIndoors, pface->facePlane,
-                pface->vertexIds.size(), static_vertices_buff_in,
-                0, pface->sectorId);
-        }
-
-
-
-        ///////////////////////////////////////////////////////
-        // stack decals end
-
-        return;
 }
 
 void OpenGLRenderer::Initialize() {

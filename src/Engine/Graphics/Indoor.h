@@ -230,6 +230,13 @@ struct IndoorLocation {
     void toggleLight(signed int uLightID, unsigned int bToggle);
 
     void DrawIndoorFaces(bool bD3D);
+
+    /**
+     * @return                          Dimming level of the ambient light the whole level is lit with, where 0 is
+     *                                  the brightest. It's the highest of the sectors' minimum ambient levels.
+     */
+    int ambientLightLevel() const;
+
     void PrepareDecorationsRenderList_BLV(unsigned int uDecorationID, int uSectorID);
 
     std::string filename;
