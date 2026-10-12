@@ -16,6 +16,7 @@
 #include "Engine/Objects/SpriteObject.h"
 
 #include "Engine/Graphics/Camera.h"
+#include "Engine/Graphics/CameraView.h"
 #include "Engine/Graphics/DecalBuilder.h"
 #include "Engine/Graphics/Lighting.h"
 #include "Engine/Graphics/LightsStack.h"
@@ -53,6 +54,36 @@ unsigned int BaseRenderer::NextBillboardIndex() {
 
 void BaseRenderer::resetBillboardRenderList() {
     uNumBillboardsToDraw = 0;
+    _worldBillboardQuadsBuilt = false;
+}
+
+/**
+ * @param view                          View to face.
+ * @return                              Right and up axes for camera facing quads, those of `view` with its roll taken
+ *                                      out.
+ */
+static std::pair<Vec3f, Vec3f> billboardAxes(const CameraView &view) {
+    // Rows of the view matrix are the view's right, up and backward axes in world space.
+    const glm::mat4 &matrix = view.viewMatrix;
+    glm::vec3 viewRight(matrix[0][0], matrix[1][0], matrix[2][0]);
+    glm::vec3 viewBack(matrix[0][2], matrix[1][2], matrix[2][2]);
+
+    glm::vec3 right = glm::vec3(viewRight.x, viewRight.y, 0);
+    right = glm::length(right) > 0.001f ? glm::normalize(right) : viewRight; // Rolled on its side, keep the roll.
+    glm::vec3 up = glm::normalize(glm::cross(viewBack, right));
+    return {Vec3f(right.x, right.y, right.z), Vec3f(up.x, up.y, up.z)};
+}
+
+void BaseRenderer::buildWorldBillboardQuads(const CameraView &view) {
+    auto [right, up] = billboardAxes(view);
+    for (unsigned i = 0; i < uNumBillboardsToDraw; i++) {
+        WorldBillboard &billboard = _worldBillboards[i];
+        for (int j = 0; j < billboard.numVertices; j++)
+            billboard.corners[j] = billboard.pos + billboard.offsets[j] + right * billboard.facing[j].x + up * billboard.facing[j].y;
+        billboard.distance = (billboard.pos - view.position).length();
+    }
+    _worldBillboardEye = view.position;
+    _worldBillboardQuadsBuilt = true;
 }
 
 void BaseRenderer::sortBillboardRenderList() {

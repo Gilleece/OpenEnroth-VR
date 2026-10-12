@@ -90,6 +90,32 @@ static void clampHeadOffset(std::array<XrView, 2> &views, float radius) {
     }
 }
 
+/**
+ * @param orientation                   Orientation in an OpenXR space.
+ * @return                              Its yaw in radians, the turn of the direction it looks along, -z, around +y.
+ */
+static float yawOf(const XrQuaternionf &orientation) {
+    glm::vec3 forward = glm::quat(orientation.w, orientation.x, orientation.y, orientation.z) * glm::vec3(0, 0, -1);
+    return std::atan2(-forward.x, -forward.z);
+}
+
+/**
+ * @param views                         Eye views.
+ * @return                              View from between the eyes, turned halfway between them.
+ */
+static XrView midView(const std::array<XrView, 2> &views) {
+    const XrPosef &left = views[0].pose;
+    const XrPosef &right = views[1].pose;
+    glm::quat orientation = glm::slerp(glm::quat(left.orientation.w, left.orientation.x, left.orientation.y, left.orientation.z),
+                                       glm::quat(right.orientation.w, right.orientation.x, right.orientation.y, right.orientation.z), 0.5f);
+
+    XrView result = views[0];
+    result.pose.position = {(left.position.x + right.position.x) / 2, (left.position.y + right.position.y) / 2,
+                            (left.position.z + right.position.z) / 2};
+    result.pose.orientation = {orientation.x, orientation.y, orientation.z, orientation.w};
+    return result;
+}
+
 VrSystem::VrSystem() : PlatformEventFilter({EVENT_KEY_PRESS}) {}
 
 VrSystem::~VrSystem() {
@@ -117,6 +143,10 @@ bool VrSystem::drawViews(WorldFrame &frame) {
         return false;
     clampHeadOffset(views, engine->config->vr.HeadOffsetRadius.value());
 
+    // Both eyes draw the same billboard quads, so that only the eye projections differ.
+    XrView head = midView(views);
+    render->buildWorldBillboardQuads(eyeView(head, _eyes[0].size));
+
     std::array<int, 2> billboards = {};
     if (!drawEye(0, views[0], frame))
         return false;
@@ -126,6 +156,9 @@ bool VrSystem::drawViews(WorldFrame &frame) {
     render->setExternalWorldTarget(TextureRenderId(), Sizei());
 
     if (_worldFrameCount < LOGGED_FRAME_COUNT) {
+        MM_INFO("VR: frame {} billboards face {:.2f} degrees of yaw, the eyes look along {:.2f} and {:.2f}.", _frameIndex,
+                yawOf(head.pose.orientation) * 180 / M_PI, yawOf(views[0].pose.orientation) * 180 / M_PI,
+                yawOf(views[1].pose.orientation) * 180 / M_PI);
         for (int i = 0; i < 2; i++) {
             const XrPosef &pose = views[i].pose;
             const XrFovf &fov = views[i].fov;
@@ -480,10 +513,7 @@ bool VrSystem::captureOrigin(XrTime time) {
     if ((head.locationFlags & tracked) != tracked)
         return false;
 
-    // The head looks along -z, and the yaw is its turn around +y.
-    const XrQuaternionf &orientation = head.pose.orientation;
-    glm::vec3 forward = glm::quat(orientation.w, orientation.x, orientation.y, orientation.z) * glm::vec3(0, 0, -1);
-    float yaw = std::atan2(-forward.x, -forward.z);
+    float yaw = yawOf(head.pose.orientation);
     glm::quat level = glm::angleAxis(yaw, glm::vec3(0, 1, 0));
 
     XrReferenceSpaceCreateInfo spaceInfo = {XR_TYPE_REFERENCE_SPACE_CREATE_INFO};

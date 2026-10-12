@@ -2064,18 +2064,6 @@ float OpenGLRenderer::billboardTextureId(GraphicsImage *texture, int *paletteId)
     return static_cast<float>(effpar03->renderId().value());
 }
 
-std::pair<Vec3f, Vec3f> OpenGLRenderer::billboardAxes() const {
-    // Rows of the view matrix are the view's right, up and backward axes in world space.
-    const glm::mat4 &view = _view.viewMatrix;
-    glm::vec3 viewRight(view[0][0], view[1][0], view[2][0]);
-    glm::vec3 viewBack(view[0][2], view[1][2], view[2][2]);
-
-    glm::vec3 right = glm::vec3(viewRight.x, viewRight.y, 0);
-    right = glm::length(right) > 0.001f ? glm::normalize(right) : viewRight; // Rolled on its side, keep the roll.
-    glm::vec3 up = glm::normalize(glm::cross(viewBack, right));
-    return {Vec3f(right.x, right.y, right.z), Vec3f(up.x, up.y, up.z)};
-}
-
 void OpenGLRenderer::drawWorldBillboards() {
     glEnable(GL_BLEND);
     glDepthMask(GL_FALSE);
@@ -2084,25 +2072,21 @@ void OpenGLRenderer::drawWorldBillboards() {
     _set_3d_projection_matrix();
     _set_3d_modelview_matrix();
 
-    auto [right, up] = billboardAxes();
+    if (!_worldBillboardQuadsBuilt)
+        buildWorldBillboardQuads(_view);
 
     for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
         const WorldBillboard &billboard = _worldBillboards[pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D];
 
         int paletteId = billboard.paletteId;
         float texid = billboardTextureId(billboard.texture, &paletteId);
-        float distance = (billboard.pos - _view.position).length();
-
-        std::array<Vec3f, 4> corners;
-        for (int j = 0; j < billboard.numVertices; j++)
-            corners[j] = billboard.pos + billboard.offsets[j] + right * billboard.facing[j].x + up * billboard.facing[j].y;
 
         auto addVertex = [&](int j) {
             BillboardVertex &vertex = _billboardVertices.emplace_back();
-            vertex.pos = corners[j];
+            vertex.pos = billboard.corners[j];
             vertex.texuv = Vec2f(std::clamp(billboard.texcoords[j].x, 0.01f, 0.99f), std::clamp(billboard.texcoords[j].y, 0.01f, 0.99f));
             vertex.color = billboard.colors[j].toColorf();
-            vertex.screenspace = distance;
+            vertex.screenspace = billboard.distance;
             vertex.texid = texid;
             vertex.blend = static_cast<float>(billboard.opacity);
             vertex.paletteId = paletteId;
@@ -2126,7 +2110,8 @@ void OpenGLRenderer::drawWorldBillboards() {
 
 void OpenGLRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) {
     // Across the beam and across the line of sight, so that the beam is seen at its full width.
-    Vec3f side = cross(_view.position - (src + dst) / 2, dst - src);
+    Vec3f eye = _worldBillboardQuadsBuilt ? _worldBillboardEye : _view.position;
+    Vec3f side = cross(eye - (src + dst) / 2, dst - src);
     float sideLength = side.length();
     if (sideLength == 0)
         return;
@@ -2140,7 +2125,7 @@ void OpenGLRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *te
         vertex.pos = corners[j];
         vertex.texuv = texcoords[j];
         vertex.color = colorTable.White.toColorf();
-        vertex.screenspace = (corners[j] - _view.position).length();
+        vertex.screenspace = (corners[j] - eye).length();
         vertex.texid = texid;
         vertex.blend = static_cast<float>(RenderBillboardD3D::Opaque_1);
         vertex.paletteId = 0;
