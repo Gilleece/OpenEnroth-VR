@@ -9,6 +9,7 @@
 #include <utility>
 #include <map>
 #include <string>
+#include <span>
 #include <string_view>
 #include <tuple>
 #include <vector>
@@ -3437,23 +3438,27 @@ bool OpenGLRenderer::ReloadShaders() {
     _forcePerBuffer.reset();
     _forcePerVertices.clear();
 
-    const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view>> shaders = {
-        {&terrainshader,    "glterrain",        "Terrain"},
-        {&outbuildshader,   "gloutbuild",       "Outdoor buildings"},
-        {&bspshader,        "glbspshader",      "Indoor BSP"},
-        {&textshader,       "gltextshader",     "Text"},
-        {&lineshader,       "gllinesshader",    "Lines"},
-        {&twodshader,       "gltwodshader",     "2D"},
-        {&billbshader,      "glbillbshader",    "Billboards"},
-        {&decalshader,      "gldecalshader",    "Decals"},
-        {&forcepershader,   "glforcepershader", "Forced perspective"}
+    static constexpr std::string_view materialDefines[] = {"MATERIAL_MAPS"};
+    const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
+        {&terrainshader,          "glterrain",        "Terrain",                          {}},
+        {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                {}},
+        {&bspshader,              "glbspshader",      "Indoor BSP",                       {}},
+        {&textshader,             "gltextshader",     "Text",                             {}},
+        {&lineshader,             "gllinesshader",    "Lines",                            {}},
+        {&twodshader,             "gltwodshader",     "2D",                               {}},
+        {&billbshader,            "glbillbshader",    "Billboards",                       {}},
+        {&decalshader,            "gldecalshader",    "Decals",                           {}},
+        {&forcepershader,         "glforcepershader", "Forced perspective",               {}},
+        {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           materialDefines},
+        {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", materialDefines},
+        {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}
     };
 
     SubFileSystem shadersFs("shaders", dfs);
 
-    for (const auto &[shader, fileName, readableName] : shaders) {
+    for (const auto &[shader, fileName, readableName, defines] : shaders) {
         if (!shader->load(shadersFs.read(fmt::format("{}.vert", fileName)),
-                          shadersFs.read(fmt::format("{}.frag", fileName)), OpenGLES, &shadersFs)) {
+                          shadersFs.read(fmt::format("{}.frag", fileName)), OpenGLES, &shadersFs, defines)) {
             platform->showMessageBox("CRITICAL ERROR: shader compilation failure",
                                      fmt::format("{} shader failed to compile!\nPlease consult the log and consider issuing a bug report!", readableName));
             return false;

@@ -3,12 +3,13 @@
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
-    echo "Usage: $0 <shader> <version>"
+    echo "Usage: $0 <shader> <version> [define...]"
     exit 1
 fi
 
 SHADER="$1"
 VERSION="$2"
+DEFINES=("${@:3}")
 SHADER_DIR="$(dirname "$SHADER")"
 SHADER_NAME="$(basename "$SHADER")"
 
@@ -19,6 +20,10 @@ trap "rm -rf $TEMP_DIR" EXIT
 PREAMBLE="#version $VERSION
 #extension GL_GOOGLE_include_directive : enable
 "
+for DEFINE in "${DEFINES[@]}"; do
+    PREAMBLE+="#define $DEFINE
+"
+done
 
 # Create temp file with preamble
 echo -n "$PREAMBLE" > "$TEMP_DIR/$SHADER_NAME"

@@ -106,6 +106,10 @@ jobs:
               echo "Checking $shader against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version"
             done
+            for shader in resources/shaders/{glterrain,gloutbuild,glbspshader}.{vert,frag}; do
+              echo "Checking $shader with MATERIAL_MAPS against GLSL $glsl_version..."
+              ./scripts/check_shader.sh "$shader" "$glsl_version" MATERIAL_MAPS
+            done
           done
 
       # Doxyfile sets WARN_AS_ERROR, so generating the docs is the check.
