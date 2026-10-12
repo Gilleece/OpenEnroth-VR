@@ -27,6 +27,12 @@
 #   define ConfigWindowMode WINDOW_MODE_WINDOWED
 #endif
 
+#ifdef OE_DEBUG_BUILD
+constexpr bool DEFAULT_VALIDATE_OPENGL = true;
+#else
+constexpr bool DEFAULT_VALIDATE_OPENGL = false;
+#endif
+
 // TODO(captainurist): apply codestyle here.
 
 class GameConfig : public Config {
@@ -116,6 +122,9 @@ class GameConfig : public Config {
 
         Bool CollisionOutlines = {this, "collision_outlines", false,
             "Draw actor and decoration collision cylinders for debugging."};
+
+        Bool ValidateOpenGL = {this, "validate_opengl", DEFAULT_VALIDATE_OPENGL,
+            "Check for OpenGL errors after every OpenGL call and log them. This slows down rendering."};
 
         ConfigEntry<::LogLevel> LogLevel = {this, "log_level", LOG_INFO,
             "Default log level. One of 'none', 'trace', 'debug', 'info', 'warning', 'error' and 'critical'."};
