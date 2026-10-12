@@ -23,6 +23,7 @@ class BaseRenderer : public Renderer {
     virtual void TransformBillboards() override;
     virtual void resetBillboardRenderList() override;
     virtual void buildWorldBillboardQuads(const CameraView &view) override;
+    virtual const WorldBillboard *builtWorldBillboard(int index) override;
     virtual void sortBillboardRenderList() override;
     virtual void buildBloodsplatDecals() override;
     virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) override;

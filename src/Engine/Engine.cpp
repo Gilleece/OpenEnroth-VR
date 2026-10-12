@@ -428,6 +428,10 @@ void Engine::LogEngineBuildInfo() {
 Vis_PIDAndDepth Engine::PickMouse(float fPickDepth, int uMouseX, int uMouseY,
                                   Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter) {
     if (pViewport.contains(Pointi(uMouseX, uMouseY))) {
+        Vec3f origin;
+        Vec3f direction;
+        if (_worldFrameViews && _worldFrameViews->pickRay(Pointi(uMouseX, uMouseY), &origin, &direction))
+            return PickRay(fPickDepth, origin, direction, sprite_filter, face_filter);
         return vis->PickMouse(fPickDepth, uMouseX, uMouseY, sprite_filter, face_filter);
     } else {
         return Vis_PIDAndDepth();
@@ -437,10 +441,29 @@ Vis_PIDAndDepth Engine::PickMouse(float fPickDepth, int uMouseX, int uMouseY,
 //----- (0044EB12) --------------------------------------------------------
 Vis_PIDAndDepth Engine::PickKeyboard(float pick_depth, Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter) {
     if (current_screen_type == SCREEN_GAME) {
+        Vec3f origin;
+        Vec3f direction;
+        if (_worldFrameViews && _worldFrameViews->forwardRay(&origin, &direction))
+            return PickRay(pick_depth, origin, direction, sprite_filter, face_filter);
         return vis->PickKeyboard(pick_depth, sprite_filter, face_filter);
     } else {
         return Vis_PIDAndDepth();
     }
+}
+
+Vis_PIDAndDepth Engine::PickRay(float fPickDepth, Vec3f origin, Vec3f direction,
+                                Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter) {
+    // Faces measure their depth and outdoor models their visibility with pCamera3D, so it looks along the ray.
+    int yaw = static_cast<int>(std::lround(std::atan2(direction.y, direction.x) * 1024 / M_PI)) & 2047;
+    int pitch = static_cast<int>(std::lround(std::asin(std::clamp(direction.z, -1.0f, 1.0f)) * 1024 / M_PI));
+    pCamera3D->updateFromPose(origin, yaw, pitch, 0, 0);
+    Vis_PIDAndDepth result = vis->PickRay(fPickDepth, origin, direction, sprite_filter, face_filter);
+    pCamera3D->updateFromParty();
+    return result;
+}
+
+bool Engine::aimPickCamera() {
+    return _worldFrameViews && _worldFrameViews->aimPickCamera();
 }
 
 Vis_PIDAndDepth Engine::PickMouseForInfo() {

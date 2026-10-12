@@ -144,6 +144,13 @@ class Renderer {
     virtual void buildWorldBillboardQuads(const CameraView &view) = 0;
 
     /**
+     * @param index                     Index into `pBillboardRenderListD3D`.
+     * @return                          World space billboard at that index, or null if this frame's quads weren't
+     *                                  built.
+     */
+    virtual const WorldBillboard *builtWorldBillboard(int index) = 0;
+
+    /**
      * Makes the UI a layer of its own for an external compositor, like a VR runtime. The UI is then drawn into the UI
      * target over transparent black, with nothing in the game viewport, and the window gets the viewport mirror under
      * it when the frame is presented.

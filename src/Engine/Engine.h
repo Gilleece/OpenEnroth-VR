@@ -86,6 +86,15 @@ class Engine {
     Vis_PIDAndDepth PickKeyboard(float pick_depth, Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter);
 
     /**
+     * Points `pCamera3D` at the camera the last frame's billboard and face lists were built with, if the world is drawn
+     * from views of its own.
+     *
+     * @return                          Whether the camera was moved. If so, point it back at the party with
+     *                                  `Camera3D::updateFromParty` once picking is done.
+     */
+    bool aimPickCamera();
+
+    /**
      * Picks whatever is under the cursor for display purposes - monster popups and status bar hints.
      * Reaches to the monster popup depth, matches anything.
      */
@@ -165,6 +174,19 @@ class Engine {
     WorldFrameViews *_worldFrameViews = nullptr;
 
  private:
+    /**
+     * Picks along a ray instead of through a point of the party camera's view, like the views of a headset do.
+     *
+     * @param fPickDepth                Length of the ray.
+     * @param origin                    Start of the ray.
+     * @param direction                 Direction of the ray, normalized.
+     * @param sprite_filter             Billboards to consider.
+     * @param face_filter               Faces to consider.
+     * @return                          Closest object the ray hits.
+     */
+    Vis_PIDAndDepth PickRay(float fPickDepth, Vec3f origin, Vec3f direction,
+                            Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter);
+
     std::unique_ptr<ResourceManager> _resourceManager;
 };
 
