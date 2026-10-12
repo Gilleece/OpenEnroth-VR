@@ -21,6 +21,10 @@ class NullRenderer : public BaseRenderer {
     virtual void RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor) override;
 
     virtual void BeginScene3D(const CameraView &view) override;
+    virtual void EndScene3D() override;
+    virtual Recti worldTargetViewport() override;
+    virtual void compositeWorldTarget() override;
+    virtual TextureRenderId uiTargetTexture() override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,

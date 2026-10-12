@@ -17,6 +17,7 @@
 #include "Library/Color/Colorf.h"
 #include "Library/Geometry/Vec.h"
 
+#include "OpenGLRenderTarget.h"
 #include "OpenGLVertexBuffer.h"
 #include "OpenGLShader.h"
 #include "OpenGLShaderParams.h"
@@ -45,6 +46,10 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor) override;
 
     virtual void BeginScene3D(const CameraView &view) override;
+    virtual void EndScene3D() override;
+    virtual Recti worldTargetViewport() override;
+    virtual void compositeWorldTarget() override;
+    virtual TextureRenderId uiTargetTexture() override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,
@@ -124,6 +129,15 @@ class OpenGLRenderer : public BaseRenderer {
     void _set_3d_modelview_matrix();
     void _set_ortho_projection(bool gameviewport = false);
     void _set_ortho_modelview();
+    void _setWorldViewport();
+    void _bindUiTarget();
+
+    /**
+     * @param width                     Width of the screenshot.
+     * @param height                    Height of the screenshot.
+     * @return                          The world target scaled to the given size.
+     */
+    RgbaImage makeWorldTargetScreenshot(int width, int height);
 
     Recti clipRect;
 
@@ -212,6 +226,8 @@ class OpenGLRenderer : public BaseRenderer {
 
  private:
     CameraView _view;
+    OpenGLRenderTarget _uiTarget;
+    OpenGLRenderTarget _worldTarget;
 };
 
 

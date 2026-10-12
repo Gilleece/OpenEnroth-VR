@@ -50,7 +50,7 @@ void WorldFrame::prepareOutdoor() {
     pOutdoor->prepareFrameLists();
 
     engine->particle_engine->prepareFrame();
-    // pWeather->Draw(); // Engine::DrawGUI already calls this once a frame, a second call doubles the snow speed.
+    // pWeather->updateSnow(); // Engine::DrawGUI already calls this once a frame, a second call doubles the snow speed.
     trail_particle_generator.UpdateParticles();
     render->sortBillboardRenderList();
 }

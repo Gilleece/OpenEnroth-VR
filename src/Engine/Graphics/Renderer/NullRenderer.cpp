@@ -4,6 +4,7 @@
 #include "Engine/Engine.h"
 #include "Engine/EngineCallObserver.h"
 #include "Engine/Graphics/Image.h"
+#include "Engine/Graphics/Viewport.h"
 
 #include "Library/Platform/Application/PlatformApplication.h"
 
@@ -35,6 +36,17 @@ void NullRenderer::EndLines2D() {}
 void NullRenderer::RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor) {}
 
 void NullRenderer::BeginScene3D(const CameraView &view) {}
+void NullRenderer::EndScene3D() {}
+
+Recti NullRenderer::worldTargetViewport() {
+    return pViewport;
+}
+
+void NullRenderer::compositeWorldTarget() {}
+
+TextureRenderId NullRenderer::uiTargetTexture() {
+    return TextureRenderId();
+}
 
 void NullRenderer::DrawProjectile(float srcX, float srcY, float a3, float a4,
                                   float dstX, float dstY, float a7, float a8,

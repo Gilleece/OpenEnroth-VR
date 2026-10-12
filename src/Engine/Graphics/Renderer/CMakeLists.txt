@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.27 FATAL_ERROR)
 set(ENGINE_GRAPHICS_RENDERER_SOURCES
         BaseRenderer.cpp
         NullRenderer.cpp
+        OpenGLRenderTarget.cpp
         OpenGLRenderer.cpp
         OpenGLShader.cpp
         OpenGLShaderParams.cpp
@@ -14,6 +15,7 @@ set(ENGINE_GRAPHICS_RENDERER_HEADERS
         BaseRenderer.h
         OpenGLVertexBuffer.h
         NullRenderer.h
+        OpenGLRenderTarget.h
         OpenGLRenderer.h
         OpenGLShader.h
         OpenGLShaderParams.h
