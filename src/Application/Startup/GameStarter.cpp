@@ -97,8 +97,10 @@ void GameStarter::initialize() {
         _config->graphics.Saturation.setValue(1.0f);
         _config->graphics.Lightness.setValue(1.0f);
     }
-    if (_options.vr)
+    if (_options.vr) {
+        _loadedVrEnabled = _config->vr.Enabled.value();
         _config->vr.Enabled.setValue(true);
+    }
 
     // Finish logger init now that we have user fs and know the desired log level.
     _logStarter.initialize(ufs, _options.logLevel ? *_options.logLevel : _config->debug.LogLevel.value());
@@ -296,6 +298,8 @@ void GameStarter::run() {
         _game->run();
 
         _application->component<GameWindowHandler>()->UpdateConfigFromWindow(_config.get());
+        if (_options.vr)
+            _config->vr.Enabled.setValue(_loadedVrEnabled);
         _config->save(ufs->openForWriting(configName).get());
         MM_INFO("Configuration file '{}' saved!", ufs->displayPath(configName));
     } catch (const std::exception &e) {

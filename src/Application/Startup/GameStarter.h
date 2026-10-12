@@ -63,4 +63,5 @@ class GameStarter {
     std::unique_ptr<OverlaySystem> _overlaySystem;
     std::unique_ptr<Engine> _engine;
     std::shared_ptr<Game> _game;
+    bool _loadedVrEnabled = false; // vr.enabled as loaded from the ini, before --vr.
 };
