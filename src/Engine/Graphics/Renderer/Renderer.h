@@ -17,6 +17,7 @@
 
 class Actor;
 struct CameraView;
+struct LightsSnapshot;
 class GraphicsImage;
 class GameConfig;
 class Sprite;
@@ -125,7 +126,7 @@ class Renderer {
     virtual void EndTextNew() = 0;
     virtual void DrawTextNew(const Recti &srcRect, const Recti &dstRect, const TextColors &colors) = 0;
 
-    virtual void DrawOutdoorBuildings() = 0;
+    virtual void DrawOutdoorBuildings(const LightsSnapshot &lights) = 0;
 
     virtual void DrawIndoorSky(int uNumVertices, int uFaceID = 0) = 0;
     virtual void DrawOutdoorSky() = 0;
@@ -133,7 +134,7 @@ class Renderer {
     virtual void PrepareDecorationsRenderList_ODM() = 0;
     virtual void DrawSpriteObjects() = 0;
 
-    virtual void DrawOutdoorTerrain() = 0;
+    virtual void DrawOutdoorTerrain(const LightsSnapshot &lights) = 0;
 
     /**
      * Takes a screenshot of the game viewport, w/o the UI elements.

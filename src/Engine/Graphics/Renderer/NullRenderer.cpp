@@ -70,11 +70,11 @@ void NullRenderer::BeginTextNew(GraphicsImage *texture) {}
 void NullRenderer::EndTextNew() {}
 void NullRenderer::DrawTextNew(const Recti &srcRect, const Recti &dstRect, const TextColors &colors) {}
 
-void NullRenderer::DrawOutdoorBuildings() {}
+void NullRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {}
 
 void NullRenderer::DrawIndoorSky(int uNumVertices, int uFaceID) {}
 void NullRenderer::DrawOutdoorSky() {}
-void NullRenderer::DrawOutdoorTerrain() {}
+void NullRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {}
 
 RgbaImage NullRenderer::MakeViewportScreenshot(const int width, const int height) {
     return RgbaImage::solid(Color(), width, height);

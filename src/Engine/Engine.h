@@ -41,6 +41,7 @@ struct OutdoorLocation;
 struct LightsStack_StationaryLight_;
 struct LightsStack_MobileLight_;
 class OverlaySystem;
+class WorldFrame;
 
 enum class GameState {
     GAME_STATE_PLAYING = 0,
@@ -107,7 +108,6 @@ class Engine {
     void onGameViewportClick();
     bool draw_debug_outlines();
     void StackPartyTorchLight();
-    void DrawParticles();
     void Draw();
     void drawWorld();
     void drawHUD();
@@ -160,6 +160,7 @@ class Engine {
     std::unique_ptr<OutdoorLocation> _outdoor;
     std::unique_ptr<LightsStack_StationaryLight_> _stationaryLights;
     std::unique_ptr<LightsStack_MobileLight_> _mobileLights;
+    std::unique_ptr<WorldFrame> _worldFrame;
 
  private:
     std::unique_ptr<ResourceManager> _resourceManager;

@@ -101,11 +101,14 @@ void ParticleEngine::AddParticle(Particle_sw *particle) {
     }
 }
 
-void ParticleEngine::Draw() {
+void ParticleEngine::prepareFrame() {
     uTimeElapsed += gameTimer->dt();
     pLines.uNumLines = 0;
 
     DrawParticles_BLV();
+}
+
+void ParticleEngine::drawLines() {
     if (pLines.uNumLines) {
         render->BeginLines2D();
         for (int i = 0; i < pLines.uNumLines; i++)

@@ -69,11 +69,11 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void EndTextNew() override;
     virtual void DrawTextNew(const Recti &srcRect, const Recti &dstRect, const TextColors &colors) override;
 
-    virtual void DrawOutdoorBuildings() override;
+    virtual void DrawOutdoorBuildings(const LightsSnapshot &lights) override;
 
     virtual void DrawIndoorSky(int uNumVertices, int uFaceID) override;
     virtual void DrawOutdoorSky() override;
-    virtual void DrawOutdoorTerrain() override;
+    virtual void DrawOutdoorTerrain(const LightsSnapshot &lights) override;
 
     virtual RgbaImage MakeViewportScreenshot(const int width, const int height) override;
     virtual RgbaImage MakeFullScreenshot() override;

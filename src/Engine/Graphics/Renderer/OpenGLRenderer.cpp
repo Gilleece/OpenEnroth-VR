@@ -37,6 +37,7 @@
 #include "Engine/Graphics/Viewport.h"
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
+#include "Engine/Graphics/WorldFrame.h"
 #include "Engine/Tables/TileTable.h"
 #include "Engine/Party.h"
 #include "Engine/Resources/ResourceManager.h"
@@ -823,14 +824,11 @@ RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int heig
 
     BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
     resetBillboardRenderList();
-    if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
-        pIndoor->Draw();
-    } else if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
+    if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)
         render->uFogColor = GetLevelFogColor();
-        pOutdoor->Draw();
-    }
-    DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
-    spell_fx_renderer->finishFrame();
+    engine->_worldFrame->prepare();
+    engine->_worldFrame->drawWithoutDecals();
+    engine->_worldFrame->finish();
 
     // TODO(captainurist): subImage().scale()
     RgbaImage sPixels = ReadScreenPixels();
@@ -1014,7 +1012,7 @@ void OpenGLRenderer::_set_ortho_modelview() {
 
 
 // ---------------------- terrain -----------------------
-void OpenGLRenderer::DrawOutdoorTerrain() {
+void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _initWaterTiles();
     // shader version
     // draws entire terrain in one go at the moment
@@ -1268,8 +1266,8 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
     int num_lights = 0;
 
     // get party torchlight as priority - can be radius == 0
-    if (pMobileLightsStack->uNumLightsActive >= 1) {
-        MobileLight &test = pMobileLightsStack->pLights[0];
+    if (lights.mobile.uNumLightsActive >= 1) {
+        const MobileLight &test = lights.mobile.pLights[0];
         Colorf color = test.uLightColor.toColorf();
 
         uniforms.pointLights[num_lights].type = 2.0f;
@@ -1281,12 +1279,12 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
         num_lights++;
     }
 
-    for (int i = 0; i < pStationaryLightsStack->uNumLightsActive; ++i) {
+    for (int i = 0; i < lights.stationary.uNumLightsActive; ++i) {
         // maximum 20 lights sent to shader at the moment
         // TODO(pskelton): make this configurable - also lights should be sorted by distance so nearest are used first
         if (num_lights >= 20) break;
 
-        StationaryLight &test = pStationaryLightsStack->pLights[i];
+        const StationaryLight &test = lights.stationary.pLights[i];
         Colorf color = test.uLightColor.toColorf();
 
         uniforms.pointLights[num_lights].type = 1.0f;
@@ -1299,12 +1297,12 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
     }
 
     // mobile
-    for (int i = 1; i < pMobileLightsStack->uNumLightsActive; ++i) {
+    for (int i = 1; i < lights.mobile.uNumLightsActive; ++i) {
         // maximum 20 lights sent to shader at the moment
         // TODO(pskelton): make this configurable - also lights should be sorted by distance so nearest are used first
         if (num_lights >= 20) break;
 
-        MobileLight &test = pMobileLightsStack->pLights[i];
+        const MobileLight &test = lights.mobile.pLights[i];
         Colorf color = test.uLightColor.toColorf();
 
         uniforms.pointLights[num_lights].type = 2.0f;
@@ -2198,7 +2196,7 @@ void OpenGLRenderer::Present() {
     swapBuffers();
 }
 
-void OpenGLRenderer::DrawOutdoorBuildings() {
+void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
     _initWaterTiles();
     // shader
     // verts are streamed to gpu as required
@@ -2562,8 +2560,8 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
     int num_lights = 0;
 
     // get party torchlight as priority - can be radius == 0
-    if (pMobileLightsStack->uNumLightsActive >= 1) {
-        MobileLight &test = pMobileLightsStack->pLights[0];
+    if (lights.mobile.uNumLightsActive >= 1) {
+        const MobileLight &test = lights.mobile.pLights[0];
         Colorf color = test.uLightColor.toColorf();
 
         uniforms.pointLights[num_lights].type = 2.0f;
@@ -2575,12 +2573,12 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
         num_lights++;
     }
 
-    for (int i = 0; i < pStationaryLightsStack->uNumLightsActive; ++i) {
+    for (int i = 0; i < lights.stationary.uNumLightsActive; ++i) {
         // maximum 20 lights sent to shader at the moment
         // TODO(pskelton): make this configurable - also lights should be sorted by distance so nearest are used first
         if (num_lights >= 20) break;
 
-        StationaryLight &test = pStationaryLightsStack->pLights[i];
+        const StationaryLight &test = lights.stationary.pLights[i];
         Colorf color = test.uLightColor.toColorf();
 
         uniforms.pointLights[num_lights].type = 1.0f;
@@ -2593,12 +2591,12 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
     }
 
     // mobile
-    for (int i = 1; i < pMobileLightsStack->uNumLightsActive; ++i) {
+    for (int i = 1; i < lights.mobile.uNumLightsActive; ++i) {
         // maximum 20 lights sent to shader at the moment
         // TODO(pskelton): make this configurable - also lights should be sorted by distance so nearest are used first
         if (num_lights >= 20) break;
 
-        MobileLight &test = pMobileLightsStack->pLights[i];
+        const MobileLight &test = lights.mobile.pLights[i];
         Colorf color = test.uLightColor.toColorf();
 
         uniforms.pointLights[num_lights].type = 2.0f;
@@ -2659,21 +2657,6 @@ void OpenGLRenderer::DrawIndoorFaces() {
         _set_3d_modelview_matrix();
 
         if (!_bspBuffers[0]) {
-            // lights setup
-            int cntnosect = 0;
-
-            for (int lightscnt = 0; lightscnt < pStationaryLightsStack->uNumLightsActive; ++lightscnt) {
-                StationaryLight &test = pStationaryLightsStack->pLights[lightscnt];
-
-
-                // kludge for getting lights in  visible sectors
-                pStationaryLightsStack->pLights[lightscnt].uSectorID = pIndoor->GetSector(test.vPosition);
-
-                if (pStationaryLightsStack->pLights[lightscnt].uSectorID == 0) cntnosect++;
-            }
-            if (cntnosect)
-                MM_WARNING("{} lights - sector not found", cntnosect);
-
             // initialize vertex vectors
             for (int i = 0; i < 16; i++) {
                 _bspVertices[i].clear();

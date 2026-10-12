@@ -184,10 +184,10 @@ void OutdoorLocation::prepareFrameStatic() {
     SkyBillboard.CalcSkyFrustumVec(1, 0, 0, 0, 1, 0);  // sky box frustum
 }
 
-void OutdoorLocation::drawStatic() {
+void OutdoorLocation::drawStatic(const LightsSnapshot &lights) {
     render->DrawOutdoorSky();
-    render->DrawOutdoorTerrain();
-    render->DrawOutdoorBuildings();
+    render->DrawOutdoorTerrain(lights);
+    render->DrawOutdoorBuildings(lights);
 }
 
 void OutdoorLocation::prepareFrameLists() {
@@ -222,19 +222,6 @@ void OutdoorLocation::prepareFrameLists() {
             pWeather->bRenderSnow = false;
             break;
     }
-}
-
-//----- (00441CFF) --------------------------------------------------------
-void OutdoorLocation::Draw() {
-    pOutdoor->prepareFrameStatic();
-    pOutdoor->drawStatic();
-    render->buildBloodsplatDecals();
-    pOutdoor->prepareFrameLists();
-
-    engine->DrawParticles();
-    // pWeather->Draw(); // Engine::DrawGUI already calls this once a frame, a second call doubles the snow speed.
-    trail_particle_generator.UpdateParticles();
-    render->sortBillboardRenderList();
 }
 
 //----- (00488E23) --------------------------------------------------------
