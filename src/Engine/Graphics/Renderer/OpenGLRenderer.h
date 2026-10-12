@@ -57,6 +57,9 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
+    virtual void setUiLayer(bool enabled) override;
+    virtual bool uiLayer() override;
+    virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,
@@ -190,6 +193,29 @@ class OpenGLRenderer : public BaseRenderer {
     void _bindUiTarget();
 
     /**
+     * @return                          Whether the UI is drawn into the UI target rather than straight into the window.
+     */
+    bool _usesUiTarget() const;
+
+    /**
+     * Sets the blend function for drawing the UI. As a layer of its own, the UI target also has to end up with the
+     * right alpha.
+     */
+    void _setUiBlendFunc();
+
+    /**
+     * Draws the viewport mirror and then the UI target over it into the window.
+     *
+     * @param rect                      Rectangle of the window the UI target is scaled into.
+     */
+    void _presentUiLayer(const Recti &rect);
+
+    /**
+     * @param premultiplied             Whether the queued quads have their colour premultiplied by their alpha.
+     */
+    void _drawTwodVerts(bool premultiplied);
+
+    /**
      * @param width                     Width of the screenshot.
      * @param height                    Height of the screenshot.
      * @return                          The world target scaled to the given size.
@@ -300,6 +326,8 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLRenderTarget *_externalWorldTarget = nullptr;
     OpenGLRenderTarget _mirrorTarget;
     bool _mirrorPending = false;
+    bool _mirrorPresentPending = false; // The UI layer leaves the mirror for `flushAndScale`.
+    bool _uiLayer = false;
     bool _externalFramePacing = false;
 };
 

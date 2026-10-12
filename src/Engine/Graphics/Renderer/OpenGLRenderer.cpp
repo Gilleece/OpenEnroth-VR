@@ -2,6 +2,8 @@
 
 #include "OpenGLVertexBuffer.h"
 
+#include <array>
+#include <cassert>
 #include <cmath>
 #include <algorithm>
 #include <iterator>
@@ -312,11 +314,11 @@ OpenGLRenderer::~OpenGLRenderer() {
 
 RgbaImage OpenGLRenderer::ReadScreenPixels() {
     RgbaImage result = RgbaImage::uninitialized(outputRender.w, outputRender.h);
-    if (outputRender != outputPresent) {
+    if (_usesUiTarget()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
     }
     glReadPixels(0, 0, outputRender.w, outputRender.h, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels().data());
-    if (outputRender != outputPresent) {
+    if (_usesUiTarget()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     }
     return result;
@@ -389,7 +391,7 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
     if (OpenGLRenderTarget *target = _currentWorldTarget()) {
         target->bind();
         glDisable(GL_SCISSOR_TEST);
-    } else if (outputRender != outputPresent) {
+    } else if (_usesUiTarget()) {
         _uiTarget.bind();
     }
     _setWorldViewport();
@@ -438,6 +440,7 @@ Recti OpenGLRenderer::worldTargetViewport() {
 
 void OpenGLRenderer::compositeWorldTarget() {
     OpenGLRenderTarget *source = _mirrorPending ? &_mirrorTarget : (_worldTarget ? &_worldTarget : nullptr);
+    _mirrorPresentPending = _uiLayer && _mirrorPending;
     _mirrorPending = false;
     if (!source)
         return;
@@ -447,6 +450,10 @@ void OpenGLRenderer::compositeWorldTarget() {
     glClearColor(0, 0, 0, 0);
     glClearDepthf(1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (_mirrorPresentPending) {
+        glEnable(GL_SCISSOR_TEST);
+        return;
+    }
 
     GLenum filter = config->graphics.WorldTargetFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
     int bottom = outputRender.h - (pViewport.y + pViewport.h);
@@ -458,7 +465,7 @@ void OpenGLRenderer::compositeWorldTarget() {
 }
 
 TextureRenderId OpenGLRenderer::uiTargetTexture() {
-    if (outputRender == outputPresent)
+    if (!_usesUiTarget())
         return TextureRenderId();
     return TextureRenderId(_uiTarget.colorTexture());
 }
@@ -498,6 +505,28 @@ void OpenGLRenderer::setExternalFramePacing(bool external) {
 
 bool OpenGLRenderer::worldSpaceBillboards() {
     return _externalWorldTarget || config->graphics.WorldSpaceBillboards.value();
+}
+
+void OpenGLRenderer::setUiLayer(bool enabled) {
+    _uiLayer = enabled;
+    _mirrorPresentPending = false;
+}
+
+bool OpenGLRenderer::uiLayer() {
+    return _uiLayer;
+}
+
+void OpenGLRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {
+    assert(_uiLayer);
+
+    OpenGLRenderTarget *target = _externalTarget(colorTexture, size);
+    glDisable(GL_SCISSOR_TEST);
+    target->bind();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
+    glBlitFramebuffer(0, 0, outputRender.w, outputRender.h, 0, 0, size.w, size.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    _bindUiTarget();
+    glEnable(GL_SCISSOR_TEST);
 }
 
 void OpenGLRenderer::DrawProjectile(float srcX, float srcY, float srcworldview, float srcfovoworldview,
@@ -1181,10 +1210,22 @@ OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture
 }
 
 void OpenGLRenderer::_bindUiTarget() {
-    if (outputRender != outputPresent) {
+    if (_usesUiTarget()) {
         _uiTarget.bind();
     } else {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    }
+}
+
+bool OpenGLRenderer::_usesUiTarget() const {
+    return outputRender != outputPresent || _uiLayer;
+}
+
+void OpenGLRenderer::_setUiBlendFunc() {
+    if (_uiLayer) {
+        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 }
 
@@ -2358,7 +2399,7 @@ void OpenGLRenderer::ResetUIClipRect() {
 void OpenGLRenderer::BeginScene2D() {
     // Setup for 2D
 
-    if (outputRender != outputPresent)
+    if (_usesUiTarget())
         _uiTarget.bind();
 
     glDepthMask(GL_FALSE);
@@ -2498,7 +2539,7 @@ void OpenGLRenderer::EndTextNew() {
     textshader.use();
 
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    _setUiBlendFunc();
 
     TextUniforms uniforms;
     uniforms.projection = projmat;
@@ -2586,7 +2627,7 @@ void OpenGLRenderer::flushAndScale() {
     EndLines2D();
     EndTextNew();
 
-    if (outputRender != outputPresent) {
+    if (_usesUiTarget()) {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
         glDisable(GL_SCISSOR_TEST);
 
@@ -2608,6 +2649,11 @@ void OpenGLRenderer::flushAndScale() {
         rect.w = w;
         rect.h = h;
 
+        if (_uiLayer) {
+            _presentUiLayer(rect);
+            return;
+        }
+
         GLenum filter = config->graphics.RenderFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
         glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
         glBlitFramebuffer(0, 0, outputRender.w, outputRender.h, rect.x, rect.y, rect.w + rect.x, rect.h + rect.y, GL_COLOR_BUFFER_BIT, filter);
@@ -2615,8 +2661,37 @@ void OpenGLRenderer::flushAndScale() {
     }
 }
 
+void OpenGLRenderer::_presentUiLayer(const Recti &rect) {
+    float scale = static_cast<float>(rect.w) / outputRender.w;
+    if (_mirrorPresentPending) {
+        int bottom = outputRender.h - (pViewport.y + pViewport.h);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, _mirrorTarget.framebuffer());
+        glBlitFramebuffer(0, 0, _mirrorTarget.size().w, _mirrorTarget.size().h,
+                          rect.x + pViewport.x * scale, rect.y + bottom * scale,
+                          rect.x + (pViewport.x + pViewport.w) * scale, rect.y + (bottom + pViewport.h) * scale, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        _mirrorPresentPending = false;
+    }
+
+    // Window coordinates with y up, the way the UI target stores its rows.
+    std::array<Vec2f, 4> corners = {{Vec2f(rect.x, rect.y), Vec2f(rect.x + rect.w, rect.y), Vec2f(rect.x + rect.w, rect.y + rect.h), Vec2f(rect.x, rect.y + rect.h)}};
+    std::array<Vec2f, 4> texcoords = {{{0, 0}, {1, 0}, {1, 1}, {0, 1}}};
+    for (int i : {0, 1, 2, 0, 2, 3}) {
+        TwoDVertex &vertex = _twodVertices.emplace_back();
+        vertex.pos = Vec3f(corners[i].x, corners[i].y, 0);
+        vertex.texuv = texcoords[i];
+        vertex.color = colorTable.White.toColorf();
+        vertex.texid = _uiTarget.colorTexture();
+        vertex.paletteid = 0;
+    }
+
+    projmat = glm::ortho(0.0f, static_cast<float>(outputPresent.w), 0.0f, static_cast<float>(outputPresent.h), -1.0f, 1.0f);
+    _set_ortho_modelview();
+    _drawTwodVerts(true);
+}
+
 void OpenGLRenderer::swapBuffers() {
-    if (outputRender != outputPresent) {
+    if (_usesUiTarget()) {
         glEnable(GL_SCISSOR_TEST);
         glViewport(0, 0, outputRender.w, outputRender.h);
     }
@@ -3951,6 +4026,10 @@ void OpenGLRenderer::ReleaseBSP() {
 
 
 void OpenGLRenderer::DrawTwodVerts() {
+    _drawTwodVerts(false);
+}
+
+void OpenGLRenderer::_drawTwodVerts(bool premultiplied) {
     if (_twodVertices.empty()) return;
 
     Recti savedClipRect = this->clipRect;
@@ -3979,7 +4058,11 @@ void OpenGLRenderer::DrawTwodVerts() {
     glActiveTexture(GL_TEXTURE0);
 
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (premultiplied) {
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        _setUiBlendFunc();
+    }
 
     TwoDUniforms uniforms;
     uniforms.projection = projmat;

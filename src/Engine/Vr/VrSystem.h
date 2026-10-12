@@ -23,6 +23,9 @@ struct CameraView;
  *
  * Eye poses are taken relative to a head origin, the head pose on the first tracked frame once the session is focused,
  * levelled to its yaw. The `vr.recenter` key captures it again.
+ *
+ * While the session runs the renderer draws the UI as a layer of its own, which goes to the headset as a quad locked to
+ * the head, in front of the world.
  */
 class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public WorldFrameViews {
  public:
@@ -42,7 +45,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
  private:
     friend class PlatformIntrospection; // Give access to private bases.
 
-    struct Eye {
+    struct Swapchain {
         XrSwapchain swapchain = XR_NULL_HANDLE;
         Sizei size;
         std::vector<uint32_t> images; // OpenGL texture names.
@@ -62,6 +65,15 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     bool checkGraphicsRequirements();
     bool createSession();
     bool createSwapchains();
+
+    /**
+     * @param[out] target               Swapchain to create.
+     * @param size                      Size of the swapchain images.
+     * @return                          Whether the swapchain was created.
+     */
+    bool createSwapchain(Swapchain *target, Sizei size);
+
+    void destroySwapchain(Swapchain *target);
     void pollEvents();
     void handleSessionState(XrSessionState state);
 
@@ -74,6 +86,14 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
 
     void beginFrame();
     void endFrame();
+
+    /**
+     * Copies the UI layer into the UI swapchain, recreating the swapchain if the UI changed size.
+     *
+     * @param[out] layer                Quad layer that shows the UI in front of the head.
+     * @return                          Whether there was a UI layer to copy.
+     */
+    bool copyUi(XrCompositionLayerQuad *layer);
 
     /**
      * Locates the head in the runtime's LOCAL space and makes a reference space with its origin there, turned to the
@@ -111,7 +131,9 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     XrSpace _localSpace = XR_NULL_HANDLE;
     XrSpace _viewSpace = XR_NULL_HANDLE;
     XrSpace _space = XR_NULL_HANDLE; // Head origin, null until it's captured.
-    std::array<Eye, 2> _eyes;
+    std::array<Swapchain, 2> _eyes;
+    Swapchain _ui;
+    int64_t _swapchainFormat = 0;
     bool _running = false;
     bool _focused = false;
     bool _recenterRequested = false;

@@ -281,36 +281,48 @@ bool VrSystem::createSwapchains() {
         return false;
     }
     MM_INFO("VR: using {} swapchains.", *format == GL_SRGB8_ALPHA8 ? "GL_SRGB8_ALPHA8" : "GL_RGBA8");
+    _swapchainFormat = *format;
 
     for (size_t i = 0; i < _eyes.size(); i++) {
-        Eye &eye = _eyes[i];
-        eye.size = Sizei(views[i].recommendedImageRectWidth, views[i].recommendedImageRectHeight);
-
-        XrSwapchainCreateInfo swapchainInfo = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
-        swapchainInfo.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
-        swapchainInfo.format = *format;
-        swapchainInfo.sampleCount = 1;
-        swapchainInfo.width = eye.size.w;
-        swapchainInfo.height = eye.size.h;
-        swapchainInfo.faceCount = 1;
-        swapchainInfo.arraySize = 1;
-        swapchainInfo.mipCount = 1;
-        if (!check(xrCreateSwapchain(_session, &swapchainInfo, &eye.swapchain), "xrCreateSwapchain"))
+        Swapchain &eye = _eyes[i];
+        if (!createSwapchain(&eye, Sizei(views[i].recommendedImageRectWidth, views[i].recommendedImageRectHeight)))
             return false;
-
-        uint32_t imageCount = 0;
-        if (!check(xrEnumerateSwapchainImages(eye.swapchain, 0, &imageCount, nullptr), "xrEnumerateSwapchainImages"))
-            return false;
-        std::vector<XrSwapchainImageOpenGLKHR> images(imageCount, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
-        if (!check(xrEnumerateSwapchainImages(eye.swapchain, imageCount, &imageCount,
-                                              reinterpret_cast<XrSwapchainImageBaseHeader *>(images.data())), "xrEnumerateSwapchainImages"))
-            return false;
-        for (const XrSwapchainImageOpenGLKHR &image : images)
-            eye.images.push_back(image.image);
-
         MM_INFO("VR: eye {} swapchain is {}x{} with {} images.", i, eye.size.w, eye.size.h, eye.images.size());
     }
     return true;
+}
+
+bool VrSystem::createSwapchain(Swapchain *target, Sizei size) {
+    target->size = size;
+
+    XrSwapchainCreateInfo swapchainInfo = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
+    swapchainInfo.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+    swapchainInfo.format = _swapchainFormat;
+    swapchainInfo.sampleCount = 1;
+    swapchainInfo.width = size.w;
+    swapchainInfo.height = size.h;
+    swapchainInfo.faceCount = 1;
+    swapchainInfo.arraySize = 1;
+    swapchainInfo.mipCount = 1;
+    if (!check(xrCreateSwapchain(_session, &swapchainInfo, &target->swapchain), "xrCreateSwapchain"))
+        return false;
+
+    uint32_t imageCount = 0;
+    if (!check(xrEnumerateSwapchainImages(target->swapchain, 0, &imageCount, nullptr), "xrEnumerateSwapchainImages"))
+        return false;
+    std::vector<XrSwapchainImageOpenGLKHR> images(imageCount, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
+    if (!check(xrEnumerateSwapchainImages(target->swapchain, imageCount, &imageCount,
+                                          reinterpret_cast<XrSwapchainImageBaseHeader *>(images.data())), "xrEnumerateSwapchainImages"))
+        return false;
+    for (const XrSwapchainImageOpenGLKHR &image : images)
+        target->images.push_back(image.image);
+    return true;
+}
+
+void VrSystem::destroySwapchain(Swapchain *target) {
+    if (target->swapchain != XR_NULL_HANDLE)
+        xrDestroySwapchain(target->swapchain);
+    *target = Swapchain();
 }
 
 void VrSystem::pollEvents() {
@@ -358,8 +370,10 @@ void VrSystem::setRunning(bool running) {
     } else {
         setDesktopSwapInterval(_desktopSwapInterval);
     }
-    if (render)
+    if (render) {
         render->setExternalFramePacing(running);
+        render->setUiLayer(running);
+    }
 }
 
 void VrSystem::beginFrame() {
@@ -389,17 +403,23 @@ void VrSystem::endFrame() {
     if (!_frameBegun)
         return;
 
-    XrCompositionLayerProjection layer = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
-    layer.space = _space;
-    layer.viewCount = static_cast<uint32_t>(_projectionViews.size());
-    layer.views = _projectionViews.data();
-    const XrCompositionLayerBaseHeader *layers[] = {reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer)};
+    std::vector<const XrCompositionLayerBaseHeader *> layers;
+    XrCompositionLayerProjection projection = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
+    if (_layerReady) {
+        projection.space = _space;
+        projection.viewCount = static_cast<uint32_t>(_projectionViews.size());
+        projection.views = _projectionViews.data();
+        layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&projection));
+    }
+    XrCompositionLayerQuad ui = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+    if (_frameState.shouldRender && copyUi(&ui))
+        layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&ui));
 
     XrFrameEndInfo endInfo = {XR_TYPE_FRAME_END_INFO};
     endInfo.displayTime = _frameState.predictedDisplayTime;
     endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    endInfo.layerCount = _layerReady ? 1 : 0;
-    endInfo.layers = _layerReady ? layers : nullptr;
+    endInfo.layerCount = static_cast<uint32_t>(layers.size());
+    endInfo.layers = layers.empty() ? nullptr : layers.data();
     check(xrEndFrame(_session, &endInfo), "xrEndFrame");
 
     if (_layerReady)
@@ -413,6 +433,43 @@ void VrSystem::endFrame() {
 
     _frameBegun = false;
     _layerReady = false;
+}
+
+bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
+    if (!render->uiLayer())
+        return false;
+
+    Sizei size = render->GetRenderDimensions();
+    if (_ui.size != size) {
+        destroySwapchain(&_ui);
+        if (!createSwapchain(&_ui, size))
+            return false;
+        MM_INFO("VR: UI swapchain is {}x{} with {} images, shown {:.2f} m wide at {:.2f} m.", size.w, size.h, _ui.images.size(),
+                engine->config->vr.UiWidth.value(), engine->config->vr.UiDistance.value());
+    }
+
+    uint32_t imageIndex = 0;
+    XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+    if (!check(xrAcquireSwapchainImage(_ui.swapchain, &acquireInfo, &imageIndex), "xrAcquireSwapchainImage"))
+        return false;
+    XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+    waitInfo.timeout = XR_INFINITE_DURATION;
+    if (!check(xrWaitSwapchainImage(_ui.swapchain, &waitInfo), "xrWaitSwapchainImage"))
+        return false;
+    render->copyUiLayer(TextureRenderId(_ui.images[imageIndex]), _ui.size);
+    XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    check(xrReleaseSwapchainImage(_ui.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
+
+    float width = engine->config->vr.UiWidth.value();
+    layer->layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT; // The UI target holds premultiplied colour.
+    layer->space = _viewSpace;
+    layer->eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+    layer->subImage.swapchain = _ui.swapchain;
+    layer->subImage.imageRect.extent = {_ui.size.w, _ui.size.h};
+    layer->pose.orientation.w = 1.0f;
+    layer->pose.position.z = -engine->config->vr.UiDistance.value(); // VIEW space looks along -z.
+    layer->size = {width, width * _ui.size.h / _ui.size.w};
+    return true;
 }
 
 bool VrSystem::captureOrigin(XrTime time) {
@@ -448,7 +505,7 @@ bool VrSystem::captureOrigin(XrTime time) {
 }
 
 bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
-    Eye &eye = _eyes[index];
+    Swapchain &eye = _eyes[index];
 
     uint32_t imageIndex = 0;
     XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
@@ -486,11 +543,9 @@ void VrSystem::shutdown() {
     }
     setRunning(false);
 
-    for (Eye &eye : _eyes) {
-        if (eye.swapchain != XR_NULL_HANDLE)
-            xrDestroySwapchain(eye.swapchain);
-        eye = Eye();
-    }
+    for (Swapchain &eye : _eyes)
+        destroySwapchain(&eye);
+    destroySwapchain(&_ui);
     for (XrSpace space : {_space, _viewSpace, _localSpace})
         if (space != XR_NULL_HANDLE)
             xrDestroySpace(space);

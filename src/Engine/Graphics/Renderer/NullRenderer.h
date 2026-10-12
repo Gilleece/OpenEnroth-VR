@@ -30,6 +30,9 @@ class NullRenderer : public BaseRenderer {
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
+    virtual void setUiLayer(bool enabled) override;
+    virtual bool uiLayer() override;
+    virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,

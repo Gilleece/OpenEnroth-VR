@@ -135,6 +135,28 @@ class Renderer {
      */
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) = 0;
 
+    /**
+     * Makes the UI a layer of its own for an external compositor, like a VR runtime. The UI is then drawn into the UI
+     * target over transparent black, with nothing in the game viewport, and the window gets the viewport mirror under
+     * it when the frame is presented.
+     *
+     * @param enabled                   Whether the UI is a layer of its own.
+     */
+    virtual void setUiLayer(bool enabled) = 0;
+
+    /**
+     * @return                          Whether the UI is a layer of its own, see `setUiLayer`.
+     */
+    virtual bool uiLayer() = 0;
+
+    /**
+     * Copies the UI target into a colour texture owned by the caller. Only valid when `uiLayer` is true.
+     *
+     * @param colorTexture              Texture to copy into.
+     * @param size                      Size of the texture, the UI is scaled to fit it.
+     */
+    virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) = 0;
+
     virtual void MakeParticleBillboardAndPush(const Particle& p) = 0;
     virtual float GetGamma() = 0;
 

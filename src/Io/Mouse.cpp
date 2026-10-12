@@ -135,6 +135,9 @@ void Io::Mouse::DrawCursor() {
             platform->setCursorShown(false);
             auto pointer = assets->getIcon("MICON2");
             render->DrawQuad2D(pointer, pViewport.center() - pointer->size() / 2);
+        } else if (render->uiLayer()) {
+            platform->setCursorShown(false); // The system cursor isn't part of the UI layer, draw the arrow into it.
+            render->DrawQuad2D(assets->getIcon("MICON1"), pos);
         } else {
             platform->setCursorShown(true);
         }

@@ -51,6 +51,13 @@ TextureRenderId NullRenderer::uiTargetTexture() {
 void NullRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::setExternalFramePacing(bool external) {}
+void NullRenderer::setUiLayer(bool enabled) {}
+
+bool NullRenderer::uiLayer() {
+    return false;
+}
+
+void NullRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {}
 
 bool NullRenderer::worldSpaceBillboards() {
     return false;
