@@ -3342,7 +3342,11 @@ Pid stru319::FindClosestActor(int pick_depth, int a3 /*Relates to targeting/not 
     {
         select_flags = (a3 != 0) ? VisSelectFlags_1 : None;
         if (target_undead) select_flags |= TargetUndead;
-        return EngineIocContainer::ResolveVis()->PickClosestActor(OBJECT_Actor, pick_depth, static_cast<VisSelectFlags>(select_flags), 657456, -1);
+        bool cameraMoved = engine->aimPickCamera();
+        Pid result = EngineIocContainer::ResolveVis()->PickClosestActor(OBJECT_Actor, pick_depth, static_cast<VisSelectFlags>(select_flags), 657456, -1);
+        if (cameraMoved)
+            pCamera3D->updateFromParty();
+        return result;
     }
     /*else // software impl
     {

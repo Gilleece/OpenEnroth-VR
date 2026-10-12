@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <algorithm>
+#include <array>
 #include <vector>
 #include <utility>
 
@@ -225,6 +226,72 @@ void Vis::PickBillboards_Mouse(float fPickDepth, float fX, float fY,
                 list->AddObject(VisObjectType_Sprite, billboard->view_space_z, billboard->object_pid);
             }
         }
+    }
+}
+
+/**
+ * @param billboard                     World space billboard with its quad built.
+ * @param origin                        Start of the ray.
+ * @param direction                     Direction of the ray, normalized.
+ * @param maxDepth                      Length of the ray.
+ * @param[out] depth                    Distance along the ray to the hit.
+ * @return                              Whether the ray hits a pixel of the billboard that isn't transparent.
+ */
+static bool rayHitsWorldBillboard(const WorldBillboard &billboard, const Vec3f &origin, const Vec3f &direction, float maxDepth,
+                                  float *depth) {
+    if (billboard.numVertices != 4 || !billboard.texture)
+        return false;
+
+    // Corner 1 is the bottom left, 2 the bottom right and 0 the top left.
+    const std::array<Vec3f, 4> &corners = billboard.corners;
+    Vec3f right = corners[2] - corners[1];
+    Vec3f up = corners[0] - corners[1];
+    Vec3f normal = cross(right, up);
+    float facing = dot(normal, direction);
+    if (fuzzyIsNull(facing))
+        return false;
+
+    float t = dot(corners[1] - origin, normal) / facing;
+    if (t <= 0 || t > maxDepth)
+        return false;
+
+    Vec3f local = origin + t * direction - corners[1];
+    float s = dot(local, right) / dot(right, right);
+    float u = dot(local, up) / dot(up, up);
+    if (s < 0 || s > 1 || u < 0 || u > 1)
+        return false;
+
+    Vec2f texcoord = billboard.texcoords[1] + s * (billboard.texcoords[2] - billboard.texcoords[1]) +
+                     u * (billboard.texcoords[0] - billboard.texcoords[1]);
+    RgbaImageView rgba = billboard.texture->rgba();
+    int x = std::clamp(static_cast<int>(texcoord.x * rgba.width()), 0, rgba.width() - 1);
+    int y = std::clamp(static_cast<int>(texcoord.y * rgba.height()), 0, rgba.height() - 1);
+    if (rgba[y][x] == Color())
+        return false;
+
+    *depth = t;
+    return true;
+}
+
+void Vis::PickBillboards_Ray(float fDepth, const Vec3f &origin, const Vec3f &direction,
+                             Vis_SelectionList *list,
+                             Vis_SelectionFilter *filter) {
+    for (int i = 0; i < render->uNumBillboardsToDraw; ++i) {
+        RenderBillboardD3D *d3d_billboard = render->pSortedBillboardRenderListD3D[i];
+        if (d3d_billboard->sParentBillboardID == -1 || !isBillboardPartOfSelection(i, filter))
+            continue;
+
+        const WorldBillboard *world = render->builtWorldBillboard(d3d_billboard - render->pBillboardRenderListD3D);
+        float depth = 0;
+        if (!world || !rayHitsWorldBillboard(*world, origin, direction, fDepth, &depth))
+            continue;
+
+        RenderBillboard *billboard = &pBillboardRenderList[d3d_billboard->sParentBillboardID];
+        Pid pid = billboard->object_pid;
+        if (pid.type() == OBJECT_Sprite && pSpriteObjects[pid.id()].uObjectDescID == 0)
+            continue; // Sprite object already removed.
+
+        list->AddObject(VisObjectType_Sprite, depth, pid);
     }
 }
 
@@ -683,7 +750,18 @@ Vis_PIDAndDepth Vis::PickMouse(float fDepth, float fMouseX, float fMouseY,
     //     (pMouseRay+1)->vWorldPosition.x, (pMouseRay + 1)->vWorldPosition.y, (pMouseRay + 1)->vWorldPosition.z);
 
     PickBillboards_Mouse(fDepth, fMouseX, fMouseY, &_selectionList, sprite_filter);
+    return PickFacesAndClosest(fDepth, rayOrigin, rayStep, face_filter);
+}
 
+Vis_PIDAndDepth Vis::PickRay(float fDepth, const Vec3f &origin, const Vec3f &direction,
+                             Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter) {
+    _selectionList.uSize = 0;
+    PickBillboards_Ray(fDepth, origin, direction, &_selectionList, sprite_filter);
+    return PickFacesAndClosest(fDepth, origin, direction * fDepth, face_filter);
+}
+
+Vis_PIDAndDepth Vis::PickFacesAndClosest(float fDepth, const Vec3f &rayOrigin, const Vec3f &rayStep,
+                                         Vis_SelectionFilter *face_filter) {
     if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
         PickIndoorFaces_Mouse(fDepth, rayOrigin, rayStep, &_selectionList, face_filter);
     } else if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {

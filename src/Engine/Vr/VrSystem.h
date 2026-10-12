@@ -3,13 +3,18 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <vector>
+
+#include <glm/gtc/quaternion.hpp> // NOLINT: not a C system header.
 
 #include <openxr/openxr.h> // NOLINT: not a C system header.
 
 #include "Engine/Graphics/WorldFrameViews.h"
 
+#include "Library/Geometry/Point.h"
 #include "Library/Geometry/Size.h"
+#include "Library/Geometry/Vec.h"
 #include "Library/Platform/Filters/PlatformEventFilter.h"
 #include "Library/Platform/Proxy/ProxyOpenGLContext.h"
 
@@ -43,9 +48,20 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
 
     virtual bool aimCullingCamera() override;
     virtual bool drawViews(WorldFrame &frame) override;
+    virtual bool aimPickCamera() override;
+    virtual bool pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) override;
+    virtual bool forwardRay(Vec3f *origin, Vec3f *direction) override;
 
  private:
     friend class PlatformIntrospection; // Give access to private bases.
+
+    struct CullingCamera {
+        Vec3f position;
+        int yaw = 0;
+        int pitch = 0;
+        float fovRad = 0;
+        float nearClip = 0;
+    };
 
     struct Swapchain {
         XrSwapchain swapchain = XR_NULL_HANDLE;
@@ -133,6 +149,13 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
      */
     CameraView eyeView(const XrView &view, Sizei size) const;
 
+    /**
+     * @param orientation               Orientation in the head origin space.
+     * @return                          The same orientation in the game world, from the game's view axes, with the
+     *                                  party's facing added.
+     */
+    glm::quat worldOrientation(const XrQuaternionf &orientation) const;
+
  private:
     XrInstance _instance = XR_NULL_HANDLE;
     XrSystemId _systemId = XR_NULL_SYSTEM_ID;
@@ -153,6 +176,9 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     std::array<XrCompositionLayerProjectionView, 2> _projectionViews = {};
     std::array<XrView, 2> _views = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
     bool _viewsLocated = false; // This frame, by `locateViews`.
+    std::optional<CullingCamera> _lastCullingCamera; // Of the last frame drawn, for picking.
+    Vec3f _lastPickOrigin; // Mid-eye position of the last frame drawn.
+    glm::quat _lastPickOrientation = glm::quat(1, 0, 0, 0); // VIEW space orientation of the last frame drawn.
     int64_t _frameIndex = 0;
     int64_t _worldFrameCount = 0;
     std::chrono::steady_clock::time_point _summaryTime; // Of the last frame summary in the log.

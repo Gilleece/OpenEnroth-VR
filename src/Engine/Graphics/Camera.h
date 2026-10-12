@@ -55,8 +55,8 @@ struct Camera3D {
      * @param position                  Eye position.
      * @param yaw                       Yaw in the party's units, 2048 to a full turn.
      * @param pitch                     Pitch in the party's units, positive looks up.
-     * @param horizontalFovRad          Horizontal field of view, replacing the level's.
-     * @param nearClip                  Near clip distance, replacing `graphics.clip_near_distance`.
+     * @param horizontalFovRad          Horizontal field of view replacing the level's, or 0 to keep the level's.
+     * @param nearClip                  Near clip distance replacing `graphics.clip_near_distance`, or 0 to keep it.
      */
     void updateFromPose(Vec3f position, int yaw, int pitch, float horizontalFovRad, float nearClip);
 

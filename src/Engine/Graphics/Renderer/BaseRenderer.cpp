@@ -86,6 +86,10 @@ void BaseRenderer::buildWorldBillboardQuads(const CameraView &view) {
     _worldBillboardQuadsBuilt = true;
 }
 
+const WorldBillboard *BaseRenderer::builtWorldBillboard(int index) {
+    return _worldBillboardQuadsBuilt ? &_worldBillboards[index] : nullptr;
+}
+
 void BaseRenderer::sortBillboardRenderList() {
     // we need to loop over all billboards from farthest to nearest
     std::stable_sort(pSortedBillboardRenderListD3D.begin(), pSortedBillboardRenderListD3D.begin() + uNumBillboardsToDraw,

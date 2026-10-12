@@ -80,6 +80,21 @@ class Vis {
     Vis_PIDAndDepth PickMouse(float fDepth, float fMouseX, float fMouseY,
                               Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter);
 
+    /**
+     * Picks along a ray in world space rather than through a point of the party camera's view. Billboards are tested
+     * against the world space quads built for this frame, faces like `PickMouse` tests them. Face depths are measured
+     * along `pCamera3D`, so it should look along the ray.
+     *
+     * @param fDepth                    Length of the ray.
+     * @param origin                    Start of the ray.
+     * @param direction                 Direction of the ray, normalized.
+     * @param sprite_filter             Billboards to consider.
+     * @param face_filter               Faces to consider.
+     * @return                          Closest object the ray hits.
+     */
+    Vis_PIDAndDepth PickRay(float fDepth, const Vec3f &origin, const Vec3f &direction,
+                            Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter);
+
     bool DoesRayIntersectBillboard(float fDepth, unsigned int uD3DBillboardIdx);
 
     Pid PickClosestActor(ObjectType object_type, unsigned int pick_depth,
@@ -95,6 +110,21 @@ class Vis {
     void PickBillboards_Mouse(float fPickDepth, float fX, float fY,
                               Vis_SelectionList *list,
                               Vis_SelectionFilter *filter);
+    void PickBillboards_Ray(float fDepth, const Vec3f &origin, const Vec3f &direction,
+                            Vis_SelectionList *list,
+                            Vis_SelectionFilter *filter);
+
+    /**
+     * Adds the faces a ray hits to `_selectionList`, then picks the closest object in it.
+     *
+     * @param fDepth                    Length of the ray.
+     * @param rayOrigin                 Start of the ray.
+     * @param rayStep                   The whole ray, from its start to its end.
+     * @param face_filter               Faces to consider.
+     * @return                          Closest object in `_selectionList`.
+     */
+    Vis_PIDAndDepth PickFacesAndClosest(float fDepth, const Vec3f &rayOrigin, const Vec3f &rayStep,
+                                        Vis_SelectionFilter *face_filter);
     void PickIndoorFaces_Mouse(float fDepth, const Vec3f &rayOrigin, const Vec3f &rayStep,
                                Vis_SelectionList *list,
                                Vis_SelectionFilter *filter);

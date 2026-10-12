@@ -209,12 +209,58 @@ bool VrSystem::aimCullingCamera() {
     int cameraYaw = static_cast<int>(std::lround(yaw * 1024 / M_PI)) & 2047;
     int cameraPitch = static_cast<int>(std::lround(pitch * 1024 / M_PI));
     pCamera3D->updateFromPose(head.position, cameraYaw, cameraPitch, fov, nearClip);
+    _lastCullingCamera = CullingCamera{head.position, cameraYaw, cameraPitch, fov, nearClip};
+
+    // The UI quad hangs in VIEW space, which the eyes can be turned from, like the PICO's that look 4 degrees down.
+    _lastPickOrigin = head.position;
+    _lastPickOrientation = worldOrientation(midView(_views).pose.orientation);
+    XrSpaceLocation viewLocation = {XR_TYPE_SPACE_LOCATION};
+    if (XR_SUCCEEDED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &viewLocation)) &&
+        (viewLocation.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))
+        _lastPickOrientation = worldOrientation(viewLocation.pose.orientation);
 
     if (_worldFrameCount < LOGGED_FRAME_COUNT || _worldFrameCount % CULLING_LOG_INTERVAL == 0) {
         MM_INFO("VR: frame {} culls from yaw {:.1f}, pitch {:.1f} and roll {:.1f} degrees with a {:.1f} degree field of view, the party faces yaw {:.1f}.",
                 _frameIndex, cameraYaw * 360.0 / 2048, cameraPitch * 360.0 / 2048, roll * 180 / M_PI, fov * 180 / M_PI,
                 (pParty->_viewYaw & 2047) * 360.0 / 2048);
     }
+    return true;
+}
+
+bool VrSystem::aimPickCamera() {
+    if (!_running || !_lastCullingCamera)
+        return false;
+
+    const CullingCamera &camera = *_lastCullingCamera;
+    pCamera3D->updateFromPose(camera.position, camera.yaw, camera.pitch, camera.fovRad, camera.nearClip);
+    return true;
+}
+
+bool VrSystem::pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) {
+    if (!_running || !_lastCullingCamera)
+        return false;
+
+    // The point under the cursor on the UI quad, in the game's view axes, forward, left and up.
+    Sizei size = render->GetRenderDimensions();
+    float width = engine->config->vr.UiWidth.value();
+    float height = width * size.h / size.w;
+    glm::vec3 point(engine->config->vr.UiDistance.value(),
+                    -((uiPosition.x + 0.5f) / size.w - 0.5f) * width,
+                    (0.5f - (uiPosition.y + 0.5f) / size.h) * height);
+    glm::vec3 world = _lastPickOrientation * glm::normalize(point);
+
+    *origin = _lastPickOrigin;
+    *direction = Vec3f(world.x, world.y, world.z);
+    return true;
+}
+
+bool VrSystem::forwardRay(Vec3f *origin, Vec3f *direction) {
+    if (!_running || !_lastCullingCamera)
+        return false;
+
+    glm::vec3 forward = _lastPickOrientation * glm::vec3(1, 0, 0);
+    *origin = _lastPickOrigin;
+    *direction = Vec3f(forward.x, forward.y, forward.z);
     return true;
 }
 
@@ -512,6 +558,7 @@ void VrSystem::setRunning(bool running) {
         render->setExternalFramePacing(running);
         render->setUiLayer(running);
     }
+    _lastCullingCamera.reset();
 }
 
 void VrSystem::beginFrame() {
@@ -709,12 +756,15 @@ void VrSystem::shutdown() {
     _instance = XR_NULL_HANDLE;
 }
 
-CameraView VrSystem::eyeView(const XrView &view, Sizei size) const {
+glm::quat VrSystem::worldOrientation(const XrQuaternionf &orientation) const {
     glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
 
     // OpenXR looks along -z with +x to the right and +y up, the game looks along +x with +y to the left and +z up.
-    const XrQuaternionf &orientation = view.pose.orientation;
-    glm::quat headOrientation(orientation.w, -orientation.z, -orientation.x, orientation.y);
+    return partyYaw * glm::quat(orientation.w, -orientation.z, -orientation.x, orientation.y);
+}
+
+CameraView VrSystem::eyeView(const XrView &view, Sizei size) const {
+    glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
     const XrVector3f &position = view.pose.position;
     glm::vec3 headOffset = partyYaw * glm::vec3(-position.z, -position.x, position.y) * GAME_UNITS_PER_METRE;
 
@@ -728,5 +778,5 @@ CameraView VrSystem::eyeView(const XrView &view, Sizei size) const {
     projection.nearClip = pCamera3D->GetNearClip();
     projection.farClip = pCamera3D->GetFarClip();
 
-    return CameraView::fromPose(eye, partyYaw * headOrientation, projection, Recti(0, 0, size.w, size.h));
+    return CameraView::fromPose(eye, worldOrientation(view.pose.orientation), projection, Recti(0, 0, size.w, size.h));
 }
