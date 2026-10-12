@@ -20,7 +20,7 @@ class NullRenderer : public BaseRenderer {
     virtual void EndLines2D() override;
     virtual void RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor) override;
 
-    virtual void BeginScene3D() override;
+    virtual void BeginScene3D(const CameraView &view) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,

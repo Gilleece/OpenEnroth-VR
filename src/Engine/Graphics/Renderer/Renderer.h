@@ -15,6 +15,7 @@
 #include "Engine/Graphics/RenderEntities.h"
 
 class Actor;
+struct CameraView;
 class GraphicsImage;
 class GameConfig;
 class Sprite;
@@ -65,7 +66,7 @@ class Renderer {
         RasterLine2D(a, b, color, color);
     }
 
-    virtual void BeginScene3D() = 0;
+    virtual void BeginScene3D(const CameraView &view) = 0;
 
     virtual void MakeParticleBillboardAndPush(const Particle& p) = 0;
     virtual float GetGamma() = 0;

@@ -282,7 +282,9 @@ void OpenGLRenderer::RasterLine2D(Pointi a, Pointi b, Color acolor, Color bcolor
     v2.color = bcolor.toColorf();
 }
 
-void OpenGLRenderer::BeginScene3D() {
+void OpenGLRenderer::BeginScene3D(const CameraView &view) {
+    _view = view;
+
     // Setup for 3D
 
     if (outputRender != outputPresent) {
@@ -757,16 +759,9 @@ void OpenGLRenderer::DrawIndoorSkyPolygon(int uNumVertices, GraphicsImage *textu
 RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int height) {
     // TODO(pskelton): should this call drawworld instead??
 
-    pCamera3D->_viewPitch = pParty->_viewPitch;
-    pCamera3D->_viewYaw = pParty->_viewYaw;
-    pCamera3D->vCameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    pCamera3D->vCameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    pCamera3D->vCameraPos.z = pParty->pos.z + pParty->eyeLevel;  // 193, but real 353
-    pCamera3D->CalculateRotations(pParty->_viewYaw, pParty->_viewPitch);
-    pCamera3D->CreateViewMatrixAndProjectionScale();
-    pCamera3D->BuildViewFrustum();
+    pCamera3D->updateFromParty();
 
-    BeginScene3D();
+    BeginScene3D(CameraView::fromCamera3D(*pCamera3D, pViewport));
     if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
         pIndoor->Draw();
     } else if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
@@ -925,29 +920,12 @@ void OpenGLRenderer::DeleteTexture(TextureRenderId id) {
     _texturesForDeletion.push_back(id.value());
 }
 
-// TODO(pskelton): to camera?
 void OpenGLRenderer::_set_3d_projection_matrix() {
-    float near_clip = pCamera3D->GetNearClip();
-    float far_clip = pCamera3D->GetFarClip();
-
-    // build projection matrix with glm
-    projmat = glm::perspective(glm::radians(pCamera3D->fov_y_deg), pCamera3D->aspect, near_clip, far_clip);
+    projmat = _view.projectionMatrix;
 }
 
-// TODO(pskelton): to camera?
 void OpenGLRenderer::_set_3d_modelview_matrix() {
-    float camera_x = pCamera3D->vCameraPos.x;
-    float camera_y = pCamera3D->vCameraPos.y;
-    float camera_z = pCamera3D->vCameraPos.z;
-
-    // build view matrix with glm
-    glm::vec3 campos = glm::vec3(camera_x, camera_y, camera_z);
-    glm::vec3 eyepos = glm::vec3(camera_x - cosf(2.0f * M_PI * pCamera3D->_viewYaw / 2048.0f),
-        camera_y - sinf(2.0f * M_PI * pCamera3D->_viewYaw / 2048.0f),
-        camera_z - tanf(2.0f * M_PI * -pCamera3D->_viewPitch / 2048.0f));
-    glm::vec3 upvec = glm::vec3(0.0f, 0.0f, 1.0f);
-
-    viewmat = glm::lookAtLH(campos, eyepos, upvec);
+    viewmat = _view.viewMatrix;
 }
 
 // TODO(pskelton): to camera?
@@ -1188,9 +1166,7 @@ void OpenGLRenderer::DrawOutdoorTerrain() {
     TerrainUniforms uniforms;
     uniforms.projection = projmat;
     uniforms.view = viewmat;
-    uniforms.cameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    uniforms.cameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    uniforms.cameraPos.z = pParty->pos.z + pParty->eyeLevel;
+    uniforms.cameraPos = _view.position;
     uniforms.fog = fog;
     uniforms.gamma = gamma;
     uniforms.waterframe = waterAnimationFrame();
@@ -2575,9 +2551,7 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
     OutBuildUniforms uniforms;
     uniforms.projection = projmat;
     uniforms.view = viewmat;
-    uniforms.cameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0f);
-    uniforms.cameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0f);
-    uniforms.cameraPos.z = pParty->pos.z + pParty->eyeLevel;
+    uniforms.cameraPos = _view.position;
     uniforms.fog = fog;
     uniforms.gamma = gamma;
     uniforms.waterframe = waterAnimationFrame();
@@ -3082,9 +3056,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
         BSPUniforms uniforms;
         uniforms.projection = projmat;
         uniforms.view = viewmat;
-        uniforms.cameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0f);
-        uniforms.cameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0f);
-        uniforms.cameraPos.z = pParty->pos.z + pParty->eyeLevel;
+        uniforms.cameraPos = _view.position;
         uniforms.gamma = gamma;
         uniforms.waterframe = waterAnimationFrame();
         uniforms.flowtimer = animTimer->time().realtimeMilliseconds() >> 4;
