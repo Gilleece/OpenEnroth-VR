@@ -53,9 +53,6 @@ ALLOWED_DOMAINS=(
     pypi.org                # Python package index — pip installs for tooling.
     gitlab.freedesktop.org
     pythonhosted.org        # files.pythonhosted.org — pip package downloads.
-    anthropic.com           # api.anthropic.com, statsig.anthropic.com
-    sentry.io
-    statsig.com
     visualstudio.com        # marketplace.visualstudio.com
     code.visualstudio.com   # update.code.visualstudio.com
     mightandmagic.fandom.com # MM7 wiki — game data references during refactoring.

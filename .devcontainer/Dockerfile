@@ -3,8 +3,6 @@ FROM ubuntu:26.04
 ARG TZ
 ENV TZ="$TZ"
 
-ARG CLAUDE_CODE_VERSION=latest
-
 # Install basic development tools, iptables/ipset, and C++ build toolchain.
 RUN apt-get update && apt-get install -y --no-install-recommends \
   less \
@@ -99,9 +97,9 @@ RUN mkdir /commandhistory \
 # Set `DEVCONTAINER` environment variable to help with orientation
 ENV DEVCONTAINER=true
 
-# Create workspace and config directories and set permissions
-RUN mkdir -p /workspace /home/$USERNAME/.claude && \
-  chown -R $USERNAME:$USERNAME /workspace /home/$USERNAME/.claude
+# Create workspace directory and set permissions
+RUN mkdir -p /workspace && \
+  chown -R $USERNAME:$USERNAME /workspace
 
 WORKDIR /workspace
 
@@ -113,7 +111,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
 
 # Install lua-language-server, which the check_style target picks up from PATH. Without it the lua half of the target
 # silently checks nothing, so style breakages that CI rejects don't reproduce locally. Keep the version in sync with
-# LLS_TAG in .github/workflows/style.yml. Unpacked outside /workspace on purpose, inside it the server lints its own
+# LLS_TAG in .github/workflows/lint.yml. Unpacked outside /workspace on purpose, inside it the server lints its own
 # lua sources.
 ARG LLS_VERSION=3.19.1
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -151,9 +149,6 @@ RUN sh -c "$(wget -O- https://github.com/deluan/zsh-in-docker/releases/download/
   -a "source /usr/share/doc/fzf/examples/completion.zsh" \
   -a "export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
   -x
-
-# Install Claude
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # Copy and set up firewall script
 COPY init-firewall.sh /usr/local/bin/
