@@ -24,6 +24,7 @@ uniform float gamma;
 uniform PointLight fspointlights[num_point_lights];
 
 uniform sampler2DArray textureArray0;
+uniform ivec2 logicaltexsize;
 uniform FogParam fog;
 
 void main() {
@@ -34,7 +35,7 @@ void main() {
     vec2 texcoords = vec2(1.0);
     vec2 texuvmod = vec2(0.0);
     vec2 deltas = vec2(0.0);
-    ivec3 texsize = textureSize(textureArray0,0);
+    ivec2 texsize = logicaltexsize;
 
     // texture flow mods
     if (abs(vsNorm.z) >= 0.9) {

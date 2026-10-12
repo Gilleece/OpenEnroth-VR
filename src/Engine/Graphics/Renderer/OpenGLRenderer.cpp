@@ -2667,6 +2667,7 @@ void OpenGLRenderer::DrawOutdoorBuildings() {
 
             // draw each set of triangles
             glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildtextures[unit]);
+            glUniform2i(outbuildshader.uniformLocation("logicaltexsize"), outbuildtexturewidths[unit], outbuildtextureheights[unit]);
             _outbuildBuffers[unit].bind();
             glDrawArrays(GL_TRIANGLES, 0, _outbuildVertices[unit].size());
             drawcalls++;
@@ -3208,6 +3209,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
             // draw each set of triangles
             glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
+            glUniform2i(bspshader.uniformLocation("logicaltexsize"), bsptexturewidths[unit], bsptextureheights[unit]);
             _bspBuffers[unit].bind();
             glDrawArrays(GL_TRIANGLES, 0, _bspVertices[unit].size());
             drawcalls++;
