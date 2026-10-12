@@ -29,6 +29,9 @@ void main() {
             fragcol = vec4(newcol.r, newcol.g, newcol.b, 1.0);
 
     fragcol *= colour;
+#ifdef LINEAR_PIPELINE
+    fragcol.rgb = srgbToLinear(fragcol.rgb);
+#endif
 
     float fograt = getFogRatio(fog, screenspace);
     if (fragcol.a < 0.004) fograt = 0.0;
@@ -37,7 +40,7 @@ void main() {
 
     FragColour = mix(fragcol, vec4(fog.color, alpha), fograt);
 #ifdef LINEAR_PIPELINE
-    FragColour.rgb = srgbToLinear(FragColour.rgb) * additivegain;
+    FragColour.rgb *= additivegain;
 #else
     FragColour.rgb = pow(FragColour.rgb, vec3(1.0/gamma));
 #endif

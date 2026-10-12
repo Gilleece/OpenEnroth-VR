@@ -476,6 +476,20 @@ void OpenGLRenderer::compositeWorldTarget() {
     glEnable(GL_SCISSOR_TEST);
 }
 
+GLint OpenGLRenderer::_colorArrayFormat() const {
+    return _linearPipeline ? GL_SRGB8_ALPHA8 : GL_RGBA8;
+}
+
+Colorf OpenGLRenderer::_worldColor(Colorf color) const {
+    if (!_linearPipeline)
+        return color;
+
+    auto decode = [](float value) {
+        return value <= 0.04045f ? value / 12.92f : std::pow((value + 0.055f) / 1.055f, 2.4f);
+    };
+    return Colorf(decode(color.r), decode(color.g), decode(color.b), color.a);
+}
+
 void OpenGLRenderer::drawComposite(GLuint source, const Recti &viewport, GLenum filter) {
     if (!_compositeBuffer) {
         _compositeBuffer.reset(GL_STATIC_DRAW, &CompositeVertex::pos);
@@ -1469,7 +1483,8 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
                     scale = std::max(scale, assets->getBitmap(name, name.starts_with("generated"))->textureScale());
 
             // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, terraintexturesizes[unit] * scale, terraintexturesizes[unit] * scale, numterraintexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), terraintexturesizes[unit] * scale, terraintexturesizes[unit] * scale, numterraintexloaded[unit],
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
             // loop through texture map
             std::vector<std::pair<GraphicsImage *, int>> layers;
@@ -1928,7 +1943,7 @@ FogUniforms OpenGLRenderer::forcedPerspectiveFog(float normalWeatherGrey) {
             result.weakDistance = fog.weakDistance;
             result.strongDistance = fog.strongDistance;
             result.clipDistance = fog.clipDistance;
-            result.color = Colorf(fpfogcol.r / 255.0f, fpfogcol.g / 255.0f, fpfogcol.b / 255.0f);
+            result.color = _worldColor(Colorf(fpfogcol.r / 255.0f, fpfogcol.g / 255.0f, fpfogcol.b / 255.0f));
         } else {
             // Normal weather.
             result.weakDensity = 0.0f;
@@ -1936,7 +1951,7 @@ FogUniforms OpenGLRenderer::forcedPerspectiveFog(float normalWeatherGrey) {
             result.weakDistance = pCamera3D->GetFarClip();
             result.strongDistance = pCamera3D->GetFarClip();
             result.clipDistance = pCamera3D->GetFarClip();
-            result.color = Colorf(normalWeatherGrey, normalWeatherGrey, normalWeatherGrey);
+            result.color = _worldColor(Colorf(normalWeatherGrey, normalWeatherGrey, normalWeatherGrey));
         }
     } else {
         result.weakDensity = 0.0f;
@@ -1960,7 +1975,7 @@ void OpenGLRenderer::SetFogParametersGL() {
             fog.weakDistance = pOutdoor->weather.fogWeakDistance;
             fog.strongDistance = pOutdoor->weather.fogStrongDistance;
             fog.clipDistance = pCamera3D->GetFarClip();
-            fog.color = fogcol.toColorf();
+            fog.color = _worldColor(fogcol.toColorf());
         } else {
             fog.weakDensity = 0;
             fog.strongDensity = 0;
@@ -1970,7 +1985,7 @@ void OpenGLRenderer::SetFogParametersGL() {
 
             // grabs sky back fog colour
             Color uTint = GetActorTintColor(31, 0, fog.clipDistance, 1, 0);
-            fog.color = uTint.toColorf();
+            fog.color = _worldColor(uTint.toColorf());
         }
     } else {
         // puts fog beyond viewclip so we never see it
@@ -2936,7 +2951,8 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
                     scale = std::max(scale, assets->getBitmap(name)->textureScale());
 
             // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, outbuildtexturewidths[unit] * scale, outbuildtextureheights[unit] * scale, numoutbuildtexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), outbuildtexturewidths[unit] * scale, outbuildtextureheights[unit] * scale, numoutbuildtexloaded[unit],
+                         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
             std::vector<std::pair<GraphicsImage *, int>> layers;
             std::map<std::string, int>::iterator it = outbuildtexmap.begin();
             while (it != outbuildtexmap.end()) {
@@ -3368,7 +3384,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
                     if (((comb & 0xFF00) >> 8) == unit)
                         scale = std::max(scale, assets->getBitmap(name)->textureScale());
 
-                glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA8, bsptexturewidths[unit] * scale, bsptextureheights[unit] * scale, bsptexloaded[unit], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+                glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), bsptexturewidths[unit] * scale, bsptextureheights[unit] * scale, bsptexloaded[unit],
+                             0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
                 std::vector<std::pair<GraphicsImage *, int>> layers;
                 std::map<std::string, int>::iterator it = bsptexmap.begin();

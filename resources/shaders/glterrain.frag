@@ -79,7 +79,11 @@ void main() {
             result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir);
     }
 
+#ifdef LINEAR_PIPELINE
+    result *= linearToSrgb(fragcol.rgb); // Lit in sRGB like the stock shaders, the sRGB curve doesn't commute with the product.
+#else
     result *= fragcol.rgb;
+#endif
 
     // stack mobile lights
     for(int i = 1; i < num_point_lights; i++) {
@@ -93,6 +97,10 @@ void main() {
     vec3 result = lit;
 #endif
 
+#ifdef LINEAR_PIPELINE
+    result = srgbToLinear(result);
+#endif
+
     vec3 clamps = result;
 
     float dist = length(viewspace);
@@ -100,9 +108,7 @@ void main() {
 
     float fograt = getFogRatio(fog, dist);
     FragColour = mix(vec4(clamps, vertexColour.a), vec4(fog.color, alpha), fograt);
-#ifdef LINEAR_PIPELINE
-    FragColour.rgb = srgbToLinear(FragColour.rgb);
-#else
+#ifndef LINEAR_PIPELINE
     FragColour.rgb = pow(FragColour.rgb, vec3(1.0/gamma));
 #endif
 }

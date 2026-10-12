@@ -83,7 +83,11 @@ vec3 CalcMaterialLighting(vec4 material, vec3 albedo, vec3 geometricNormal, vec3
             result += CalcPointLightMaterial(fspointlights[i], normal, geometricNormal, fragPos, viewDir, shininess);
     }
 
+#ifdef LINEAR_PIPELINE
+    result *= linearToSrgb(albedo); // Lit in sRGB like the stock shaders, the caller decodes the result.
+#else
     result *= albedo;
+#endif
 
     for (int i = 1; i < num_point_lights; i++) {
         if (fspointlights[i].type == 2.0)

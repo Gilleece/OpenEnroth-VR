@@ -36,10 +36,10 @@ void main() {
     vec3 sky = texture(texture0, (timeoffset + planePos) / texsize).rgb * colour.rgb;
     if (fade != 0)
         sky = mix(sky, colour.rgb, clamp((fadeTop - elevation) / (fadeTop - fadeBottom), 0.0, 1.0));
+#ifdef LINEAR_PIPELINE
+    sky = srgbToLinear(sky); // The fade to the horizon tint stays in sRGB, as the stock sky blends it.
+#endif
 
     float fograt = getFogRatio(fog, fogDistance);
     FragColour = vec4(mix(sky, fog.color, fograt), 1.0);
-#ifdef LINEAR_PIPELINE
-    FragColour.rgb = srgbToLinear(FragColour.rgb);
-#endif
 }
