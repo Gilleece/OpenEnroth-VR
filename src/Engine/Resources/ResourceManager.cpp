@@ -5,6 +5,8 @@
 #include <exception>
 #include <memory>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "Engine/Data/ResourceMask.h"
 
@@ -100,6 +102,9 @@ static Color processTransparentPixel(const GrayscaleImage &image, const Palette 
     return Color(static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b), 0);
 }
 
+static constexpr size_t PARALLEL_DESATURATE_SIZE = 65536; // Texture pack images, the LOD palettes stay on one thread.
+static constexpr size_t MAX_DESATURATE_THREADS = 8;
+
 static Palette grayscalePalette() {
     Palette result;
     for (int i = 0; i < 256; i++)
@@ -170,6 +175,10 @@ Sizei ResourceManager::iconSize(std::string_view filename) {
     if (name.ends_with(".pcx"))
         return pcx::decodeSize(lod::decodeMaybeCompressed(_iconsLodReader.read(name)));
     return lod::decodeImageSize(_iconsLodReader.read(name));
+}
+
+bool ResourceManager::hasTexturePack() const {
+    return _texturePack != nullptr;
 }
 
 RgbaImage ResourceManager::packIcon(std::string_view filename) {
@@ -340,6 +349,17 @@ void ResourceManager::desaturate(std::span<Color> colors) const {
     if (fuzzyEquals(_saturation, 1.0f) && fuzzyEquals(_lightness, 1.0f))
         return;
 
-    for (Color &color : colors)
-        color = color.toHsvColorf().adjusted(0, _saturation, _lightness).toColor();
+    auto adjust = [this](std::span<Color> part) {
+        for (Color &color : part)
+            color = color.toHsvColorf().adjusted(0, _saturation, _lightness).toColor();
+    };
+
+    size_t threadCount = colors.size() < PARALLEL_DESATURATE_SIZE ? 1 : std::clamp<size_t>(std::thread::hardware_concurrency(), 1, MAX_DESATURATE_THREADS);
+    size_t chunk = (colors.size() + threadCount - 1) / threadCount;
+    std::vector<std::thread> threads;
+    for (size_t start = chunk; start < colors.size(); start += chunk)
+        threads.emplace_back(adjust, colors.subspan(start, std::min(chunk, colors.size() - start)));
+    adjust(colors.first(std::min(chunk, colors.size())));
+    for (std::thread &thread : threads)
+        thread.join();
 }

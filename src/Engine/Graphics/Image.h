@@ -3,6 +3,7 @@
 #include <string>
 #include <memory>
 #include <optional>
+#include <span>
 
 #include "Engine/Graphics/Renderer/TextureRenderId.h"
 
@@ -18,6 +19,15 @@ class GraphicsImage {
     static std::unique_ptr<GraphicsImage> Create(int width, int height);
     static std::unique_ptr<GraphicsImage> Create(Sizei size);
     static std::unique_ptr<GraphicsImage> Create(std::unique_ptr<ImageLoader> loader);
+
+    /**
+     * Loads the higher resolution replacements of `images` and their materials on several threads, so that
+     * `textureRgba()` and `materialRgba()` find them loaded. Their loaders must be safe to call from several threads
+     * at once, like those that read from a texture pack.
+     *
+     * @param images                    Images to load the replacements of, each at most once.
+     */
+    static void loadReplacements(std::span<GraphicsImage *const> images);
 
     ~GraphicsImage();
 

@@ -58,6 +58,12 @@ class ResourceManager {
     RgbaImage packIcon(std::string_view filename);
 
     /**
+     * @return                          Whether a texture pack is open. The pack functions here and `bitmapSize()` are
+     *                                  then safe to call from several threads at once.
+     */
+    [[nodiscard]] bool hasTexturePack() const;
+
+    /**
      * @param filename                  Name of an image in `bitmaps.lod`, case-insensitive.
      * @return                          The desaturated bitmap, or an empty image if there is no such bitmap.
      */
