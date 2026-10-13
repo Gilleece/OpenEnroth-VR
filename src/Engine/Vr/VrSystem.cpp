@@ -305,7 +305,7 @@ bool VrSystem::pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) {
         glm::quat facing(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
         glm::vec3 point = glm::vec3(pose.position.x, pose.position.y, pose.position.z) + facing * glm::vec3(right, up, 0) - _uiHead;
         glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
-        world = partyYaw * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
+        world = partyYaw * _headTurn * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
     } else {
         // Without a located head the quad hangs in VIEW space, the same point in the game's view axes, forward, left and up.
         glm::vec3 point(engine->config->vr.UiDistance.value(), -right, up);
