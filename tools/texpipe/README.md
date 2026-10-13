@@ -5,7 +5,7 @@ bitmaps, icons and sprites in the game's LOD files, with normal and roughness ma
 holds derivatives of the game's images, and the game has to be installed to use it.
 
 The steps run in order: `extract`, `upscale`, `maps`, then `pack`. The optional `regen` pass sits between `maps` and
-`pack`. Extract, upscale and regen skip what they already did, so a rerun only redoes what changed.
+`pack`, and the optional `bake` adds baked lighting to a pack, before or after `pack`. Extract, upscale and regen skip what they already did, so a rerun only redoes what changed.
 
 ## Setup
 
@@ -123,9 +123,26 @@ first place, the model's 4x output scaled down the same way.
 python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/esrgan-lite --config texpipe/lite_config.toml --archive ../../mm7_hd/esrgan-lite.zip
 ```
 
+**bake** bakes the lighting of every map into the pack with the engine: irradiance probes per map, in
+`gi/<map file>.bin`, which the engine lights the world with. It runs `OpenEnroth bake-gi` once per map, so every map
+gets its own time and a crash costs only that map. It then checks each probe file against the format and records the
+map in the manifest's `gi` section with the CRC-32 of the `games.lod` entry, which texpipe reads itself and compares
+with the one the engine reports. The engine ignores the probes of a map whose entry has changed since. A map that
+fails loses its probe file and manifest entry, and the maps not baked in a run keep theirs. It prints the time and the
+size of each map, then the total, and exits with 1 if any map failed. Pass the engine with `--engine` or set
+`TEXPIPE_OPENENROTH`, and `--map d18.blv`, which can be repeated, bakes only those maps.
+
+```
+python -m texpipe bake --data ../../mm7 --out ../../mm7_hd/esrgan --engine <path to OpenEnroth>
+```
+
+`pack` keeps the baked lighting already in the pack folder when it writes the manifest again, as long as the config's
+`[pack] gi` is on, which it is in both profiles. Turned off, `pack` removes it from the pack.
+
 **verify** checks a pack against the installed game the way the engine loads it, for packs that came from elsewhere:
 every manifest entry against the CRC-32 of its LOD entry, every listed file present, color images at the LOD image's
-size times 1, 2 or 4, and maps and sprite shapes the size of the color images they go with. It prints the counts and
+size times 1, 2 or 4, maps and sprite shapes the size of the color images they go with, and the baked lighting
+against the CRC-32 of its map in `games.lod` and the probe file format. It prints the counts and
 the first failures, and exits with 1 if anything failed. The engine uses the original image for an entry that fails,
 so a failure is an image the pack doesn't replace in game. It reads the LOD archives itself, LodTool isn't needed.
 
@@ -264,4 +281,4 @@ pip install pytest
 python -m pytest
 ```
 
-The tests use small generated images and don't need the game data.
+The tests use small generated images and probe files, and don't need the game data.

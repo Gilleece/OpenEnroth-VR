@@ -60,7 +60,9 @@ def run_pack(
 
     With `regen_from`, a model whose regen outputs exist, sprites and icons come from those outputs that passed. Images
     upscaled past the config's `[pack] max_scale` are scaled down to it, and their maps made again at that size.
-    Returns the number of entries per section, of bitmaps with maps, of sprite images, and of generated sprites.
+    The baked lighting a `bake` run left in the pack stays, unless the config's `[pack] gi` is off, which removes it.
+    Returns the number of entries per section, of bitmaps with maps, of sprite images, of generated sprites, of sprite
+    shapes and of baked maps.
     """
     config = config or {}
     max_scale = config.get("pack", {}).get("max_scale", 4)
@@ -103,7 +105,9 @@ def run_pack(
                     _copy(map_path(work, kind, image.name), out / kind / "bitmaps" / f"{image.name}.png")
             entry["maps"] = list(MAPS)
         entries[image.section][image.name] = entry
-    write_json(out / "manifest.json", build_manifest(entries, colors))
+    manifest = build_manifest(entries, colors)
+    _carry_gi(out, manifest, config.get("pack", {}).get("gi", True))
+    write_json(out / "manifest.json", manifest)
     readme = README_TEXT
     if regen_from:
         readme += GENERATED_README.format(count=len(generated), model=regen_from)
@@ -114,6 +118,7 @@ def run_pack(
     counts["sprite images"] = sum(len(entry["palettes"]) for entry in entries["sprites"].values())
     counts["generated"] = len(generated)
     counts["shapes"] = sum(1 for entry in entries["sprites"].values() if "shape" in entry)
+    counts["gi"] = len(manifest.get("gi", {}))
     return counts
 
 
@@ -192,6 +197,17 @@ def write_archive_parts(pack: Path, archive: Path, limit: int) -> list[tuple[Pat
                 _write_entry(output, f"{pack.name}/{PARTS_LISTING}", listing.encode(), False)
         result.append((path, path.stat().st_size))
     return result
+
+
+def _carry_gi(out: Path, manifest: dict, ship: bool) -> None:
+    """Carries the baked lighting already in the pack over to the new manifest, or removes it if `ship` is off."""
+    path = out / "manifest.json"
+    gi = read_json(path).get("gi", {}) if path.is_file() else {}
+    if ship:
+        if gi:
+            manifest["gi"] = gi
+    else:
+        shutil.rmtree(out / "gi", ignore_errors=True)
 
 
 def _add_sprite_image(sprites: dict[str, dict], image: WorkImage) -> None:

@@ -1,4 +1,4 @@
-"""Command line entry point: texpipe extract | upscale | maps | depth | pack | verify | regen | regen-report."""
+"""Command line entry point: texpipe extract | upscale | maps | depth | pack | bake | verify | regen | regen-report."""
 
 import argparse
 import json
@@ -11,6 +11,7 @@ from texpipe.backends.realesrgan import resolve_binary
 from texpipe.config import SCALES, load_config
 from texpipe.depth import run_depth
 from texpipe.extract import run_extract
+from texpipe.gi import ENGINE_ENV, resolve_engine, run_bake
 from texpipe.maps import run_maps
 from texpipe.pack import COLORS, run_pack, write_archive, write_archive_parts
 from texpipe.regen import RegenOptions, regen_report, rescore, run_regen
@@ -60,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the archive as numbered parts of at most this many GiB each, for sites with an upload limit.",
     )
     pack.add_argument("--config", type=Path, help="Config file, defaults to the bundled default_config.toml.")
+
+    bake = commands.add_parser("bake", help="Bake the lighting of every map into the pack with the engine.")
+    bake.add_argument("--data", type=Path, required=True, help="MM7 game folder, the one with DATA in it.")
+    bake.add_argument("--out", type=Path, required=True, help="Pack folder to bake into.")
+    bake.add_argument("--engine", help=f"OpenEnroth executable, defaults to ${ENGINE_ENV} or PATH.")
+    bake.add_argument("--map", action="append", help="Only bake this games.lod map, e.g. 'd18.blv'. Repeatable.")
 
     verify = commands.add_parser("verify", help="Check a texture pack against the installed game, as the engine would.")
     verify.add_argument("--pack", type=Path, required=True, help="Pack folder, the one with manifest.json in it.")
@@ -143,11 +150,26 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"Pass --python or set {DEPTH_PYTHON_ENV} to the Python of the depth model's environment.")
         config = load_config(args.config)
         print(f"Depth {run_depth(args.work, args.palettes, config, args.only, Path(python), args.force)}.")
+    elif args.command == "bake":
+        engine = resolve_engine(args.engine)
+        result = run_bake(
+            args.data,
+            args.out,
+            engine,
+            args.map,
+            progress=lambda name, seconds, size: print(f"Baked {name} in {seconds:.1f} s, {size / 2**20:.2f} MiB."),
+        )
+        print(
+            f"Baked {len(result.baked)} maps into {result.total_bytes / 2**20:.1f} MiB of probe files, "
+            f"{len(result.failures)} failed."
+        )
+        for name, reason in result.failures.items():
+            print(f"  failed {name}: {reason}")
+        print(f"Took {time.monotonic() - start:.1f} s.")
+        return 1 if result.failures else 0
     elif args.command == "verify":
         report = verify_pack(args.pack, args.data)
-        print(
-            f"Checked {report.entries} manifest entries and {report.files} image files, {len(report.failures)} failed."
-        )
+        print(f"Checked {report.entries} manifest entries and {report.files} files, {len(report.failures)} failed.")
         for failure in report.failures[:SHOWN_FAILURES]:
             print(f"  {failure}")
         if len(report.failures) > SHOWN_FAILURES:
