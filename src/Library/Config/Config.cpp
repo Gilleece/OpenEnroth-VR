@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <utility>
 
 #include <inicpp.h> // NOLINT: this is not a C system header.
 
@@ -26,7 +27,10 @@ void Config::save(const Path &path) const {
 }
 
 void Config::load(InputStream *stream) {
-    std::istringstream stdStream(stream->readAll());
+    std::string text = stream->readAll();
+    if (text.starts_with("\xEF\xBB\xBF"))
+        text.erase(0, 3); // UTF-8 byte order mark, editors on Windows like to add one.
+    std::istringstream stdStream(std::move(text));
 
     ini::IniFile ini;
     ini.setCommentChar(';'); // Use ini comment char, not '#'.
