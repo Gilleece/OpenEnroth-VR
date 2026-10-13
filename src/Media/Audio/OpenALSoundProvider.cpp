@@ -1,12 +1,17 @@
 #include "OpenALSoundProvider.h"
 
 #include <cassert>
-
-#include <alext.h> // For ALC_HRTF_SOFT. NOLINT: not a C system header.
+#include <chrono>
+#include <iterator>
+#include <string>
 
 #include "Engine/Engine.h"
 
 #include "Library/Logger/Logger.h"
+
+static constexpr int DEVICE_WATCH_INTERVAL_MS = 250;
+static constexpr std::chrono::seconds DEFAULT_DEVICE_POLL_INTERVAL(2); // Enumerating the devices takes a while.
+static constexpr std::chrono::seconds REOPEN_RETRY_INTERVAL(1);
 
 bool checkOpenALError() {
     ALenum code1 = alGetError();
@@ -56,26 +61,11 @@ bool OpenALSoundProvider::Initialize() {
         return false;
     }
 
-    ALCint attrs[7] = {};
+    if (engine->config->audio.DisableHRTF.value())
+        _attributes = {ALC_HRTF_SOFT, ALC_FALSE}; // Disable HRTF so headphones don't sound bad.
+    _attributes.insert(_attributes.end(), {ALC_MONO_SOURCES, 512, ALC_STEREO_SOURCES, 512, 0});
 
-    if (engine->config->audio.DisableHRTF.value()) {
-        // Disable HRTF so headphones don't sound bad.
-        attrs[0] = ALC_HRTF_SOFT;
-        attrs[1] = ALC_FALSE;
-        attrs[2] = ALC_MONO_SOURCES;
-        attrs[3] = 512;
-        attrs[4] = ALC_STEREO_SOURCES;
-        attrs[5] = 512;
-        attrs[6] = 0; // end of list
-    } else {
-        attrs[0] = ALC_MONO_SOURCES;
-        attrs[1] = 512;
-        attrs[2] = ALC_STEREO_SOURCES;
-        attrs[3] = 512;
-        attrs[4] = 0; // end of list
-    }
-
-    context = alcCreateContext(device, attrs);
+    context = alcCreateContext(device, _attributes.data());
     if (context == nullptr) {
         checkOpenALError();
         Release();
@@ -93,7 +83,76 @@ bool OpenALSoundProvider::Initialize() {
     ALfloat listenerOri[] = {0.f, 1.f, 0.f, 0.f, 0.f, -1.f};
     alListenerfv(AL_ORIENTATION, listenerOri);
 
+    if (alcIsExtensionPresent(device, "ALC_SOFT_reopen_device"))
+        _reopenDevice = reinterpret_cast<LPALCREOPENDEVICESOFT>(alcGetProcAddress(device, "alcReopenDeviceSOFT"));
+    if (_reopenDevice && alcIsExtensionPresent(nullptr, "ALC_SOFT_system_events")) {
+        auto isSupported = reinterpret_cast<LPALCEVENTISSUPPORTEDSOFT>(alcGetProcAddress(nullptr, "alcEventIsSupportedSOFT"));
+        auto control = reinterpret_cast<LPALCEVENTCONTROLSOFT>(alcGetProcAddress(nullptr, "alcEventControlSOFT"));
+        _eventCallback = reinterpret_cast<LPALCEVENTCALLBACKSOFT>(alcGetProcAddress(nullptr, "alcEventCallbackSOFT"));
+        ALCenum events[] = {ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT, ALC_EVENT_TYPE_DEVICE_REMOVED_SOFT};
+        if (isSupported && control && _eventCallback &&
+            isSupported(ALC_EVENT_TYPE_DEFAULT_DEVICE_CHANGED_SOFT, ALC_PLAYBACK_DEVICE_SOFT) == ALC_EVENT_SUPPORTED_SOFT) {
+            _eventCallback(&OpenALSoundProvider::deviceEvent, this);
+            _deviceEvents = control(std::size(events), events, ALC_TRUE) == ALC_TRUE;
+        }
+    }
+    if (_reopenDevice) {
+        MM_INFO("OpenAL: following the default output device, {}.", _deviceEvents ? "on device events" : "by polling");
+        _deviceWatcher.Start(DEVICE_WATCH_INTERVAL_MS, [this] { followDefaultDevice(); });
+    } else {
+        MM_INFO("OpenAL: no ALC_SOFT_reopen_device, the output stays on \"{}\".", deviceName(device));
+    }
+
     return true;
+}
+
+void ALC_APIENTRY OpenALSoundProvider::deviceEvent(ALCenum, ALCenum deviceType, ALCdevice *, ALCsizei, const ALCchar *,
+                                                   void *userParam) noexcept {
+    // OpenAL calls this on a thread of its own, from which it must not be called back.
+    if (deviceType == ALC_PLAYBACK_DEVICE_SOFT)
+        static_cast<OpenALSoundProvider *>(userParam)->_devicesChanged.store(true);
+}
+
+void OpenALSoundProvider::followDefaultDevice() {
+    bool changed = _devicesChanged.exchange(false);
+
+    ALCint connected = ALC_TRUE;
+    alcGetIntegerv(device, ALC_CONNECTED, 1, &connected);
+
+    auto now = std::chrono::steady_clock::now();
+    if (!_deviceEvents && now >= _nextDefaultCheck) {
+        _nextDefaultCheck = now + DEFAULT_DEVICE_POLL_INTERVAL;
+        changed = true;
+    }
+    if ((!changed && connected == ALC_TRUE) || now < _nextReopen)
+        return;
+
+    std::string current = deviceName(device);
+    std::string newDefault = deviceName(nullptr);
+    if (connected == ALC_TRUE && newDefault == current)
+        return; // Some other device came or went, ours is still the default and still there.
+
+    if (_reopenDevice(device, nullptr, _attributes.data()) != ALC_TRUE) {
+        if (!_reopenFailed)
+            MM_WARNING("OpenAL: could not reopen the output on the default device \"{}\", retrying.", newDefault);
+        _reopenFailed = true;
+        _devicesChanged.store(true);
+        _nextReopen = now + REOPEN_RETRY_INTERVAL;
+        return;
+    }
+    MM_INFO("OpenAL: output reopened on the default device \"{}\", it was on \"{}\"{}.", deviceName(device), current,
+            connected == ALC_TRUE ? "" : ", which was disconnected");
+    _reopenFailed = false;
+}
+
+std::string OpenALSoundProvider::deviceName(ALCdevice *device) {
+    if (!device) {
+        // ALC_DEFAULT_DEVICE_SPECIFIER is the same generic name whatever the default is. The default of the full list
+        // is its first entry, and only listing the devices again brings that up to date.
+        alcGetString(nullptr, ALC_ALL_DEVICES_SPECIFIER);
+    }
+    const char *name = alcGetString(device, device ? ALC_ALL_DEVICES_SPECIFIER : ALC_DEFAULT_ALL_DEVICES_SPECIFIER);
+    return name ? name : "";
 }
 
 void OpenALSoundProvider::SetListener(const Vec3f &position, const Vec3f &forward, const Vec3f &up) {
@@ -103,6 +162,9 @@ void OpenALSoundProvider::SetListener(const Vec3f &position, const Vec3f &forwar
 }
 
 void OpenALSoundProvider::Release() {
+    _deviceWatcher.Stop();
+    if (_eventCallback)
+        _eventCallback(nullptr, nullptr);
     alcMakeContextCurrent(nullptr);
     if (context) {
         alcDestroyContext(context);

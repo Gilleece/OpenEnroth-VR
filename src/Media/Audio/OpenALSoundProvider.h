@@ -1,11 +1,18 @@
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
+#include <string>
+#include <vector>
 
 #include <al.h> // NOLINT: not a C system header.
 #include <alc.h> // NOLINT: not a C system header.
+#include <alext.h> // NOLINT: not a C system header.
 
 #include "Library/Geometry/Vec.h"
+
+#include "OpenALUpdateThread.h"
 
 // Sound attenuation factors
 constexpr float MAX_SOUND_DIST = 60000.0f;
@@ -47,6 +54,32 @@ class OpenALSoundProvider {
 
     ALCdevice *device = nullptr;
     ALCcontext *context = nullptr;
+
+ private:
+    static void ALC_APIENTRY deviceEvent(ALCenum eventType, ALCenum deviceType, ALCdevice *device, ALCsizei length,
+                                         const ALCchar *message, void *userParam) noexcept;
+
+    /**
+     * Moves the open device to the system's default output device when the default changes or the current device is
+     * gone, keeping the context with every source and buffer. Runs on `_deviceWatcher`'s thread.
+     */
+    void followDefaultDevice();
+
+    /**
+     * @param device                    Open device, or null for the system's default output device.
+     * @return                          Full name of the device, as the device list gives it.
+     */
+    static std::string deviceName(ALCdevice *device);
+
+    std::vector<ALCint> _attributes; // The context attributes, for reopening.
+    LPALCREOPENDEVICESOFT _reopenDevice = nullptr; // Null without ALC_SOFT_reopen_device.
+    LPALCEVENTCALLBACKSOFT _eventCallback = nullptr; // Null without ALC_SOFT_system_events.
+    bool _deviceEvents = false; // Whether ALC_SOFT_system_events reports default device changes.
+    std::atomic<bool> _devicesChanged = false; // Set by `deviceEvent`.
+    std::chrono::steady_clock::time_point _nextDefaultCheck;
+    bool _reopenFailed = false; // Whether the last reopen failed, so that the retries don't log it again.
+    std::chrono::steady_clock::time_point _nextReopen; // Retries after a failed reopen wait until then.
+    OpenALUpdateThread _deviceWatcher;
 };
 
 // TODO(pskelton): contain?
