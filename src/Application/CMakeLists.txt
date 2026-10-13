@@ -44,3 +44,15 @@ target_link_libraries(application
 
 add_subdirectory(GameStates)
 add_subdirectory(Startup)
+
+if(OE_BUILD_TESTS)
+    set(TEST_APPLICATION_SOURCES
+            Tests/GameConfig_ut.cpp)
+
+    add_library(test_application OBJECT ${TEST_APPLICATION_SOURCES})
+    target_link_libraries(test_application PUBLIC testing_unit application)
+
+    target_check_style(test_application)
+
+    target_link_libraries(OpenEnroth_GameTest PUBLIC test_application)
+endif()

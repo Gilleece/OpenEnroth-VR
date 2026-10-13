@@ -276,7 +276,7 @@ The log then says `Using texture pack '...' with N bitmaps, M icons and K sprite
 
 `enhanced` turns on the enhanced renderer: linear blending, bloom, FXAA, sun and torch shadows, ambient occlusion,
 terrain variation, the baked indirect light of the pack's `bake` step and world space billboards, with the 3D world
-drawn at the window's resolution. Entries in the ini that differ from their defaults win over it. The video options
+drawn at the window's resolution. Entries set in the ini, not commented out, win over it. The video options
 screen toggles it, and has toggles of their own for sprite depth, sprite crossfade and the indirect light, which is
 `global_illumination` in the ini.
 `ui_scale` draws the UI at 2 or 4 times the render size, so that the pack's icons show their detail. Both

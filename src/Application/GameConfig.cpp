@@ -19,9 +19,10 @@ void GameConfig::updateEnhancedGraphics() {
 
     auto apply = [&](auto &entry, auto value) {
         bool applied = std::ranges::contains(_enhancedEntries, &entry, [](const auto &pair) { return pair.first; });
-        if (applied || entry.value() != entry.defaultValue())
+        if (applied || entry.isExplicit())
             return;
         entry.setValue(value);
+        entry.setExplicit(false);
         _enhancedEntries.emplace_back(&entry, entry.string());
     };
     apply(graphics.LinearPipeline, true);
@@ -38,7 +39,7 @@ void GameConfig::updateEnhancedGraphics() {
 
 void GameConfig::removeEnhancedGraphics() {
     for (const auto &[entry, value] : _enhancedEntries)
-        if (entry->string() == value)
+        if (!entry->isExplicit())
             entry->reset();
     _enhancedEntries.clear();
 }

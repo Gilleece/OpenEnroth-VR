@@ -41,14 +41,14 @@ class GameConfig : public Config {
     ~GameConfig();
 
     /**
-     * Applies or removes the settings `graphics.enhanced` turns on, to match its value. Only entries still at their
-     * default value are set, the others were set by the player and win.
+     * Applies or removes the settings `graphics.enhanced` turns on, to match its value. Only entries that neither the
+     * config file nor the player set are changed, an explicit value wins even when it's the default.
      */
     void updateEnhancedGraphics();
 
     /**
      * Resets the entries `updateEnhancedGraphics` set and the player hasn't changed since, so that saving the config
-     * doesn't write them out.
+     * writes them out as defaults.
      */
     void removeEnhancedGraphics();
 
@@ -519,9 +519,9 @@ class GameConfig : public Config {
                                  "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
         Bool Enhanced = {this, "enhanced", false,
                          "Turn on the enhanced renderer: linear_pipeline, bloom, FXAA, sun_shadows, torch_shadows, "
-                         "ambient_occlusion, world_space_billboards and a ui_scale of 2, with the 3D world drawn at the window's "
-                         "resolution. The UI scale changes on restart. Entries in this file that differ from their defaults take "
-                         "precedence over it."};
+                         "ambient_occlusion, terrain_variation, global_illumination, world_space_billboards and a ui_scale of 2, with "
+                         "the 3D world drawn at the window's resolution. The UI scale changes on restart. Entries that are set in this "
+                         "file, not commented out, take precedence over it."};
         Bool LinearPipeline = {this, "linear_pipeline", false,
                                "Blend the 3D world in linear colour in a 16-bit floating point world target, then tonemap it into the"
                                " game viewport. Uses a world target the size of the viewport when world_target_width and"

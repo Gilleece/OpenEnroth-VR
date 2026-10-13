@@ -28,10 +28,31 @@ class AnyConfigEntry {
         return _value;
     }
 
+    /**
+     * Sets the value and marks it as explicit.
+     *
+     * @param value                     New value, validated before it's set.
+     */
     void setValue(std::any value);
 
+    /**
+     * Sets the default value and marks the value as no longer explicit.
+     */
     void reset() {
         _value = _defaultValue;
+        _explicit = false;
+    }
+
+    /**
+     * @return                          Whether the value was set, by the config file or in the game, rather than left
+     *                                  at the default. An explicit value is saved even when it equals the default.
+     */
+    [[nodiscard]] bool isExplicit() const {
+        return _explicit;
+    }
+
+    void setExplicit(bool isExplicit) {
+        _explicit = isExplicit;
     }
 
     std::string defaultString() const;
@@ -72,6 +93,7 @@ class AnyConfigEntry {
     AnyHandler *_handler = nullptr;
     std::any _defaultValue;
     std::any _value;
+    bool _explicit = false;
     Validator _validator = nullptr;
     std::vector<std::pair<void *, std::function<void()>>> _listeners;
 };

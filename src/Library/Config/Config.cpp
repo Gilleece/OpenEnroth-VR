@@ -26,10 +26,17 @@ void Config::save(const Path &path) const {
     save(&stream);
 }
 
+/**
+ * First line of the config files that write the entries left at their default as comments. Older files wrote every
+ * entry, so an entry at its default in them doesn't say that the player chose it.
+ */
+static constexpr std::string_view CONFIG_HEADER = "; Entries that are commented out are at their default value.";
+
 void Config::load(InputStream *stream) {
     std::string text = stream->readAll();
     if (text.starts_with("\xEF\xBB\xBF"))
         text.erase(0, 3); // UTF-8 byte order mark, editors on Windows like to add one.
+    bool commentedDefaults = text.starts_with(CONFIG_HEADER);
     std::istringstream stdStream(std::move(text));
 
     ini::IniFile ini;
@@ -42,6 +49,8 @@ void Config::load(InputStream *stream) {
                 if (AnyConfigEntry *entry = section->entry(entryName)) {
                     try {
                         entry->setString(iniValue.as<std::string_view>());
+                        if (!commentedDefaults && entry->string() == entry->defaultString())
+                            entry->setExplicit(false);
                     } catch (const std::exception &e) {
                         MM_WARNING("Could not load config entry '[{}]/{}': {}. Value unchanged.",
                                    sectionName, entryName, e.what());
@@ -54,6 +63,7 @@ void Config::load(InputStream *stream) {
 
 void Config::save(OutputStream *stream) const {
     // ini::IniFile doesn't support comments so we just write things out ourselves.
+    stream->write(fmt::format("{}\n\n", CONFIG_HEADER));
     for (ConfigSection *section : sections()) {
         stream->write(fmt::format("[{}]\n", section->name()));
 
@@ -62,7 +72,7 @@ void Config::save(OutputStream *stream) const {
                 for (const std::string &line : wrapText(entry->description(), 78))
                     stream->write(fmt::format("; {}\n", line));
             stream->write(fmt::format("; Default is '{}'.\n", entry->defaultString()));
-            stream->write(fmt::format("{} = {}\n", entry->name(), entry->string()));
+            stream->write(fmt::format("{}{} = {}\n", entry->isExplicit() ? "" : "; ", entry->name(), entry->string()));
             stream->write("\n");
         }
 

@@ -6,6 +6,8 @@
 #include "Library/Logger/Logger.h"
 #include "Library/Logger/LogSink.h"
 
+#include "Utility/Memory/Blob.h"
+#include "Utility/Streams/BlobOutputStream.h"
 #include "Utility/Streams/MemoryInputStream.h"
 
 // Minimal concrete Config subclass for testing.
@@ -68,4 +70,39 @@ UNIT_TEST_FIXTURE(ConfigTest, FieldWithoutSection) {
         EXPECT_THROW(config.load(&stream), std::exception);
         EXPECT_EQ(config.test.value.value(), 42);
     }
+}
+
+UNIT_TEST_FIXTURE(ConfigTest, ExplicitDefaultIsSaved) {
+    // A value at its default that the player set is written out, one that nobody set is written as a comment.
+    for (bool set : {false, true}) {
+        TestConfig config;
+        if (set)
+            config.test.value.setValue(42);
+        Blob saved;
+        BlobOutputStream out(&saved);
+        config.save(&out);
+        out.close();
+        EXPECT_EQ(saved.str().find("\n; value = 42\n") != std::string_view::npos, !set);
+        EXPECT_EQ(saved.str().find("\nvalue = 42\n") != std::string_view::npos, set);
+
+        TestConfig loaded;
+        MemoryInputStream in(saved.data(), saved.size());
+        loaded.load(&in);
+        EXPECT_EQ(loaded.test.value.isExplicit(), set);
+    }
+}
+
+UNIT_TEST_FIXTURE(ConfigTest, OlderFileDefaultIsNotExplicit) {
+    // Files written before defaults were commented out have every entry, so one at its default wasn't chosen.
+    TestConfig config;
+    std::string_view ini = "[test]\nvalue = 42\n";
+    MemoryInputStream stream(ini.data(), ini.size());
+    config.load(&stream);
+    EXPECT_FALSE(config.test.value.isExplicit());
+
+    TestConfig changed;
+    std::string_view changedIni = "[test]\nvalue = 7\n";
+    MemoryInputStream changedStream(changedIni.data(), changedIni.size());
+    changed.load(&changedStream);
+    EXPECT_TRUE(changed.test.value.isExplicit());
 }
