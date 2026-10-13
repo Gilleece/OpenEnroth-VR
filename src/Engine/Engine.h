@@ -200,6 +200,20 @@ class Engine {
     Vis_PIDAndDepth PickRay(float fPickDepth, Vec3f origin, Vec3f direction,
                             Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter);
 
+    /**
+     * Picks along a grid of rays that covers the party camera's field of view around a direction, so that a headset
+     * picks the closest object anywhere around where it looks, the way `Vis::PickKeyboard` does in the flat view.
+     *
+     * @param fPickDepth                Length of the rays.
+     * @param origin                    Start of the rays.
+     * @param forward                   Direction at the centre of the grid, normalized.
+     * @param sprite_filter             Billboards to consider.
+     * @param face_filter               Faces to consider.
+     * @return                          Closest object any of the rays hits.
+     */
+    Vis_PIDAndDepth PickRayGrid(float fPickDepth, Vec3f origin, Vec3f forward,
+                                Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter);
+
     std::unique_ptr<ResourceManager> _resourceManager;
 };
 
