@@ -29,6 +29,7 @@ void GameConfig::updateEnhancedGraphics() {
     apply(graphics.Antialiasing, ANTIALIASING_FXAA);
     apply(graphics.SunShadows, true);
     apply(graphics.TorchShadows, true);
+    apply(graphics.AmbientOcclusion, true);
     apply(graphics.WorldSpaceBillboards, true);
     apply(graphics.UiScale, 2);
 }
