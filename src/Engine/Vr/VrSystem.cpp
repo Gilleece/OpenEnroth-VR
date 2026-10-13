@@ -48,6 +48,7 @@ static constexpr std::chrono::duration<float> UI_EASE_DURATION(0.5f);
 static constexpr float GAME_UNITS_PER_METRE = 100.0f; // The party's eye level of 160 units is a 1.6 m standing eye height.
 static constexpr int64_t LOGGED_FRAME_COUNT = 5;
 static constexpr int HEAD_SPRITE_VIEW = 2; // View index for `Renderer::turnWorldSpritesTo` of the head, after the eyes.
+static constexpr float SPRITE_HEAD_SLACK = 0.01f; // Metres the head moves before the sprites turn after it, more than tracking noise.
 static constexpr std::chrono::seconds FRAME_SUMMARY_INTERVAL(5);
 static constexpr int64_t CULLING_LOG_INTERVAL = 90;
 static constexpr float CULLING_MARGIN_RAD = 5 * M_PI / 180; // Slack for the culling yaw and pitch, rounded to the party's units.
@@ -175,6 +176,17 @@ static glm::quat toGlm(const XrQuaternionf &orientation) {
 
 static glm::vec3 toGlm(const XrVector3f &position) {
     return glm::vec3(position.x, position.y, position.z);
+}
+
+/**
+ * @param view                          Eye view.
+ * @param shift                         Offset in the space the view is located in.
+ * @return                              The same view moved by `shift`.
+ */
+static XrView shifted(const XrView &view, glm::vec3 shift) {
+    XrView result = view;
+    result.pose.position = {view.pose.position.x + shift.x, view.pose.position.y + shift.y, view.pose.position.z + shift.z};
+    return result;
 }
 
 /**
@@ -408,6 +420,8 @@ bool VrSystem::locateViews() {
         return false;
     if (!_positionTracking || !(viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT))
         placeUntrackedEyes();
+    for (XrView &view : _views)
+        view = shifted(view, _headShift);
     clampHeadOffset(_views, engine->config->vr.HeadOffsetRadius.value());
     _viewsLocated = true;
     return true;
@@ -441,20 +455,29 @@ bool VrSystem::drawViews(WorldFrame &frame) {
         return false;
     const std::array<XrView, 2> &views = _views;
 
-    // Both eyes draw the same billboard quads, so that only the eye projections differ.
+    // The sprites face a head position that follows the tracked one with a little slack, so that tracking noise
+    // doesn't turn them. Both eyes draw the same billboard quads, so that only the eye projections differ.
     XrView head = midView(views);
-    render->buildWorldBillboardQuads(eyeView(head, _eyes[0].size), SPRITE_FACING_VIEW_POSITION);
+    glm::vec3 tracked = toGlm(head.pose.position);
+    if (!_spriteHead)
+        _spriteHead = tracked;
+    glm::vec3 lag = tracked - *_spriteHead;
+    if (float distance = glm::length(lag); distance > SPRITE_HEAD_SLACK)
+        *_spriteHead += lag * (1 - SPRITE_HEAD_SLACK / distance);
+    glm::vec3 spriteShift = *_spriteHead - tracked;
+    XrView spriteHead = shifted(head, spriteShift);
+    render->buildWorldBillboardQuads(eyeView(spriteHead, _eyes[0].size), SPRITE_FACING_VIEW_POSITION);
 
     std::array<int, 2> billboards = {};
     _worldReleased = false;
-    if (!drawEye(0, views[0], frame))
+    if (!drawEye(0, views[0], spriteShift, frame))
         return false;
     billboards[0] = render->worldBillboardsDrawn;
-    _layerReady = drawEye(1, views[1], frame);
+    _layerReady = drawEye(1, views[1], spriteShift, frame);
     _worldReleased = _layerReady;
     billboards[1] = render->worldBillboardsDrawn;
     render->setExternalWorldTarget(TextureRenderId(), Sizei());
-    render->turnWorldSpritesTo(eyeView(head, _eyes[0].size).position, HEAD_SPRITE_VIEW); // Back to the culling camera that picking reads.
+    render->turnWorldSpritesTo(eyeView(spriteHead, _eyes[0].size).position, HEAD_SPRITE_VIEW); // Back to the culling camera that picking reads.
 
     if (_worldFrameCount < LOGGED_FRAME_COUNT) {
         MM_INFO("VR: frame {} billboards face {:.2f} degrees of yaw, the eyes look along {:.2f} and {:.2f}.", _frameIndex,
@@ -834,6 +857,7 @@ void VrSystem::setRunning(bool running) {
     _uiAim.reset();
     _hudCursor.reset();
     _worldReleased = false;
+    _spriteHead.reset();
 }
 
 void VrSystem::beginFrame() {
@@ -1233,6 +1257,7 @@ bool VrSystem::captureOrigin(XrTime time) {
         xrDestroySpace(_space);
     _space = space;
     _worldReleased = false;
+    _spriteHead.reset();
     _uiAim.reset();
     _uiPose.reset();
 
@@ -1246,7 +1271,7 @@ bool VrSystem::captureOrigin(XrTime time) {
     return true;
 }
 
-bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
+bool VrSystem::drawEye(int index, const XrView &view, glm::vec3 spriteShift, WorldFrame &frame) {
     Swapchain &eye = _eyes[index];
 
     uint32_t imageIndex = 0;
@@ -1256,7 +1281,7 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
     TextureRenderId texture(eye.images[imageIndex]);
     CameraView camera = eyeView(view, eye.size);
     render->setExternalWorldTarget(texture, eye.size);
-    render->turnWorldSpritesTo(camera.position, index);
+    render->turnWorldSpritesTo(eyeView(shifted(view, spriteShift), eye.size).position, index);
     render->BeginScene3D(camera);
     frame.draw();
     render->EndScene3D();
@@ -1311,6 +1336,10 @@ void VrSystem::shutdown() {
 void VrSystem::setHeadTurn(float yawDegrees, float pitchDegrees) {
     // The game's view axes have +y to the left and +z up, so tilting up turns about -y.
     _headTurn = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0, 0, 1)) * glm::angleAxis(glm::radians(-pitchDegrees), glm::vec3(0, 1, 0));
+}
+
+void VrSystem::setHeadShift(Vec3f metres) {
+    _headShift = glm::vec3(metres.x, metres.y, metres.z);
 }
 
 void VrSystem::setPositionTracking(bool tracked) {
