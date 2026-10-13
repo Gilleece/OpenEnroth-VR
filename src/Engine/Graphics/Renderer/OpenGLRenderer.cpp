@@ -766,7 +766,7 @@ void OpenGLRenderer::_updateEyeAdaptation(const OpenGLRenderTarget &source) {
     _adaptedTime = now;
 
     if (!_luminanceTarget) {
-        _luminanceTarget.reset(Sizei(LUMINANCE_SIZE, LUMINANCE_SIZE), RENDER_TARGET_FORMAT_R16F, false);
+        _luminanceTarget.reset(Sizei(LUMINANCE_SIZE, LUMINANCE_SIZE), RENDER_TARGET_FORMAT_RG16F, false);
         for (OpenGLRenderTarget &target : _adaptationTargets) {
             target.reset(Sizei(1, 1), RENDER_TARGET_FORMAT_R16F, false);
             target.bind();
@@ -787,8 +787,13 @@ void OpenGLRenderer::_updateEyeAdaptation(const OpenGLRenderTarget &source) {
     glBindTexture(GL_TEXTURE_2D, source.colorTexture());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, _adaptationTargets[_adaptationIndex].colorTexture());
+    glActiveTexture(GL_TEXTURE0);
     luminanceshader.use();
     glUniform1i(luminanceshader.uniformLocation("source"), 0);
+    glUniform1i(luminanceshader.uniformLocation("adaptation"), 1);
+    glUniform1f(luminanceshader.uniformLocation("exposure"), config->graphics.Exposure.value());
     glDrawArrays(GL_TRIANGLES, 0, 3);
     drawcalls++;
 
@@ -799,11 +804,9 @@ void OpenGLRenderer::_updateEyeAdaptation(const OpenGLRenderTarget &source) {
     int next = 1 - _adaptationIndex;
     _adaptationTargets[next].bind();
     glViewport(0, 0, 1, 1);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, _adaptationTargets[_adaptationIndex].colorTexture());
     adaptshader.use();
     glUniform1i(adaptshader.uniformLocation("source"), 0);
-    glUniform1i(adaptshader.uniformLocation("previous"), 1);
+    glUniform1i(adaptshader.uniformLocation("adaptation"), 1);
     glUniform1f(adaptshader.uniformLocation("sourceLevel"), std::log2(static_cast<float>(LUMINANCE_SIZE)));
     glUniform1f(adaptshader.uniformLocation("rate"), rate);
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -811,8 +814,9 @@ void OpenGLRenderer::_updateEyeAdaptation(const OpenGLRenderTarget &source) {
     adaptshader.unuse();
 
     glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE0);
+    glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
     _compositeBuffer.unbind();
     _adaptationIndex = next;
 }
@@ -1741,7 +1745,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
     _spriteLighting = _spriteDepth && config->graphics.SpriteLighting.value();
     _filmicTonemap = _linearPipeline && config->graphics.FilmicTonemap.value();
-    _eyeAdaptation = _linearPipeline && config->graphics.EyeAdaptation.value();
+    _eyeAdaptation = _filmicTonemap && config->graphics.EyeAdaptation.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
