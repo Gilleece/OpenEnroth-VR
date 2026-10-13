@@ -801,6 +801,21 @@ class GameConfig : public Config {
             "until the head turns more than 15 degrees sideways or 10 up or down, or moves 0.3 m, and then glides back in "
             "front over half a second, upright."};
 
+        ConfigEntry<VrHudLayout> HudLayout = {this, "hud_layout", VR_HUD_LAYOUT_CLASSIC,
+            "How the game screen is shown in the headset, 'classic' as one floating screen or 'spread', where the "
+            "portraits, status bar, minimap, right panel and buttons hang around the view on their own and the rest of "
+            "the game screen stays where the floating screen would be. Other screens, like books and houses, always "
+            "show as one floating screen."};
+
+        Float HudDistance = {this, "hud_distance", 1.2f, &ValidateUiDistance,
+            "Distance of the spread HUD from the eyes in metres."};
+
+        Float HudScale = {this, "hud_scale", 1.0f, &ValidateHudScale,
+            "Size of the spread HUD, 1 makes it look as big as it does on the floating screen."};
+
+        Float HudSpread = {this, "hud_spread", 1.0f, &ValidateHudSpread,
+            "How far the spread HUD sits from the middle of the view, as a multiple of its default angles."};
+
         Bool SnapTurn = {this, "snap_turn", false, "Turn in fixed steps instead of smoothly."};
 
         Int SnapTurnDegrees = {this, "snap_turn_degrees", 30, &ValidateSnapTurnDegrees, "Degrees per snap turn."};
@@ -850,6 +865,12 @@ class GameConfig : public Config {
         }
         static float ValidateVignetteStrength(float strength) {
             return std::clamp(strength, 0.0f, 1.0f);
+        }
+        static float ValidateHudScale(float scale) {
+            return std::clamp(scale, 0.5f, 2.0f);
+        }
+        static float ValidateHudSpread(float spread) {
+            return std::clamp(spread, 0.5f, 1.5f);
         }
     };
 

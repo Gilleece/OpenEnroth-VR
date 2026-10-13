@@ -31,6 +31,16 @@ using enum VrUiFollow;
 MM_DECLARE_SERIALIZATION_FUNCTIONS(VrUiFollow)
 
 /**
+ * How the game screen is laid out in a headset.
+ */
+enum class VrHudLayout {
+    VR_HUD_LAYOUT_CLASSIC, // The whole screen on one quad.
+    VR_HUD_LAYOUT_SPREAD, // The HUD of the game screen on quads of its own around the view.
+};
+using enum VrHudLayout;
+MM_DECLARE_SERIALIZATION_FUNCTIONS(VrHudLayout)
+
+/**
  * Filtering of sun shadow edges.
  */
 enum class ShadowFilterMode {
