@@ -36,6 +36,6 @@ void main() {
     // A sprite's own shadow quad passes through its anchor, so the anchor is looked up a step towards the sun.
     sunlight = 1.0;
     if (vaShadowed > 0.0)
-        sunlight = mix(sunShadowBillboardRatio * SunShadowAmbient(0.0), 1.0, SunShadow(vaShadowAnchor + sunShadowDirection * 64.0, vec3(0.0)));
+        sunlight = mix(sunShadowBillboardRatio * SunShadowAmbient(0.0), 1.0, SunShadow(vaShadowAnchor + sunShadowDirection * 64.0, sunShadowDirection));
 #endif
 }
