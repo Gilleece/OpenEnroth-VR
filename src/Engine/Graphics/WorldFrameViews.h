@@ -57,6 +57,15 @@ class WorldFrameViews {
     virtual bool forwardRay(Vec3f *origin, Vec3f *direction) = 0;
 
     /**
+     * @param[out] position             Point between the eyes in world space.
+     * @param[out] forward              Direction the head looks along in world space, normalized.
+     * @param[out] up                   Up direction of the head in world space, normalized.
+     * @return                          Whether the head is tracked this frame, so that sounds are heard from it
+     *                                  instead of from the party camera. The outputs are only set when it is.
+     */
+    virtual bool listenerPose(Vec3f *position, Vec3f *forward, Vec3f *up) = 0;
+
+    /**
      * Makes the views' current pose their new starting pose, from the next frame on.
      */
     virtual void recenter() = 0;
