@@ -368,8 +368,8 @@ void GUIWindow_GameKeyBindings::Update() {
 }
 
 static constexpr Recti VR_PANEL_RECT(244, 142, 212, 156); // Covers the gamma preview panel.
-static constexpr int VR_LINE_TOP = 164;
-static constexpr int VR_LINE_HEIGHT = 16;
+static constexpr int VR_LINE_TOP = 160;
+static constexpr int VR_LINE_HEIGHT = 15;
 
 /**
  * @param setting                       Entry of the VR block.
