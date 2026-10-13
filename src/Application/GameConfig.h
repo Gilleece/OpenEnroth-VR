@@ -534,6 +534,9 @@ class GameConfig : public Config {
         Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
         ConfigEntry<AntialiasingMode> Antialiasing = {this, "antialiasing", ANTIALIASING_OFF,
                                                       "Antialiasing of the 3D world, 'off' or 'fxaa'. Only applies with linear_pipeline."};
+        Bool SpriteCrossfade = {this, "sprite_crossfade", false,
+                                "Blend a sprite between its two nearest sides as it turns, instead of switching sides every 45"
+                                " degrees. Only applies with world_space_billboards."};
         Bool TorchShadows = {this, "torch_shadows", false,
                              "Let the nearest wall torches and other lights indoors cast shadows. Takes effect on restart."};
         Int TorchShadowCount = {this, "torch_shadow_count", 4, &ValidateTorchShadowCount,

@@ -72,6 +72,7 @@ static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
 static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
+static constexpr GLint CROSSFADE_TEXTURE_UNIT = 5; // Second side of a billboard's sprite.
 static constexpr GLint SCENE_DEPTH_TEXTURE_UNIT = 4; // The billboards sample units 0 and 1 only, and 8 in the vertex shader.
 static constexpr float SOFT_PARTICLE_DISTANCE = 64.0f; // World units in front of the level over which additive billboards fade out.
 static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
@@ -1473,6 +1474,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _torchShadows = config->graphics.TorchShadows.value();
     _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
     _terrainVariation = _linearPipeline && config->graphics.TerrainVariation.value();
+    _spriteCrossfade = config->graphics.SpriteCrossfade.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
@@ -3306,11 +3308,21 @@ void OpenGLRenderer::drawWorldBillboards() {
 
         int paletteId = billboard.paletteId;
         float texid = billboardTextureId(billboard.texture, &paletteId);
+        int crossfadePaletteId = billboard.paletteId;
+        float crossfadeTexid = billboard.crossfadeTexture ? billboardTextureId(billboard.crossfadeTexture, &crossfadePaletteId) : texid;
 
         auto addVertex = [&](int j) {
             BillboardVertex &vertex = _billboardVertices.emplace_back();
             vertex.pos = billboard.corners[j];
-            vertex.texuv = Vec2f(std::clamp(billboard.texcoords[j].x, 0.01f, 0.99f), std::clamp(billboard.texcoords[j].y, 0.01f, 0.99f));
+            if (billboard.crossfadeTexture) {
+                vertex.texuv = billboard.texcoords[j]; // The shader cuts each side off outside its own image.
+                vertex.crossfadeTexuv = billboard.crossfadeTexcoords[j];
+                vertex.crossfade = billboard.crossfade;
+                vertex.crossfadePaletteId = crossfadePaletteId;
+            } else {
+                vertex.texuv = Vec2f(std::clamp(billboard.texcoords[j].x, 0.01f, 0.99f), std::clamp(billboard.texcoords[j].y, 0.01f, 0.99f));
+            }
+            vertex.crossfadeTexid = crossfadeTexid;
             vertex.color = billboard.colors[j].toColorf();
             vertex.screenspace = billboard.distance;
             vertex.texid = texid;
@@ -3529,7 +3541,10 @@ void OpenGLRenderer::DrawBillboards() {
             &BillboardVertex::texid,
             &BillboardVertex::paletteId,
             &BillboardVertex::shadowAnchor,
-            &BillboardVertex::shadowed);
+            &BillboardVertex::shadowed,
+            &BillboardVertex::crossfadeTexuv,
+            &BillboardVertex::crossfade,
+            &BillboardVertex::crossfadePaletteId);
     }
 
     ensurePaletteTexture();
@@ -3568,21 +3583,36 @@ void OpenGLRenderer::DrawBillboards() {
         glUniform1f(billbshader.uniformLocation("sunShadowBillboardRatio"), sunShadowBillboardRatio());
     }
 
-    size_t offset = 0;
-    while (offset < _billboardVertices.size()) {
-        // set texture
-        GLfloat thistex = _billboardVertices[offset].texid;
-        glBindTexture(GL_TEXTURE_2D, _billboardVertices[offset].texid);
-        if (_billboardVertices[offset].paletteId) {
+    bool crossfade = billbshader.hasDefine("SPRITE_CROSSFADE");
+    if (crossfade)
+        glUniform1i(billbshader.uniformLocation("texture1"), CROSSFADE_TEXTURE_UNIT);
+
+    auto setFilter = [&](GLuint texture, bool paletted) {
+        if (paletted) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        } else if (_mipmappedTextures.contains(static_cast<GLuint>(_billboardVertices[offset].texid))) {
+        } else if (_mipmappedTextures.contains(texture)) {
             setMipmappedFilter(GL_TEXTURE_2D);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         } else {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         }
+    };
+
+    size_t offset = 0;
+    while (offset < _billboardVertices.size()) {
+        // set texture
+        GLfloat thistex = _billboardVertices[offset].texid;
+        GLfloat thiscrossfadetex = _billboardVertices[offset].crossfadeTexid;
+        if (crossfade) {
+            glActiveTexture(GL_TEXTURE0 + CROSSFADE_TEXTURE_UNIT);
+            glBindTexture(GL_TEXTURE_2D, thiscrossfadetex ? static_cast<GLuint>(thiscrossfadetex) : static_cast<GLuint>(thistex));
+            setFilter(static_cast<GLuint>(thiscrossfadetex), _billboardVertices[offset].crossfadePaletteId != 0);
+            glActiveTexture(GL_TEXTURE0);
+        }
+        glBindTexture(GL_TEXTURE_2D, _billboardVertices[offset].texid);
+        setFilter(static_cast<GLuint>(_billboardVertices[offset].texid), _billboardVertices[offset].paletteId != 0);
 
         GLfloat thisblend = _billboardVertices[offset].blend;
         if (thisblend == 0.0) {
@@ -3612,7 +3642,8 @@ void OpenGLRenderer::DrawBillboards() {
             if (offset + (3 * cnt) >= _billboardVertices.size()) {
                 break;
             }
-        } while (_billboardVertices[offset + (cnt * 3)].texid == thistex && _billboardVertices[offset + (cnt * 3)].blend == thisblend);
+        } while (_billboardVertices[offset + (cnt * 3)].texid == thistex && _billboardVertices[offset + (cnt * 3)].blend == thisblend &&
+                 _billboardVertices[offset + (cnt * 3)].crossfadeTexid == thiscrossfadetex);
 
         glDrawArrays(GL_TRIANGLES, offset, (3 * cnt));
         drawcalls++;
@@ -5228,6 +5259,9 @@ bool OpenGLRenderer::ReloadShaders() {
         terrainDefines.push_back("TERRAIN_VARIATION");
         terrainMaterialDefines.push_back("TERRAIN_VARIATION");
     }
+    std::vector<std::string_view> billboardDefines = outdoorDefines;
+    if (_spriteCrossfade)
+        billboardDefines.push_back("SPRITE_CROSSFADE");
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          terrainDefines},
         {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorLitDefines},
@@ -5235,7 +5269,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&textshader,             "gltextshader",     "Text",                             {}},
         {&lineshader,             "gllinesshader",    "Lines",                            {}},
         {&twodshader,             "gltwodshader",     "2D",                               {}},
-        {&billbshader,            "glbillbshader",    "Billboards",                       outdoorDefines},
+        {&billbshader,            "glbillbshader",    "Billboards",                       billboardDefines},
         {&decalshader,            "gldecalshader",    "Decals",                           worldDefines},
         {&forcepershader,         "glforcepershader", "Forced perspective",               worldDefines},
         {&skyshader,              "glskyshader",      "Sky",                              worldDefines},

@@ -191,6 +191,10 @@ struct BillboardVertex {
     float paletteId = 0;
     Vec3f shadowAnchor; // Where the billboard looks up the sun shadow, only read when `shadowed` is 1.
     float shadowed = 0;
+    Vec2f crossfadeTexuv;
+    float crossfade = 0; // Weight of the second texture.
+    float crossfadePaletteId = 0;
+    float crossfadeTexid = 0; // Only for batching, not passed to the shader.
 };
 
 struct BillboardUniforms {
