@@ -32,12 +32,18 @@ flat out int paletteid;
 #ifdef LINEAR_PIPELINE
 out vec3 worldPos; // Only a world position when the billboards are drawn in world space.
 #endif
+#if defined(SUN_SHADOWS) || defined(GLOBAL_ILLUMINATION)
+layout (location = 6) in vec3 vaShadowAnchor; // The middle of a sprite in the world, set where vaShadowed is 1.
+layout (location = 7) in float vaShadowed;
+#endif
+
+#ifdef GLOBAL_ILLUMINATION
+#include "gi.glsl"
+#endif
+
 #ifdef SUN_SHADOWS
 #include "lighting.glsl"
 #include "shadow.glsl"
-
-layout (location = 6) in vec3 vaShadowAnchor;
-layout (location = 7) in float vaShadowed;
 
 uniform vec3 sunShadowDirection; // Towards the sun.
 uniform float sunShadowBillboardRatio; // Brightness of a sprite in shadow relative to one in the sun, before strength.
@@ -67,6 +73,13 @@ void main() {
 #endif
 #ifdef LINEAR_PIPELINE
     worldPos = vaPos;
+#endif
+#ifdef GLOBAL_ILLUMINATION
+    // Daylight sprites are drawn at full brightness, so a brightness ratio would make them glow. They take its tint only.
+    if (vaShadowed > 0.0) {
+        vec3 indirect = GlobalIllumination(vaShadowAnchor, vec3(0.0));
+        colour.rgb *= indirect / max(indirect.r, max(indirect.g, indirect.b));
+    }
 #endif
 #ifdef SUN_SHADOWS
     // A sprite's own shadow quad passes through its anchor, so the anchor is looked up a step towards the sun.

@@ -152,6 +152,24 @@ jobs:
                 ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
               done
             done
+            for shader in resources/shaders/{glterrain,gloutbuild}.{vert,frag}; do
+              for defines in "GLOBAL_ILLUMINATION LINEAR_PIPELINE" "GLOBAL_ILLUMINATION LINEAR_PIPELINE MATERIAL_MAPS SUN_SHADOWS AMBIENT_OCCLUSION"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
+            for shader in resources/shaders/glbspshader.{vert,frag}; do
+              for defines in "GLOBAL_ILLUMINATION LINEAR_PIPELINE" "GLOBAL_ILLUMINATION LINEAR_PIPELINE MATERIAL_MAPS TORCH_SHADOWS AMBIENT_OCCLUSION"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
+            for shader in resources/shaders/glbillbshader.{vert,frag}; do
+              for defines in "GLOBAL_ILLUMINATION LINEAR_PIPELINE" "GLOBAL_ILLUMINATION SUN_SHADOWS LINEAR_PIPELINE" "GLOBAL_ILLUMINATION SPRITE_DEPTH SPRITE_LIGHTING SPRITE_CROSSFADE SUN_SHADOWS LINEAR_PIPELINE"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
             for shader in resources/shaders/glao.{vert,frag}; do
               echo "Checking $shader with AO_BLUR against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" AO_BLUR

@@ -72,6 +72,9 @@ const float SPRITE_FOOT_FADE = 0.1; // Part of the sprite's height, at its botto
 
 #ifdef SPRITE_LIGHTING
 #include "lighting.glsl"
+#ifdef GLOBAL_ILLUMINATION
+#include "gi.glsl"
+#endif
 
 #define num_point_lights 20
 uniform Sunlight sun;
@@ -82,7 +85,11 @@ const float SPRITE_RELIGHT_MAX = 1.5;
 
 // The level's light reaching a surface facing `normal`, without its colour.
 vec3 SpriteLightSum(vec3 normal, vec3 pos, vec3 viewDir) {
+#ifdef GLOBAL_ILLUMINATION
+    vec3 result = sun.ambient * GlobalIllumination(pos, normal);
+#else
     vec3 result = sun.ambient;
+#endif
     if (dot(sun.direction, sun.direction) > 0.0) // Indoors there is no sun.
         result += sun.diffuse * max(dot(normal, normalize(sun.direction)), 0.0);
     for (int i = 0; i < num_point_lights; i++)

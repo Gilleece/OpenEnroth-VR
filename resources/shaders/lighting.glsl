@@ -19,6 +19,21 @@ struct PointLight {
 #ifdef AMBIENT_OCCLUSION
 float ambientOcclusion = 1.0; // Scales the ambient light and the point lights, main sets it.
 #endif
+#ifdef GLOBAL_ILLUMINATION
+vec3 indirectLight = vec3(1.0); // Scales the ambient light by the baked indirect light, main sets it.
+#endif
+
+// The sun's ambient light at this fragment.
+vec3 SunAmbient(vec3 ambient) {
+    vec3 result = ambient;
+#ifdef AMBIENT_OCCLUSION
+    result *= ambientOcclusion;
+#endif
+#ifdef GLOBAL_ILLUMINATION
+    result *= indirectLight;
+#endif
+    return result;
+}
 
 // Calculates the color when using a directional light.
 vec3 CalcSunLight(Sunlight light, vec3 normal, vec3 viewDir, vec3 thisfragcol) {
@@ -29,11 +44,7 @@ vec3 CalcSunLight(Sunlight light, vec3 normal, vec3 viewDir, vec3 thisfragcol) {
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 128.0);
     // Combine results.
-#ifdef AMBIENT_OCCLUSION
-    vec3 clamped = clamp((light.ambient * ambientOcclusion + (light.diffuse * diff) + (light.specular * spec)), 0.0, 1.0) * thisfragcol;
-#else
-    vec3 clamped = clamp((light.ambient + (light.diffuse * diff) + (light.specular * spec)), 0.0, 1.0) * thisfragcol;
-#endif
+    vec3 clamped = clamp((SunAmbient(light.ambient) + (light.diffuse * diff) + (light.specular * spec)), 0.0, 1.0) * thisfragcol;
     return clamped;
 }
 
