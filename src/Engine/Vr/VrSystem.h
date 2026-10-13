@@ -152,6 +152,17 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     bool createSwapchain(Swapchain *target, Sizei size);
 
     void destroySwapchain(Swapchain *target);
+
+    /**
+     * Acquires the next image of a swapchain and waits until it can be drawn into. A failed wait leaves the image
+     * acquired for good, so the swapchain is made again then.
+     *
+     * @param[in,out] target            Swapchain to take the image from.
+     * @param[out] imageIndex           Index of the image in `target->images`.
+     * @return                          Whether the image is ready, to be released once drawn into.
+     */
+    bool acquireImage(Swapchain *target, uint32_t *imageIndex);
+
     void pollEvents();
     void handleSessionState(XrSessionState state);
 

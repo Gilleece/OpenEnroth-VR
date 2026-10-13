@@ -610,6 +610,28 @@ void VrSystem::destroySwapchain(Swapchain *target) {
     *target = Swapchain();
 }
 
+bool VrSystem::acquireImage(Swapchain *target, uint32_t *imageIndex) {
+    if (target->swapchain == XR_NULL_HANDLE)
+        return false;
+
+    XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+    if (!check(xrAcquireSwapchainImage(target->swapchain, &acquireInfo, imageIndex), "xrAcquireSwapchainImage"))
+        return false;
+    XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+    waitInfo.timeout = XR_INFINITE_DURATION;
+    if (check(xrWaitSwapchainImage(target->swapchain, &waitInfo), "xrWaitSwapchainImage"))
+        return true;
+
+    Sizei size = target->size;
+    destroySwapchain(target);
+    if (createSwapchain(target, size)) {
+        MM_INFO("VR: made the {}x{} swapchain again after the failed wait, with {} images.", size.w, size.h, target->images.size());
+    } else {
+        destroySwapchain(target);
+    }
+    return false;
+}
+
 void VrSystem::pollEvents() {
     if (_instance == XR_NULL_HANDLE)
         return;
@@ -760,12 +782,7 @@ bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     }
 
     uint32_t imageIndex = 0;
-    XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-    if (!check(xrAcquireSwapchainImage(_ui.swapchain, &acquireInfo, &imageIndex), "xrAcquireSwapchainImage"))
-        return false;
-    XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-    waitInfo.timeout = XR_INFINITE_DURATION;
-    if (!check(xrWaitSwapchainImage(_ui.swapchain, &waitInfo), "xrWaitSwapchainImage"))
+    if (!acquireImage(&_ui, &imageIndex))
         return false;
     render->copyUiLayer(TextureRenderId(_ui.images[imageIndex]), _ui.size);
     XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
@@ -997,12 +1014,7 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
     Swapchain &eye = _eyes[index];
 
     uint32_t imageIndex = 0;
-    XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-    if (!check(xrAcquireSwapchainImage(eye.swapchain, &acquireInfo, &imageIndex), "xrAcquireSwapchainImage"))
-        return false;
-    XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-    waitInfo.timeout = XR_INFINITE_DURATION;
-    if (!check(xrWaitSwapchainImage(eye.swapchain, &waitInfo), "xrWaitSwapchainImage"))
+    if (!acquireImage(&eye, &imageIndex))
         return false;
 
     TextureRenderId texture(eye.images[imageIndex]);
@@ -1035,12 +1047,7 @@ bool VrSystem::restoreHeldWorld() {
     for (size_t i = 0; i < _eyes.size(); i++) {
         Swapchain &eye = _eyes[i];
         uint32_t imageIndex = 0;
-        XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-        if (!check(xrAcquireSwapchainImage(eye.swapchain, &acquireInfo, &imageIndex), "xrAcquireSwapchainImage"))
-            return false;
-        XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-        waitInfo.timeout = XR_INFINITE_DURATION;
-        if (!check(xrWaitSwapchainImage(eye.swapchain, &waitInfo), "xrWaitSwapchainImage"))
+        if (!acquireImage(&eye, &imageIndex))
             return false;
         render->restoreHeldTexture(static_cast<int>(i), TextureRenderId(eye.images[imageIndex]));
         XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
