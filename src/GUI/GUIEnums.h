@@ -211,6 +211,7 @@ enum UIMessageType : uint32_t {
     UIMSG_CycleTexturePack = 432,
     UIMSG_ToggleSpriteDepth = 433, // Toggles sprite_depth and sprite_lighting together.
     UIMSG_ToggleSpriteCrossfade = 434,
+    UIMSG_ToggleGlobalIllumination = 435,
 
     UIMSG_MMT_MainMenu_MM6 = 426,
     UIMSG_MMT_MainMenu_MM7 = 427,

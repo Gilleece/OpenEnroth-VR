@@ -262,6 +262,10 @@ void Menu::EventLoop() {
                 engine->config->graphics.SpriteCrossfade.toggle();
                 render->applyPipelineSettings();
                 continue;
+            case UIMSG_ToggleGlobalIllumination:
+                engine->config->graphics.GlobalIllumination.toggle();
+                render->applyPipelineSettings();
+                continue;
             case UIMSG_CycleTexturePack:
                 static_cast<GUIWindow_GameVideoOptions *>(pGUIWindow_CurrentMenu.get())->cycleTexturePack();
                 continue;
