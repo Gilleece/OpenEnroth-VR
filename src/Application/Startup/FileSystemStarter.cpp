@@ -20,6 +20,8 @@ FileSystemStarter::~FileSystemStarter() {
     ufs = nullptr;
     dfs = nullptr;
     tfs = nullptr;
+    dataDirPath = Path();
+    texturePackDirPath = Path();
 }
 
 void FileSystemStarter::initUserFs(bool ramFs, const Path &path) {
@@ -47,6 +49,7 @@ void FileSystemStarter::initDataFs(const Path &path, bool pathOverridesBuiltIn) 
     _dataFs = std::make_unique<MergingFileSystem>(std::move(baseFileSystems));
 
     dfs = _dataFs.get();
+    dataDirPath = path;
 }
 
 void FileSystemStarter::initTexturePackFs(const Path &path) {
@@ -56,4 +59,5 @@ void FileSystemStarter::initTexturePackFs(const Path &path) {
     _texturePackLowercaseFs = std::make_unique<LowercaseFileSystem>(_texturePackDirFs.get());
 
     tfs = _texturePackLowercaseFs.get();
+    texturePackDirPath = path;
 }

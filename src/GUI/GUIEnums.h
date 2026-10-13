@@ -208,6 +208,7 @@ enum UIMessageType : uint32_t {
     UIMSG_ChangeGammaLevel = 425,
     UIMSG_ToggleEnhancedGraphics = 430,
     UIMSG_ChangeVrSetting = 431,
+    UIMSG_CycleTexturePack = 432,
 
     UIMSG_MMT_MainMenu_MM6 = 426,
     UIMSG_MMT_MainMenu_MM7 = 427,
