@@ -107,6 +107,12 @@ lossless and makes the pack a few percent smaller. A PNG is only replaced when t
 and is smaller. `optimize_png = false` in the config's `[pack]` section turns it off, and `workers = <n>` there runs it
 in n processes instead of one per core, to leave cores free for other work.
 
+The party portraits, the 24 faces with 56 expression frames each (`pc01-01` to `pc25-56`, some named without the
+dash), go into both packs as the stock image scaled 4x with nearest neighbour, not the upscaled one. Their eyes are a
+few pixels across, which Real-ESRGAN smears into white blobs with a dot, and the generative pass repainted the faces,
+erased the expressions and lightened dark skin. Next to those, the stock pixels scaled up looked best. The
+`[[pack.nearest]]` rules in the config name the entries this applies to, by section and glob, with the scale.
+
 ```
 python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x
 ```

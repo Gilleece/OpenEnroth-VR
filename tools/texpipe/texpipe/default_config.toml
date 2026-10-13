@@ -123,3 +123,11 @@ max_scale = 4
 gi = true  # Keep the baked lighting of a bake run in the pack.
 optimize_png = true  # Compress the PNGs harder, losslessly. Slower, and the pack is several percent smaller.
 # workers = 4  # Processes for that, one per core if unset. Fewer leave cores free for other work.
+
+# Entries that go into the pack as the stock image scaled with nearest neighbour, at any max_scale. The first rule
+# whose section and globs match wins. Super-resolution smears the party portraits' few-pixel eyes into white blobs,
+# while the stock pixels scaled up keep the painted faces as they were drawn.
+[[pack.nearest]]
+section = "icons"
+match = ["pc[0-9][0-9]-[0-9][0-9]", "pc[0-9][0-9][0-9][0-9]"]  # The 24 party faces, 56 expression frames each.
+scale = 4
