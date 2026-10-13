@@ -80,6 +80,8 @@ static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the s
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
 static constexpr GLint WATER_NORMALS_TEXTURE_UNIT = 9; // After the terrain arrays, the material array and the sun shadow map.
 static constexpr int WATER_NORMALS_SIZE = 256;
+static constexpr float FOG_HEIGHT_FALLOFF = 1.0f / 1536.0f; // The fog thins by a factor of e every 1536 units above the eye.
+static constexpr float FOG_INSCATTER = 0.8f; // How much brighter the fog gets looking straight at the sun.
 static constexpr float SUN_SHADOW_SLOPE_BIAS = 2.0f;
 static constexpr float SUN_SHADOW_CONSTANT_BIAS = 4.0f;
 static constexpr int BLOOM_MAX_LEVELS = 6;
@@ -1129,8 +1131,9 @@ OpenGLRenderer::SkyState OpenGLRenderer::_skyState() {
     result.sunDirection = sunDirection(pParty->GetPlayingTime(), &fade);
 
     Color fogColor = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR ? GetLevelFogColor() : Color();
-    bool clear = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && !pWeather->bNight && fogColor == Color();
-    result.sunVisibility = clear ? std::clamp(result.sunDirection.z / 0.05f, 0.0f, 1.0f) : 0.0f; // Sets over its last 3 degrees.
+    bool day = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && !pWeather->bNight;
+    result.daylight = day ? std::clamp(result.sunDirection.z / 0.05f, 0.0f, 1.0f) : 0.0f; // Sets over its last 3 degrees.
+    result.sunVisibility = fogColor == Color() ? result.daylight : 0.0f;
 
     GraphicsImage *texture = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR ? pOutdoor->sky_texture : nullptr;
     if (texture && texture != _skyAverageTexture) {
@@ -1192,6 +1195,29 @@ void OpenGLRenderer::_ensureWaterNormals() {
     glGenerateMipmap(GL_TEXTURE_2D);
     setMipmappedFilter(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+/**
+ * @param sunDirection                  Direction towards the sun.
+ * @return                              Colour of the sunlight, as `SunColour` in `sky.glsl` computes it.
+ */
+static Colorf sunColour(Vec3f sunDirection) {
+    float t = std::clamp(sunDirection.z / 0.4f, 0.0f, 1.0f);
+    t = t * t * (3 - 2 * t);
+    return Colorf(1.0f, 0.55f + 0.4f * t, 0.3f + 0.55f * t);
+}
+
+void OpenGLRenderer::_submitHeightFog(const OpenGLShader &shader, bool worldPositions) {
+    if (!shader.hasDefine("LINEAR_PIPELINE"))
+        return;
+
+    SkyState sky = _skyState();
+    Colorf sun = sunColour(sky.sunDirection);
+    float inscatter = worldPositions ? sky.daylight * FOG_INSCATTER : 0.0f;
+    glUniform3f(shader.uniformLocation("fogEye"), _view.position.x, _view.position.y, _view.position.z);
+    glUniform1f(shader.uniformLocation("fogFalloff"), worldPositions ? FOG_HEIGHT_FALLOFF : 0.0f);
+    glUniform3f(shader.uniformLocation("fogSunDirection"), sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
+    glUniform3f(shader.uniformLocation("fogInscatter"), sun.r * inscatter, sun.g * inscatter, sun.b * inscatter);
 }
 
 void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
@@ -2302,6 +2328,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(shader);
     _submitSunShadow(shader);
+    _submitHeightFog(shader, true);
     if (shader.hasDefine("LINEAR_PIPELINE")) {
         _ensureWaterNormals();
         glActiveTexture(GL_TEXTURE0 + WATER_NORMALS_TEXTURE_UNIT);
@@ -3015,6 +3042,7 @@ void OpenGLRenderer::drawSkyVertices(float planeHeight, bool fade) {
     uniforms.fog = forcedPerspectiveFog(_skyVertices[0].color.r);
     uniforms.fogDistance = farClip;
     uniforms.submit(skyshader);
+    _submitHeightFog(skyshader, true);
     if (skyshader.hasDefine("LINEAR_PIPELINE")) {
         SkyState sky = _skyState();
         glUniform3f(skyshader.uniformLocation("sunDirection"), sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
@@ -3101,6 +3129,7 @@ void OpenGLRenderer::DrawBillboards() {
     uniforms.gamma = gamma;
     uniforms.paltex2D = PALETTE_TEXTURE_UNIT;
     uniforms.submit(billbshader);
+    _submitHeightFog(billbshader, worldSpaceBillboards());
     if (billbshader.hasDefine("SUN_SHADOWS")) {
         _submitSunShadow(billbshader);
         glUniform3f(billbshader.uniformLocation("sunShadowDirection"), _sunShadowDirection.x, _sunShadowDirection.y, _sunShadowDirection.z);
@@ -3914,11 +3943,13 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(outbuildshader);
     _submitSunShadow(outbuildshader);
+    _submitHeightFog(outbuildshader, true);
     bool hasMaterials = std::ranges::any_of(outbuildmaterials, [](GLuint id) { return id != 0; });
     if (hasMaterials) {
         outbuildmaterialshader.use();
         uniforms.submit(outbuildmaterialshader);
         _submitSunShadow(outbuildmaterialshader);
+        _submitHeightFog(outbuildmaterialshader, true);
         glUniform1i(outbuildmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
     }
 

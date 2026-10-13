@@ -3,11 +3,17 @@
 #include "colour.glsl"
 #endif
 #include "fog.glsl"
+#ifdef LINEAR_PIPELINE
+#include "heightfog.glsl"
+#endif
 
 in vec4 colour;
 in vec2 texuv;
 in float screenspace;
 flat in int paletteid;
+#ifdef LINEAR_PIPELINE
+in vec3 worldPos;
+#endif
 #ifdef SUN_SHADOWS
 in float sunlight;
 #endif
@@ -39,12 +45,20 @@ void main() {
     fragcol.rgb = srgbToLinear(fragcol.rgb);
 #endif
 
+#ifdef LINEAR_PIPELINE
+    float fograt = getHeightFogRatio(fog, screenspace, worldPos);
+#else
     float fograt = getFogRatio(fog, screenspace);
+#endif
     if (fragcol.a < 0.004) fograt = 0.0;
 
     float alpha = getFogAlpha(fog, screenspace);
 
+#ifdef LINEAR_PIPELINE
+    FragColour = mix(fragcol, vec4(getHeightFogColour(fog, worldPos), alpha), fograt);
+#else
     FragColour = mix(fragcol, vec4(fog.color, alpha), fograt);
+#endif
 #ifdef LINEAR_PIPELINE
     FragColour.rgb *= additivegain;
 #else

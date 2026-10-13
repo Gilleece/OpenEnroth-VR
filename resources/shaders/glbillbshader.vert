@@ -9,6 +9,9 @@ out vec4 colour;
 out vec2 texuv;
 out float screenspace;
 flat out int paletteid;
+#ifdef LINEAR_PIPELINE
+out vec3 worldPos; // Only a world position when the billboards are drawn in world space.
+#endif
 #ifdef SUN_SHADOWS
 #include "lighting.glsl"
 #include "shadow.glsl"
@@ -32,6 +35,9 @@ void main() {
     texuv = vaTexUV;
     screenspace = vaScreenSpace;
     paletteid = int(palid);
+#ifdef LINEAR_PIPELINE
+    worldPos = vaPos;
+#endif
 #ifdef SUN_SHADOWS
     // A sprite's own shadow quad passes through its anchor, so the anchor is looked up a step towards the sun.
     sunlight = 1.0;
