@@ -73,7 +73,9 @@ jobs:
           - {configuration: Debug,          build_type: Debug,          gradle_build_type: Debug}
           - &relwithdebinfo {configuration: RelWithDebInfo, build_type: RelWithDebInfo, gradle_build_type: Release}
           - {target: windows_x86,       runner: windows-2022, platform: windows, architecture: x86,       ccache_size: 400M, release_os: Windows, release_extension: zip}
-          - &windows_x86_64 {target: windows_x86_64, runner: windows-2022, platform: windows, architecture: x86_64,    ccache_size: 400M, release_os: Windows, release_extension: zip}
+          # The 64-bit Windows build ships with VR. The OpenXR loader links in statically, so the package is still the exe
+          # and its pdb.
+          - &windows_x86_64 {target: windows_x86_64, runner: windows-2022, platform: windows, architecture: x86_64,    ccache_size: 400M, release_os: Windows, release_extension: zip, cmake_args: -DOE_BUILD_VR=ON}
           - {target: darwin_arm64,      runner: macos-15,     platform: darwin,  architecture: arm64,     ccache_size: 400M, release_os: macOS,   release_extension: dmg, cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11}
           - {target: darwin_x86_64,     runner: macos-15,     platform: darwin,  architecture: x86_64,    ccache_size: 400M, release_os: macOS,   release_extension: dmg, cmake_args: -DCMAKE_OSX_ARCHITECTURES=x86_64 -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15}
           - {target: linux_x86,         runner: ubuntu-26.04, platform: linux,   architecture: x86,       ccache_size: 400M, release_os: Linux,   cmake_args: -DCMAKE_C_FLAGS=-m32 -DCMAKE_CXX_FLAGS=-m32}
