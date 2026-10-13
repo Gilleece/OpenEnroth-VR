@@ -479,6 +479,8 @@ void OpenGLRenderer::EndScene3D() {
     projmat = glm::ortho(float(pViewport.x), float(pViewport.x + pViewport.w), float(pViewport.y + pViewport.h), float(pViewport.y), float(-1), float(1));
     _set_ortho_modelview();
     DrawTwodVerts();
+    if (target == _externalOutput && _vignetteStrength > 0)
+        _drawVignette();
 
     _bindUiTarget();
     glEnable(GL_SCISSOR_TEST);
@@ -699,6 +701,31 @@ void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei 
             _externalLinearTarget.reset(size, RENDER_TARGET_FORMAT_RGBA16F, true);
         _externalWorldTarget = &_externalLinearTarget;
     }
+}
+
+void OpenGLRenderer::setVignette(float strength, Vec2f center) {
+    _vignetteStrength = strength;
+    _vignetteCenter = center;
+}
+
+void OpenGLRenderer::_drawVignette() {
+    _ensureFullscreenTriangle();
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    vignetteshader.use();
+    VignetteUniforms uniforms;
+    uniforms.strength = _vignetteStrength;
+    uniforms.center = _vignetteCenter;
+    uniforms.submit(vignetteshader);
+
+    _compositeBuffer.bind();
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    drawcalls++;
+    _compositeBuffer.unbind();
+    vignetteshader.unuse();
 }
 
 void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
@@ -5054,6 +5081,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&bloomdownshader,        "glbloom",          "Bloom downsample",                 {}},
         {&bloomupshader,          "glbloom",          "Bloom upsample",                   bloomUpsampleDefines},
         {&fxaashader,             "glfxaa",           "FXAA",                             {}},
+        {&vignetteshader,         "glvignette",       "Vignette",                         {}},
         {&shadowshader,           "glshadow",         "Shadow map",                       {}},
         {&shadowspriteshader,     "glshadow",         "Sprite shadow map",                spriteShadowDefines},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           outdoorLitMaterialDefines},
