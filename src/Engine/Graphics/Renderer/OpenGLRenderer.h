@@ -217,6 +217,12 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLRenderTarget *_externalTarget(TextureRenderId colorTexture, Sizei size, bool withDepth);
 
     /**
+     * @return                          Whether the targets around external textures need a depth buffer, which they only
+     *                                  do when the world is drawn into them directly.
+     */
+    [[nodiscard]] bool _externalTargetsHaveDepth() const;
+
+    /**
      * Copies the colour of one render target into another of the same size, leaving the UI target bound.
      */
     void _copyTarget(const OpenGLRenderTarget &source, OpenGLRenderTarget &target);
