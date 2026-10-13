@@ -447,6 +447,22 @@ bool BaseRenderer::AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& 
     return false;
 }
 
+void BaseRenderer::addWorldBillboard(const WorldBillboard &billboard) {
+    unsigned int index = NextBillboardIndex();
+    float distance = (billboard.pos - Vec3f(pCamera3D->vCameraPos.x, pCamera3D->vCameraPos.y, pCamera3D->vCameraPos.z)).length();
+
+    RenderBillboardD3D &screen = pBillboardRenderListD3D[index];
+    screen = RenderBillboardD3D(); // Its quad is all zeros, nothing to draw.
+    screen.texture = billboard.texture;
+    screen.paletteId = billboard.paletteId;
+    screen.opacity = billboard.opacity;
+    screen.uNumVertices = billboard.numVertices;
+    screen.view_space_z = static_cast<int>(distance);
+    screen.view_space_L2 = distance;
+
+    _worldBillboards[index] = billboard;
+}
+
 void BaseRenderer::MakeParticleBillboardAndPush(const Particle& p) {
     unsigned int billboard_index = NextBillboardIndex();
     RenderBillboardD3D *billboard = &pBillboardRenderListD3D[billboard_index];
