@@ -272,6 +272,25 @@ bool VrSystem::pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) {
     return true;
 }
 
+bool VrSystem::listenerPose(Vec3f *position, Vec3f *forward, Vec3f *up) {
+    if (!_running || (!_viewsLocated && !locateViews()))
+        return false;
+
+    // The ears turn with the head, which the eyes can be turned from, like the PICO's that look 4 degrees down.
+    XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
+    if (XR_FAILED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &head)) ||
+        !(head.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))
+        return false;
+    glm::quat orientation = worldOrientation(head.pose.orientation);
+    glm::vec3 headForward = orientation * glm::vec3(1, 0, 0);
+    glm::vec3 headUp = orientation * glm::vec3(0, 0, 1);
+
+    *position = eyeView(midView(_views), _eyes[0].size).position;
+    *forward = Vec3f(headForward.x, headForward.y, headForward.z);
+    *up = Vec3f(headUp.x, headUp.y, headUp.z);
+    return true;
+}
+
 bool VrSystem::forwardRay(Vec3f *origin, Vec3f *direction) {
     if (!_running || !_lastCullingCamera)
         return false;

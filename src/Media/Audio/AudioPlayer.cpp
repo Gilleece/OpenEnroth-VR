@@ -10,6 +10,7 @@
 #include <optional>
 
 #include "Engine/Graphics/Indoor.h"
+#include "Engine/Graphics/WorldFrameViews.h"
 #include "Engine/Objects/Decoration.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/SpriteObject.h"
@@ -397,10 +398,17 @@ static std::optional<Vec3f> objectPosition(Pid pid) {
 }
 
 void AudioPlayer::UpdateSounds() {
-    Vec3f eyePosition = pParty->pos + Vec3f(0, 0, pParty->eyeLevel);
-    Vec3f forward = Vec3f::fromPolar(1.0f, pParty->_viewYaw, pParty->_viewPitch);
-    Vec3f up = Vec3f::fromPolar(1.0f, pParty->_viewYaw, pParty->_viewPitch + TrigLUT.uIntegerHalfPi);
-    provider->SetListener(eyePosition, forward, up);
+    Vec3f headPosition;
+    Vec3f headForward;
+    Vec3f headUp;
+    if (engine->_worldFrameViews && engine->_worldFrameViews->listenerPose(&headPosition, &headForward, &headUp)) {
+        provider->SetListener(headPosition, headForward, headUp);
+    } else {
+        Vec3f eyePosition = pParty->pos + Vec3f(0, 0, pParty->eyeLevel);
+        Vec3f forward = Vec3f::fromPolar(1.0f, pParty->_viewYaw, pParty->_viewPitch);
+        Vec3f up = Vec3f::fromPolar(1.0f, pParty->_viewYaw, pParty->_viewPitch + TrigLUT.uIntegerHalfPi);
+        provider->SetListener(eyePosition, forward, up);
+    }
 
     _voiceSoundPool.update();
     _regularSoundPool.update();

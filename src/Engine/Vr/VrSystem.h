@@ -53,6 +53,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     virtual bool aimPickCamera() override;
     virtual bool pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) override;
     virtual bool forwardRay(Vec3f *origin, Vec3f *direction) override;
+    virtual bool listenerPose(Vec3f *position, Vec3f *forward, Vec3f *up) override;
     virtual void recenter() override;
 
  private:
