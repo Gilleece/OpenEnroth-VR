@@ -29,7 +29,38 @@ uniform float gamma;
 uniform float additivegain;
 #endif
 
+#ifdef SPRITE_CROSSFADE
+in vec2 crossfadeTexuv;
+in float crossfade;
+flat in int crossfadePaletteid;
+
+uniform sampler2D texture1; // The neighbouring side, blended in by `crossfade`.
+
+// A side's colour, transparent outside its image, with its palette applied.
+vec4 SpriteSide(sampler2D image, vec2 uv, int palette) {
+    vec4 result = texture(image, clamp(uv, vec2(0.005), vec2(0.995)));
+    int index = int(result.r * 255.0);
+    vec4 paletted = vec4(texelFetch(paltex2D, ivec2(index, palette), 0));
+    if (palette > 0 && index > 0)
+        result = vec4(paletted.rgb, 1.0);
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))))
+        result = vec4(0.0);
+    return result;
+}
+#endif
+
 void main() {
+#ifdef SPRITE_CROSSFADE
+    vec4 sideA = SpriteSide(texture0, texuv, paletteid);
+    vec4 sideB = SpriteSide(texture1, crossfadeTexuv, crossfadePaletteid);
+    // Colour from the sides that cover the pixel, by weight. Coverage grows to both silhouettes at the boundary, so
+    // where only one side covers a pixel it stays solid rather than turning see-through.
+    float weightA = sideA.a * (1.0 - crossfade);
+    float weightB = sideB.a * crossfade;
+    vec3 sidesColour = weightA + weightB > 0.0 ? (sideA.rgb * weightA + sideB.rgb * weightB) / (weightA + weightB) : vec3(0.0);
+    float coverage = mix(sideA.a, max(sideA.a, sideB.a), crossfade * 2.0);
+    vec4 fragcol = vec4(sidesColour, coverage);
+#else
     vec4 fragcol = texture(texture0, texuv);
     int index = int(fragcol.r * 255.0);
     vec4 newcol = vec4(texelFetch(paltex2D, ivec2(index, paletteid), 0));
@@ -37,6 +68,7 @@ void main() {
     if (paletteid > 0)
         if (index > 0)
             fragcol = vec4(newcol.r, newcol.g, newcol.b, 1.0);
+#endif
 
     fragcol *= colour;
 #ifdef SUN_SHADOWS

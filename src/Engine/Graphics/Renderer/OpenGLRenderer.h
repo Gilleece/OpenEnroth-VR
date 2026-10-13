@@ -549,6 +549,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _torchShadows = false; // Same for the indoor shaders.
     bool _ambientOcclusion = false; // Same for the lit world shaders.
     bool _terrainVariation = false; // Same for the terrain shaders.
+    bool _spriteCrossfade = false; // Same for the billboard shader.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;
 };

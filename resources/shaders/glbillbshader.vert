@@ -5,6 +5,16 @@ layout (location = 3) in float vaScreenSpace;
 
 layout (location = 5) in float palid; 
 
+#ifdef SPRITE_CROSSFADE
+layout (location = 8) in vec2 vaCrossfadeTexUV;
+layout (location = 9) in float vaCrossfade;
+layout (location = 10) in float vaCrossfadePalette;
+
+out vec2 crossfadeTexuv;
+out float crossfade;
+flat out int crossfadePaletteid;
+#endif
+
 out vec4 colour;
 out vec2 texuv;
 out float screenspace;
@@ -35,6 +45,11 @@ void main() {
     texuv = vaTexUV;
     screenspace = vaScreenSpace;
     paletteid = int(palid);
+#ifdef SPRITE_CROSSFADE
+    crossfadeTexuv = vaCrossfadeTexUV;
+    crossfade = vaCrossfade;
+    crossfadePaletteid = int(vaCrossfadePalette);
+#endif
 #ifdef LINEAR_PIPELINE
     worldPos = vaPos;
 #endif

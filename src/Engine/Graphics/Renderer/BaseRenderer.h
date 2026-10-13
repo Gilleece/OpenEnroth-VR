@@ -72,6 +72,15 @@ class BaseRenderer : public Renderer {
  private:
     void updateRenderDimensions();
     void buildWorldBillboardQuad(WorldBillboard *billboard);
+
+    /**
+     * Sets up the blend of a sprite billboard with its neighbouring side when `eye` sees it near the boundary between
+     * the two, or clears it. Does nothing to other billboards.
+     *
+     * @param billboard                     Billboard showing its side, with `texture`, `facing` and `octant` set.
+     * @param eye                           Position the billboard is seen from.
+     */
+    void crossfadeSpriteSides(WorldBillboard *billboard, const Vec3f &eye);
     void buildTerrainBloodsplatDecals();
     void buildBuildingBloodsplatDecals();
     void buildIndoorBloodsplatDecals();
