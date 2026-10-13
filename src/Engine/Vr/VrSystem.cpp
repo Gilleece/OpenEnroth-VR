@@ -578,8 +578,10 @@ bool VrSystem::createSwapchains(float renderScale) {
     if (!check(xrEnumerateSwapchainFormats(_session, formatCount, &formatCount, formats.data()), "xrEnumerateSwapchainFormats"))
         return false;
 
-    // The runtime lists its formats in its order of preference.
-    auto format = std::ranges::find_if(formats, [](int64_t format) { return format == GL_SRGB8_ALPHA8 || format == GL_RGBA8; });
+    // What is drawn is display-encoded with framebuffer sRGB off, and only an sRGB format tells the runtime so.
+    auto format = std::ranges::find(formats, GL_SRGB8_ALPHA8);
+    if (format == formats.end())
+        format = std::ranges::find(formats, GL_RGBA8);
     if (format == formats.end()) {
         MM_ERROR("VR: the runtime offers neither GL_SRGB8_ALPHA8 nor GL_RGBA8 swapchains.");
         return false;
