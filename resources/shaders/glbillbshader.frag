@@ -5,6 +5,7 @@
 #include "fog.glsl"
 #ifdef LINEAR_PIPELINE
 #include "heightfog.glsl"
+#include "softparticles.glsl"
 #endif
 
 in vec4 colour;
@@ -60,7 +61,7 @@ void main() {
     FragColour = mix(fragcol, vec4(fog.color, alpha), fograt);
 #endif
 #ifdef LINEAR_PIPELINE
-    FragColour.rgb *= additivegain;
+    FragColour.rgb *= additivegain * SoftFade();
 #else
     FragColour.rgb = pow(FragColour.rgb, vec3(1.0/gamma));
 #endif

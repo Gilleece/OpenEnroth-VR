@@ -71,6 +71,8 @@ static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
 static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
+static constexpr GLint SCENE_DEPTH_TEXTURE_UNIT = 4; // The billboards sample units 0 and 1 only, and 8 in the vertex shader.
+static constexpr float SOFT_PARTICLE_DISTANCE = 64.0f; // World units in front of the level over which additive billboards fade out.
 static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
 static constexpr GLint TORCH_SHADOW_TEXTURE_UNIT = 16; // The indoor pass binds its arrays to units 0 to 15.
 static constexpr GLint AMBIENT_OCCLUSION_TEXTURE_UNIT = 17;
@@ -444,6 +446,7 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
     SetFogParametersGL();
     gamma = GetGamma();
     worldBillboardsDrawn = 0;
+    _sceneDepthCopied = false;
 }
 
 void OpenGLRenderer::EndScene3D() {
@@ -3024,6 +3027,55 @@ float OpenGLRenderer::billboardTextureId(GraphicsImage *texture, int *paletteId)
     return static_cast<float>(effpar03->renderId().value());
 }
 
+void OpenGLRenderer::_copySceneDepth() {
+    std::array<GLint, 4> viewport;
+    glGetIntegerv(GL_VIEWPORT, viewport.data());
+    Sizei size(viewport[2], viewport[3]);
+    if (!_sceneDepth || _sceneDepthSize != size) {
+        if (!_sceneDepth) {
+            glGenTextures(1, &_sceneDepth);
+            glGenFramebuffers(1, &_sceneDepthFramebuffer);
+        }
+        _sceneDepthSize = size;
+        glBindTexture(GL_TEXTURE_2D, _sceneDepth);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size.w, size.h, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+
+        GLint framebuffer = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+        GLenum none = GL_NONE;
+        glBindFramebuffer(GL_FRAMEBUFFER, _sceneDepthFramebuffer);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, _sceneDepth, 0);
+        glDrawBuffers(1, &none);
+        glReadBuffer(GL_NONE);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            MM_ERROR("Scene depth framebuffer is incomplete.");
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    }
+
+    // The billboards can't sample the depth buffer they're tested against, so they get a copy.
+    GLint drawFramebuffer = 0;
+    GLint readFramebuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, drawFramebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _sceneDepthFramebuffer);
+    glBlitFramebuffer(viewport[0], viewport[1], viewport[0] + size.w, viewport[1] + size.h, 0, 0, size.w, size.h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, drawFramebuffer);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, readFramebuffer);
+    if (scissor)
+        glEnable(GL_SCISSOR_TEST);
+
+    _sceneDepthViewport = Recti(viewport[0], viewport[1], size.w, size.h);
+    _sceneDepthCopied = true;
+}
+
 void OpenGLRenderer::drawWorldBillboards() {
     glEnable(GL_BLEND);
     glDepthMask(GL_FALSE);
@@ -3034,6 +3086,11 @@ void OpenGLRenderer::drawWorldBillboards() {
 
     if (!_worldBillboardQuadsBuilt)
         buildWorldBillboardQuads(_view);
+    bool additive = false;
+    for (int i = 0; i < uNumBillboardsToDraw && !additive; i++)
+        additive = _worldBillboards[i].opacity != RenderBillboardD3D::Transparent;
+    if (_linearPipeline && additive)
+        _copySceneDepth();
 
     for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
         int index = pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D;
@@ -3288,6 +3345,15 @@ void OpenGLRenderer::DrawBillboards() {
     uniforms.paltex2D = PALETTE_TEXTURE_UNIT;
     uniforms.submit(billbshader);
     _submitHeightFog(billbshader, worldSpaceBillboards());
+    bool soft = _sceneDepthCopied && worldSpaceBillboards();
+    if (billbshader.hasDefine("LINEAR_PIPELINE")) {
+        glActiveTexture(GL_TEXTURE0 + SCENE_DEPTH_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, _sceneDepth);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(billbshader.uniformLocation("sceneDepth"), SCENE_DEPTH_TEXTURE_UNIT);
+        glUniform4f(billbshader.uniformLocation("sceneViewport"), _sceneDepthViewport.x, _sceneDepthViewport.y, _sceneDepthViewport.w, _sceneDepthViewport.h);
+        glUniform2f(billbshader.uniformLocation("sceneProjection"), projmat[2][2], projmat[3][2]);
+    }
     if (billbshader.hasDefine("SUN_SHADOWS")) {
         _submitSunShadow(billbshader);
         glUniform3f(billbshader.uniformLocation("sunShadowDirection"), _sunShadowDirection.x, _sunShadowDirection.y, _sunShadowDirection.z);
@@ -3314,15 +3380,19 @@ void OpenGLRenderer::DrawBillboards() {
         if (thisblend == 0.0) {
             // disable alpha blending and enable fog for opaque items
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            if (_linearPipeline)
+            if (_linearPipeline) {
                 glUniform1f(billbshader.uniformLocation("additivegain"), 1.0f);
+                glUniform1f(billbshader.uniformLocation("softDistance"), 0.0f);
+            }
             glUniform1f(billbshader.uniformLocation("fog.weakDistance"), GLfloat(fog.weakDistance));
             glUniform1f(billbshader.uniformLocation("fog.strongDistance"), GLfloat(fog.strongDistance));
         } else {
             // enable blending and disable fog for transparent items
             glBlendFunc(GL_ONE, GL_ONE);
-            if (_linearPipeline)
+            if (_linearPipeline) {
                 glUniform1f(billbshader.uniformLocation("additivegain"), LINEAR_ADDITIVE_GAIN);
+                glUniform1f(billbshader.uniformLocation("softDistance"), soft ? SOFT_PARTICLE_DISTANCE : 0.0f);
+            }
             glUniform1f(billbshader.uniformLocation("fog.weakDistance"), GLfloat(fog.clipDistance));
             glUniform1f(billbshader.uniformLocation("fog.strongDistance"), GLfloat(fog.clipDistance));
         }
