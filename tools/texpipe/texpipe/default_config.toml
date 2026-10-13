@@ -37,7 +37,7 @@ scale = 2
 model = "realesrgan-x4plus"
 model_scale = 4
 wrap_border = 16
-preserve_brightness = ["bitmaps"]  # Sections whose upscaled images are rescaled to the mean brightness of the source.
+preserve_brightness = ["bitmaps", "sprites"]  # Sections whose upscaled images are rescaled to the mean brightness of the source.
 max_brightness_factor = 3.0  # Cap per channel, so a channel the model left nearly black does not turn into speckles.
 
 [maps]

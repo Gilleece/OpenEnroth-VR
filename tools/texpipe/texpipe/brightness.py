@@ -9,11 +9,14 @@ Factors = tuple[float, float, float]
 
 
 def opaque_mask(image: Image.Image) -> Image.Image | None:
-    """Returns a mask of the opaque pixels, or None if `image` has no transparency."""
+    """Returns a mask of the pixels that are at least half opaque, or None if `image` has no transparency.
+
+    The soft edges of an upscaled alpha are left out: they barely show, but are many and dark enough to skew the mean.
+    """
     if image.mode != "RGBA":
         return None
     alpha = image.getchannel("A")
-    return alpha.point(lambda value: 255 if value else 0) if alpha.getextrema()[0] < 255 else None
+    return alpha.point(lambda value: 255 if value >= 128 else 0) if alpha.getextrema()[0] < 255 else None
 
 
 def channel_means(image: Image.Image) -> Factors:

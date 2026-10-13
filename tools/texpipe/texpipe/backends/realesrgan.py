@@ -93,6 +93,7 @@ class RealEsrganBackend:
         self._model_scale = options.get("model_scale", 4)
         self._wrap_border = options.get("wrap_border", 16)
         self._min_size = options.get("min_size", 32)
+        self._threads = options.get("threads", "2:2:8")  # load:proc:save, writing the large PNGs is the slow part.
         self._binary = binary
 
     def run(self, jobs: list[Job]) -> None:
@@ -134,7 +135,7 @@ class RealEsrganBackend:
     def _run_binary(self, binary: Path, in_dir: Path, out_dir: Path) -> None:
         models = binary.parent / "models"
         command = [str(binary), "-i", str(in_dir), "-o", str(out_dir), "-n", self._model, "-s", str(self._model_scale)]
-        command += ["-f", "png", "-m", str(models)]
+        command += ["-f", "png", "-m", str(models), "-j", self._threads]
         result = subprocess.run(command, check=True, stderr=subprocess.PIPE, text=True, errors="replace")
         failures = [line for line in result.stderr.splitlines() if "failed" in line]
         if failures:
