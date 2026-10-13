@@ -374,8 +374,7 @@ static constexpr int VR_LINE_HEIGHT = 15;
 static constexpr int VR_LINE_COUNT = 9; // Lines that fit in the panel.
 
 static constexpr std::array VR_FIRST_PAGE = {VR_SETTING_SNAP_TURN, VR_SETTING_SNAP_TURN_DEGREES, VR_SETTING_MINIMAL_HUD, VR_SETTING_UI_DISTANCE,
-                                             VR_SETTING_UI_WIDTH, VR_SETTING_HEAD_OFFSET_RADIUS, VR_SETTING_VIGNETTE, VR_SETTING_RECENTER,
-                                             VR_SETTING_MORE};
+                                             VR_SETTING_UI_WIDTH, VR_SETTING_HEAD_OFFSET_RADIUS, VR_SETTING_RECENTER, VR_SETTING_MORE};
 static constexpr std::array VR_SECOND_PAGE = {VR_SETTING_HUD_LAYOUT, VR_SETTING_HUD_DISTANCE, VR_SETTING_HUD_SCALE, VR_SETTING_HUD_SPREAD,
                                               VR_SETTING_UI_FOLLOW, VR_SETTING_RENDER_SCALE, VR_SETTING_BACK};
 static_assert(VR_FIRST_PAGE.size() <= VR_LINE_COUNT && VR_SECOND_PAGE.size() <= VR_LINE_COUNT);
@@ -440,9 +439,6 @@ static void changeVrSetting(VrSetting setting) {
     case VR_SETTING_HEAD_OFFSET_RADIUS:
         vr.HeadOffsetRadius.setValue(nextStep(vr.HeadOffsetRadius.value(), {0.1f, 0.3f, 0.5f, 1.0f}));
         break;
-    case VR_SETTING_VIGNETTE:
-        vr.Vignette.toggle();
-        break;
     case VR_SETTING_RECENTER:
         if (engine->_worldFrameViews)
             engine->_worldFrameViews->recenter();
@@ -482,7 +478,6 @@ static std::string vrSettingText(VrSetting setting) {
     case VR_SETTING_UI_WIDTH: return fmt::format("Screen width: {:.1f} m", vr.UiWidth.value());
     case VR_SETTING_UI_FOLLOW: return vr.UiFollow.value() == VR_UI_FOLLOW_LAZY ? "Screen follows: lazily" : "Screen follows: locked";
     case VR_SETTING_HEAD_OFFSET_RADIUS: return fmt::format("Head offset radius: {:.1f} m", vr.HeadOffsetRadius.value());
-    case VR_SETTING_VIGNETTE: return vr.Vignette.value() ? "Comfort vignette: on" : "Comfort vignette: off";
     case VR_SETTING_RECENTER: return "Recenter now";
     case VR_SETTING_HUD_LAYOUT: return vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD ? "HUD layout: spread" : "HUD layout: classic";
     case VR_SETTING_HUD_DISTANCE: return fmt::format("HUD distance: {:.1f} m", vr.HudDistance.value());

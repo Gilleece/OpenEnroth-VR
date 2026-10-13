@@ -269,7 +269,7 @@ GAME_TEST(VrSmoke, Session) {
     game.pressAndReleaseKey(PlatformKey::KEY_O);
     game.tick(2);
     EXPECT_EQ(current_screen_type, SCREEN_VIDEO_OPTIONS);
-    game.pressAndReleaseButton(BUTTON_LEFT, 350, 286); // More...
+    game.pressAndReleaseButton(BUTTON_LEFT, 350, 271); // More...
     game.tick(2);
     game.pressAndReleaseButton(BUTTON_LEFT, 350, 166); // HUD layout.
     game.tick(2);

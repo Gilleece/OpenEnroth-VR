@@ -262,12 +262,6 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
      */
     void fillProjectionView(int index, const XrView &view, const Swapchain &eye);
 
-    /**
-     * Fades the comfort vignette in while the party moves, turns or changes level, and out once it stops. Call once
-     * per frame drawn.
-     */
-    void updateVignette();
-
     void shutdown();
 
     /**
@@ -333,16 +327,4 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     int64_t _summaryFrameIndex = 0;
     int64_t _summaryWorldFrameCount = 0;
     std::chrono::steady_clock::time_point _lastFrameTime;
-
-    struct PartyPose {
-        Vec3f position;
-        int yaw = 0;
-        int pitch = 0;
-        MapId map = MAP_INVALID;
-    };
-
-    std::optional<PartyPose> _vignettePose; // Of the last frame drawn.
-    std::chrono::steady_clock::time_point _vignetteTime; // Of the last frame drawn.
-    std::chrono::steady_clock::time_point _vignetteMoveTime; // When the party last moved, turned or changed level.
-    float _vignetteLevel = 0; // How far the vignette has faded in, from 0 to 1.
 };
