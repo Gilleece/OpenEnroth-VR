@@ -124,10 +124,12 @@ struct WorldBillboard {
     std::array<Vec3f, 4> corners = {{}}; // World space vertices, set by `Renderer::buildWorldBillboardQuads`.
     float distance = 0; // Distance from the eye the quads were built for, for fog.
     const SpriteFrame *frame = nullptr; // Set for sprites, see `RenderBillboard`.
+    Pid id; // Of the object a sprite shows.
     int octant = 0;
     int yaw = 0;
     bool centered = false;
     Vec2f scale; // World units per sprite pixel.
+    Vec3f right; // Level axis an upright sprite stands across, set with `corners`.
     GraphicsImage *shape = nullptr; // Shape of the side shown, see `TexturePackShape`, null when there's none.
     float shapeThickness = 0; // Game units across the shape's depth range.
     Vec2f sideExtent; // Half width and height of the side shown in world units, negative half width when mirrored.

@@ -185,11 +185,12 @@ class Renderer {
 
     /**
      * Turns this frame's world space billboards into quads facing a view, for every 3D pass of the frame to draw the
-     * same geometry. Without a call, the first pass that draws them builds them facing its own view.
+     * same geometry. Without a call, the first pass that draws them builds them facing its own view's plane.
      *
      * @param view                      View for the quads to face, its roll is taken out.
+     * @param facing                    What upright sprites turn to face.
      */
-    virtual void buildWorldBillboardQuads(const CameraView &view) = 0;
+    virtual void buildWorldBillboardQuads(const CameraView &view, SpriteFacing facing) = 0;
 
     /**
      * @param index                     Index into `pBillboardRenderListD3D`.
@@ -200,11 +201,15 @@ class Renderer {
 
     /**
      * Turns the sprites among this frame's built world space billboards to show the side of their frame that faces
-     * an eye, for views that see them from beside the camera the frame was prepared with.
+     * an eye, for views that see them from beside the camera the frame was prepared with. A sprite keeps the side it
+     * showed the same view in the previous frame until the eye is a little past the boundary to the next side, so
+     * that a small movement of the eye across the boundary doesn't make it flicker.
      *
      * @param eye                       Position of the eye in world space.
+     * @param view                      Which of the frame's views it is, from 0 to 3, for the side kept from the
+     *                                  previous frame.
      */
-    virtual void turnWorldSpritesTo(const Vec3f &eye) = 0;
+    virtual void turnWorldSpritesTo(const Vec3f &eye, int view) = 0;
 
     /**
      * Makes the UI a layer of its own for an external compositor, like a VR runtime. The UI is then drawn into the UI

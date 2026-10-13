@@ -41,6 +41,15 @@ using enum VrHudLayout;
 MM_DECLARE_SERIALIZATION_FUNCTIONS(VrHudLayout)
 
 /**
+ * What the upright sprites on world space billboards turn to face.
+ */
+enum class SpriteFacing {
+    SPRITE_FACING_VIEW_PLANE, // All stand across the view, so that turning the view turns them all.
+    SPRITE_FACING_VIEW_POSITION, // Each turns to the view's position, so that turning the view in place leaves them still.
+};
+using enum SpriteFacing;
+
+/**
  * Filtering of sun shadow edges.
  */
 enum class ShadowFilterMode {
