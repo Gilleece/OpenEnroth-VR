@@ -41,6 +41,10 @@ void OpenGLRenderTarget::reset(Sizei size, RenderTargetFormat format, bool withD
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     if (format == RENDER_TARGET_FORMAT_RGBA16F) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, size.w, size.h, 0, GL_RGBA, GL_FLOAT, NULL);
+    } else if (format == RENDER_TARGET_FORMAT_RG16F) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, size.w, size.h, 0, GL_RG, GL_FLOAT, NULL);
+    } else if (format == RENDER_TARGET_FORMAT_R16F) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, size.w, size.h, 0, GL_RED, GL_FLOAT, NULL);
     } else {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, size.w, size.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     }

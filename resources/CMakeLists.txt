@@ -41,9 +41,14 @@ set(RESOURCE_SOURCES
         scripts/dev/imgui_demo_overlay.lua
         scripts/init.lua
         scripts/utils.lua
+        shaders/ao.glsl
         shaders/colour.glsl
         shaders/fog.glsl
         shaders/heightfog.glsl
+        shaders/glao.frag
+        shaders/glao.vert
+        shaders/glaodepth.frag
+        shaders/glaodepth.vert
         shaders/glbillbshader.frag
         shaders/glbloom.frag
         shaders/glbloom.vert

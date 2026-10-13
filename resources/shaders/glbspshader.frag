@@ -39,7 +39,14 @@ uniform sampler2DArray materialArray;
 #include "material.glsl"
 #endif
 
+#ifdef AMBIENT_OCCLUSION
+#include "ao.glsl"
+#endif
+
 void main() {
+#ifdef AMBIENT_OCCLUSION
+    ambientOcclusion = AmbientOcclusion();
+#endif
     vec3 fragnorm = normalize(vsNorm);
     vec3 fragviewdir = normalize(CameraPos - vsPos);
 

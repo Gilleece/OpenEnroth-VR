@@ -34,6 +34,7 @@ class NullRenderer : public BaseRenderer {
     virtual void applyPipelineSettings() override;
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
     virtual void drawTorchShadows() override;
+    virtual void drawAmbientOcclusion() override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;

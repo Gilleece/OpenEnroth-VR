@@ -79,5 +79,9 @@ vec3 CalcSunLightShadowed(Sunlight light, vec3 normal, vec3 viewDir, float shado
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), 128.0);
+#ifdef AMBIENT_OCCLUSION
+    return clamp(light.ambient * SunShadowAmbient(shadow) * ambientOcclusion + ((light.diffuse * diff) + (light.specular * spec)) * shadow, 0.0, 1.0);
+#else
     return clamp(light.ambient * SunShadowAmbient(shadow) + ((light.diffuse * diff) + (light.specular * spec)) * shadow, 0.0, 1.0);
+#endif
 }

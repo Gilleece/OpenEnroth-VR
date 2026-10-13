@@ -48,6 +48,7 @@ void WorldFrame::drawShadows() {
 
 void WorldFrame::draw() {
     if (_prepared) {
+        render->drawAmbientOcclusion();
         drawLevel();
         engine->decal_builder->DrawBloodsplats();
     }
@@ -55,8 +56,10 @@ void WorldFrame::draw() {
 }
 
 void WorldFrame::drawWithoutDecals() {
-    if (_prepared)
+    if (_prepared) {
+        render->drawAmbientOcclusion();
         drawLevel();
+    }
     render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
 }
 

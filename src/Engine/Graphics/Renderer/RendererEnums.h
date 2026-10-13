@@ -38,6 +38,8 @@ using enum TextureFilter;
 
 enum class RenderTargetFormat {
     RENDER_TARGET_FORMAT_RGBA8,
-    RENDER_TARGET_FORMAT_RGBA16F
+    RENDER_TARGET_FORMAT_RGBA16F,
+    RENDER_TARGET_FORMAT_RG16F,
+    RENDER_TARGET_FORMAT_R16F
 };
 using enum RenderTargetFormat;

@@ -144,6 +144,12 @@ class Renderer {
     virtual void drawTorchShadows() = 0;
 
     /**
+     * Draws the ambient occlusion of the current 3D view, which the world passes after it read. Does nothing unless
+     * ambient occlusion is enabled. Call once per view, after `BeginScene3D` and before the level is drawn.
+     */
+    virtual void drawAmbientOcclusion() = 0;
+
+    /**
      * @return                          Whether the current 3D pass draws sprites, particles, projectiles and the sky in
      *                                  world space through the view and projection matrices. That's the case when
      *                                  `graphics.world_space_billboards` is set, and always for external world targets,

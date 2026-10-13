@@ -134,6 +134,22 @@ jobs:
                 ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
               done
             done
+            for shader in resources/shaders/{glterrain,gloutbuild}.{vert,frag}; do
+              for defines in "AMBIENT_OCCLUSION LINEAR_PIPELINE" "AMBIENT_OCCLUSION LINEAR_PIPELINE MATERIAL_MAPS" "AMBIENT_OCCLUSION LINEAR_PIPELINE SUN_SHADOWS" "AMBIENT_OCCLUSION LINEAR_PIPELINE MATERIAL_MAPS SUN_SHADOWS"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
+            for shader in resources/shaders/glbspshader.{vert,frag}; do
+              for defines in "AMBIENT_OCCLUSION LINEAR_PIPELINE" "AMBIENT_OCCLUSION LINEAR_PIPELINE MATERIAL_MAPS" "AMBIENT_OCCLUSION LINEAR_PIPELINE TORCH_SHADOWS" "AMBIENT_OCCLUSION LINEAR_PIPELINE MATERIAL_MAPS TORCH_SHADOWS"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
+            for shader in resources/shaders/glao.{vert,frag}; do
+              echo "Checking $shader with AO_BLUR against GLSL $glsl_version..."
+              ./scripts/check_shader.sh "$shader" "$glsl_version" AO_BLUR
+            done
             for shader in resources/shaders/glshadow.{vert,frag}; do
               echo "Checking $shader with SHADOW_SPRITE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" SHADOW_SPRITE
