@@ -6,7 +6,16 @@ from pathlib import Path
 from PIL import Image
 
 from texpipe.maps import MAPS, map_path
-from texpipe.workdir import SECTIONS, WorkImage, load_image_infos, load_upscaled_info, upscaled_dir, write_json
+from texpipe.regen import generated_image, record_path
+from texpipe.workdir import (
+    SECTIONS,
+    WorkImage,
+    load_image_infos,
+    load_upscaled_info,
+    read_json,
+    upscaled_dir,
+    write_json,
+)
 
 MANIFEST_FORMAT = 1
 COLORS = ("raw", "final")
@@ -16,6 +25,13 @@ This texture pack was generated on this computer from the user's own copy of Mig
 It contains only upscaled derivatives of the game's images and material maps computed from
 them, none of the original game data. It does nothing on its
 own: the game has to be installed, and OpenEnroth loads these images in place of the ones in the game's LOD files.
+"""
+
+
+GENERATED_README = """
+{count} sprites in this pack went through an additional generative clean-up pass with {model}, from the
+upscaled sprites, and passed automatic checks against the originals: same silhouette, same average colors, same
+shapes and shading. They are listed in generated_sprites.txt. All other sprites are only upscaled.
 """
 
 
@@ -29,17 +45,27 @@ def build_manifest(entries: dict[str, dict[str, dict]], colors: str) -> dict:
     return manifest
 
 
-def run_pack(work: Path, out: Path, colors: str, only: list[str] | None) -> dict[str, int]:
+def run_pack(
+    work: Path, out: Path, colors: str, only: list[str] | None, sprites_from: str | None = None
+) -> dict[str, int]:
     """Copies every upscaled image and its maps into the pack and writes the manifest and README.
 
-    Returns the number of entries per section, of bitmaps with maps, and of sprite images.
+    With `sprites_from`, a model whose regen outputs exist, sprites come from those outputs where there are any.
+    Returns the number of entries per section, of bitmaps with maps, of sprite images, and of generated sprites.
     """
     entries: dict[str, dict[str, dict]] = {section: {} for section in SECTIONS}
+    generated: set[str] = set()
     for image in load_image_infos(work, only):
         upscaled = load_upscaled_info(work, image)
         if upscaled is None:
             continue
         source = upscaled_dir(work, image.section) / f"{image.name}.png"
+        if image.section == "sprites" and sprites_from:
+            sprite, palette_id = image.name.rsplit("/", 1)
+            regenerated = generated_image(work, sprites_from, sprite, int(palette_id))
+            if regenerated is not None and read_json(record_path(work, sprites_from, sprite))["passed"]:
+                source = regenerated
+                generated.add(sprite)
         size = _check_scaled(source, (image.width, image.height), upscaled.scale)
         _copy(source, out / image.section / f"{image.name}.png")
         if image.section == "sprites":
@@ -53,10 +79,15 @@ def run_pack(work: Path, out: Path, colors: str, only: list[str] | None) -> dict
             entry["maps"] = list(MAPS)
         entries[image.section][image.name] = entry
     write_json(out / "manifest.json", build_manifest(entries, colors))
-    (out / "README.txt").write_text(README_TEXT, encoding="utf-8")
+    readme = README_TEXT
+    if sprites_from:
+        readme += GENERATED_README.format(count=len(generated), model=sprites_from)
+        (out / "generated_sprites.txt").write_text("".join(f"{name}\n" for name in sorted(generated)), encoding="utf-8")
+    (out / "README.txt").write_text(readme, encoding="utf-8")
     counts = {section: len(section_entries) for section, section_entries in entries.items()}
     counts["maps"] = sum(1 for entry in entries["bitmaps"].values() if "maps" in entry)
     counts["sprite images"] = sum(len(entry["palettes"]) for entry in entries["sprites"].values())
+    counts["generated sprites"] = len(generated)
     return counts
 
 

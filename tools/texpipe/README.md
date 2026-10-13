@@ -86,6 +86,34 @@ python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x
 All commands take `--only <glob>`, which can be repeated, to handle only the LOD entries matching it, e.g.
 `--only "ch1*" --only "ib-*"` for a quick run.
 
+## The regen pass
+
+`regen` sends each upscaled sprite, in the first palette it is drawn with, to an image-to-image model through the
+chat completions endpoint at openrouter.ai, with a prompt that asks for a cleaner version of exactly that frame and
+nothing else. The key is read from the `OPENROUTER_API_KEY` environment variable and nowhere else. The sprite goes on
+a flat background in whichever of a few colors its own colors are furthest from. The result is held to the original:
+
+- The alpha always comes from the upscaled stock alpha, and edge pixels keep the upscaled colors, so silhouettes and
+  the engine's picking stay exactly as before.
+- Three gates must pass, otherwise the upscaled image is used: the silhouette the model drew against the stock alpha
+  (IoU), the largest per-channel difference of the mean color, and the mean luminance difference after a 2 px blur.
+  The thresholds are in `[regen.thresholds]`, the scores go into `regen/<model>/sprites/<entry>.json`.
+- The other palettes of a sprite are derived from the generated one: each pixel is matched to the nearest color of the
+  base palette and moved by the difference to the same entry of the target palette. Exact palette colors recolor
+  exactly as the game does, and costs come once per sprite, not once per palette.
+
+The run is resumable: a sprite with a record is not sent again, and `regen/<model>/summary.json` keeps the cost so far.
+`--max-cost` stops it before the total would go over a budget. `--rescore` gates the stored outputs again with the
+current thresholds, without calling the model. `regen-report` prints the gate scores, the fallbacks, the cost, the frame
+to frame consistency against the stock animation and a check of the palette mapping, and draws a contact sheet.
+`pack --sprites-from <model>` builds a pack with the generated sprites that passed, and lists them in the pack's
+`generated_sprites.txt`.
+
+```
+python -m texpipe regen --work ../../mm7_hd/work --palettes ../../mm7_hd/sprite_palettes.json --max-cost 50
+python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/regen --sprites-from google/gemini-3.1-flash-lite-image
+```
+
 ## Using the pack
 
 Set `texture_pack` in the `[graphics]` section of `openenroth.ini` to the pack folder. A relative path is resolved

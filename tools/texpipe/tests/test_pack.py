@@ -49,7 +49,14 @@ def test_pack_writes_images_manifest_and_readme(tmp_path):
     work, out = tmp_path / "work", tmp_path / "pack"
     add_image(work, "bitmaps", "wall", (4, 2), 2)
     add_image(work, "icons", "frame.pcx", (3, 3), 4)
-    assert run_pack(work, out, "raw", None) == {"bitmaps": 1, "icons": 1, "sprites": 0, "maps": 0, "sprite images": 0}
+    assert run_pack(work, out, "raw", None) == {
+        "bitmaps": 1,
+        "icons": 1,
+        "sprites": 0,
+        "maps": 0,
+        "sprite images": 0,
+        "generated sprites": 0,
+    }
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["bitmaps"] == {"wall": {"crc32": "deadbeef"}}
     assert manifest["icons"] == {"frame.pcx": {"crc32": "deadbeef"}}

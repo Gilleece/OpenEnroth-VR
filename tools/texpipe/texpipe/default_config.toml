@@ -46,3 +46,17 @@ blur = 1.0  # Gaussian blur radius on the height, in pixels of the upscaled imag
 roughness_baseline = 90  # Reproduces the stock specular.
 roughness_range = 40  # Most the roughness strays from the baseline, for the busiest and the calmest areas.
 wrap_border = 8
+
+# The regen pass. Every output must pass all three gates, or the upscaled image is used instead.
+[regen]
+model = "google/gemini-3.1-flash-lite-image"
+seed = 7
+temperature = 0.2
+workers = 4
+include = ["*"]
+exclude = []
+
+[regen.thresholds]
+min_iou = 0.88  # Silhouette of what the model drew against the stock alpha.
+max_color_delta = 10.0  # Largest per-channel difference of the mean color over the sprite, out of 255.
+max_distance = 0.06  # Mean luminance difference after a 2 px blur over the sprite, 0..1.
