@@ -53,10 +53,33 @@ model = "google/gemini-3.1-flash-lite-image"
 seed = 7
 temperature = 0.2
 workers = 4
+cost_per_image = 0.034  # Measured on the pilot, only used for the dry run's projection.
 include = ["*"]
-exclude = []
+exclude = [
+    # Spell effects and spell projectiles: fireballs, sparks, bursts and particle clouds. They are glows and smears
+    # with no surface detail to recover, and they animate fast enough that per-frame changes would flicker.
+    "sp[0-9]*",
+    "spell*",
+    # Arrows in flight and water splashes, a few pixels on screen.
+    "arrow*",
+    "splash*",
+    # Torch flames on walls, animated fire like the spell effects.
+    "torch*",
+]
 
 [regen.thresholds]
 min_iou = 0.88  # Silhouette of what the model drew against the stock alpha.
 max_color_delta = 10.0  # Largest per-channel difference of the mean color over the sprite, out of 255.
 max_distance = 0.06  # Mean luminance difference after a 2 px blur over the sprite, 0..1.
+
+# The regen pass over icons: character portraits, NPC portraits and the UI frame. Few images, painted rather than
+# pre-rendered, so the prompt allows a little more change. The silhouette gate only applies to transparent icons.
+[regen.icons]
+temperature = 0.4
+include = ["pc*", "npc*", "ib-*"]
+exclude = []
+
+[regen.icons.thresholds]
+min_iou = 0.88
+max_color_delta = 10.0
+max_distance = 0.08

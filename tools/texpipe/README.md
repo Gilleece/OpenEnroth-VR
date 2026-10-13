@@ -106,12 +106,16 @@ The run is resumable: a sprite with a record is not sent again, and `regen/<mode
 `--max-cost` stops it before the total would go over a budget. `--rescore` gates the stored outputs again with the
 current thresholds, without calling the model. `regen-report` prints the gate scores, the fallbacks, the cost, the frame
 to frame consistency against the stock animation and a check of the palette mapping, and draws a contact sheet.
-`pack --sprites-from <model>` builds a pack with the generated sprites that passed, and lists them in the pack's
-`generated_sprites.txt`.
+`pack --regen-from <model>` builds a pack with the generated sprites and icons that passed, and lists them in the
+pack's `generated.txt`.
+
+`--section icons` runs the same pass over icons, with the prompt, include globs and thresholds from `[regen.icons]`.
+Icons have no palette variants, and the silhouette gate only applies to the ones with transparency. `--dry-run` lists
+what a run would send and its projected cost, from `cost_per_image`, without calling anything.
 
 ```
 python -m texpipe regen --work ../../mm7_hd/work --palettes ../../mm7_hd/sprite_palettes.json --max-cost 50
-python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/regen --sprites-from google/gemini-3.1-flash-lite-image
+python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/regen --regen-from google/gemini-3.1-flash-lite-image
 ```
 
 ## Using the pack

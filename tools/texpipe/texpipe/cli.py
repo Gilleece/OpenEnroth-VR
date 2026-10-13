@@ -12,6 +12,7 @@ from texpipe.extract import run_extract
 from texpipe.maps import run_maps
 from texpipe.pack import COLORS, run_pack
 from texpipe.regen import RegenOptions, regen_report, rescore, run_regen
+from texpipe.regen_icons import icon_options, run_icons
 from texpipe.upscale import BACKENDS, run_upscale
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -45,8 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--work", type=Path, required=True, help="Work folder made by extract and upscale.")
     pack.add_argument("--out", type=Path, required=True, help="Pack folder to write.")
     pack.add_argument("--colors", choices=COLORS, default="raw", help="How the engine treats the pack's colors.")
-
-    pack.add_argument("--sprites-from", help="Take sprites from this model's regen outputs where they passed.")
+    pack.add_argument("--regen-from", help="Take sprites and icons from this model's regen outputs that passed.")
 
     regen = commands.add_parser(
         "regen", help="Generative clean-up pass over the upscaled sprites, with fidelity gates."
@@ -59,6 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     regen.add_argument(
         "--rescore", action="store_true", help="Gate the stored outputs again, without calling the model."
     )
+    regen.add_argument("--section", choices=("sprites", "icons"), default="sprites", help="What to regenerate.")
+    regen.add_argument("--dry-run", action="store_true", help="List what would be sent and the cost, call nothing.")
 
     report = commands.add_parser("regen-report", help="Gate scores, frame consistency and a contact sheet of a run.")
     report.add_argument("--work", type=Path, required=True, help="Work folder of the run.")
@@ -99,12 +101,19 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "maps":
         print(f"Made maps for {run_maps(args.work, load_config(args.config), args.only)} bitmaps.")
     elif args.command == "regen":
-        options = RegenOptions.from_config(load_config(args.config), args.model, args.max_cost)
-        run = rescore if args.rescore else run_regen
-        print(f"Regen {run(args.work, args.palettes, options, args.only)}.")
+        config = load_config(args.config)
+        if args.section == "icons":
+            options = icon_options(config, args.model, args.max_cost)
+            print(f"Regen icons {run_icons(args.work, options, args.only, dry=args.dry_run)}.")
+        elif args.rescore:
+            options = RegenOptions.from_config(config, args.model, args.max_cost)
+            print(f"Regen {rescore(args.work, args.palettes, options, args.only)}.")
+        else:
+            options = RegenOptions.from_config(config, args.model, args.max_cost)
+            print(f"Regen {run_regen(args.work, args.palettes, options, args.only, dry=args.dry_run)}.")
     elif args.command == "regen-report":
         print(json.dumps(regen_report(args.work, args.palettes, args.model, args.only, args.sheet), indent=2))
     else:
-        print(f"Packed {run_pack(args.work, args.out, args.colors, args.only, args.sprites_from)}.")
+        print(f"Packed {run_pack(args.work, args.out, args.colors, args.only, args.regen_from)}.")
     print(f"Took {time.monotonic() - start:.1f} s.")
     return 0
