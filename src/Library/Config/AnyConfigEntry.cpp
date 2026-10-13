@@ -30,6 +30,7 @@ void AnyConfigEntry::setValue(std::any value) {
     if (_validator)
         value = _validator(std::move(value));
 
+    _explicit = true;
     if (_handler->equals(value, _value))
         return;
 
