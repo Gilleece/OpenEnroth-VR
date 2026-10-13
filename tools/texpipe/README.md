@@ -149,6 +149,50 @@ python -m texpipe regen --work ../../mm7_hd/work --palettes ../../mm7_hd/sprite_
 python -m texpipe regen-report --work ../../mm7_hd/work --palettes ../../mm7_hd/sprite_palettes.json --model google/gemini-3.1-flash-lite-image --sheet sheet.png
 ```
 
+## Sprite depth
+
+`depth` gives every sprite a shape image, so that the engine can draw billboards with per-pixel depth and lighting.
+There is one per `sprites.lod` entry, palette independent, at `shape/sprites/<entry>.png` in the pack, RGBA8 and the
+pixel size of the sprite's pack images:
+
+- R and G hold the surface normal's x (right) and y (up) in the image plane, as `n * 0.5 + 0.5`. The engine rebuilds
+  z.
+- B holds the depth, 255 nearest the viewer and 0 farthest, linear in game units over the sprite's thickness, so the
+  billboard plane is at 127.5.
+- A is the coverage alpha of the color image.
+
+The depth comes from Depth Anything V2 run on the upscaled image in the sprite's first palette, over a grey
+background. It is relative depth, so it's normalised per animation group: the 2nd percentile of the opaque depths of
+all the group's images maps to 0 and the 98th to 255, and the few pixels past them are clamped. One range per group
+keeps the depth from pumping from frame to frame. The groups come from the frame table, through the `groups` that
+`OpenEnroth dump-sprite-palettes` writes. The model blurs the outermost pixels of a silhouette into the background,
+so their depth is taken from 2 pixels further in. The normals come from a Sobel over the depth blurred by 1 pixel,
+with one LOD pixel as one game unit. Transparent pixels take the values of the opaque ones around them, so that
+filtering doesn't pull the edges towards black. The manifest gets `"shape": {"thickness": ...}` in the sprite's entry.
+The thickness is the full front to back depth in game units: 0.6 times the median opaque width of the group's images
+in LOD pixels, clamped to 8 to 256. Sprites that the `[regen]` excludes match, spell effects, arrows, splashes
+and torch flames, stay flat. The options are in the `[depth]` section of the config.
+
+The model needs PyTorch, which has no place in texpipe's requirements, so it runs in an environment of its own.
+`texpipe/depth_worker.py` is all that runs there. With a CUDA GPU, outside the repository:
+
+```
+python -m venv C:/texpipe-envs/depth
+C:/texpipe-envs/depth/Scripts/python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+C:/texpipe-envs/depth/Scripts/python -m pip install transformers pillow
+```
+
+The model is downloaded from Hugging Face on first use, into `HF_HOME` if set. Pass the environment's Python with
+`--python` or set `TEXPIPE_DEPTH_PYTHON`:
+
+```
+OpenEnroth dump-sprite-palettes ../../mm7_hd/sprite_palettes.json
+python -m texpipe depth --work ../../mm7_hd/work --palettes ../../mm7_hd/sprite_palettes.json --python C:/texpipe-envs/depth/Scripts/python
+```
+
+A rerun only redoes the groups whose upscaled images changed, `--force` redoes everything. `pack` picks the shape
+images up on its own.
+
 ## Two packs
 
 The same work folder makes two packs. `esrgan` holds only upscaled images and their maps. `regen` is the same pack

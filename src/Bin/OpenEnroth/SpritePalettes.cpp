@@ -3,6 +3,8 @@
 #include <map>
 #include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "Engine/Graphics/Image.h"
 #include "Engine/Graphics/Sprites.h"
@@ -47,5 +49,42 @@ std::map<std::string, std::set<int>> collectSpritePalettes() {
                 break;
         }
     }
+    return result;
+}
+
+std::vector<std::set<std::string>> collectSpriteGroups() {
+    std::map<std::string, std::string> parents; // Union-find over image names, an image shared by two sequences joins them.
+    auto find = [&](std::string name) {
+        while (parents[name] != name)
+            name = parents[name] = parents[parents[name]];
+        return name;
+    };
+
+    for (int id : referencedFrames()) {
+        pSpriteFrameTable->InitializeSprite(id);
+        std::string first;
+        for (int i = id; i < pSpriteFrameTable->pSpriteSFrames.size(); i++) {
+            const SpriteFrame &frame = pSpriteFrameTable->pSpriteSFrames[i];
+            for (const Sprite *sprite : frame.sprites) {
+                if (!sprite || !sprite->texture)
+                    continue;
+                std::string name = ascii::toLower(sprite->texture->name());
+                if (!parents.contains(name))
+                    parents[name] = name;
+                if (first.empty())
+                    first = name;
+                parents[find(name)] = find(first);
+            }
+            if (!(frame.flags & SPRITE_FRAME_HAS_MORE))
+                break;
+        }
+    }
+
+    std::map<std::string, std::set<std::string>> groups;
+    for (const auto &[name, parent] : parents)
+        groups[find(name)].insert(name);
+    std::vector<std::set<std::string>> result;
+    for (auto &[root, names] : groups)
+        result.push_back(std::move(names));
     return result;
 }

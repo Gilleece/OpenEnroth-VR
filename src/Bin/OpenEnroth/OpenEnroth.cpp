@@ -107,7 +107,11 @@ int runDumpSpritePalettes(const OpenEnrothOptions &options) {
             count += static_cast<int>(ids.size());
         }
 
-        Json result = {{"count", count}, {"sprites", std::move(sprites)}};
+        Json groups = Json::array();
+        for (const std::set<std::string> &group : collectSpriteGroups())
+            groups.push_back(group);
+
+        Json result = {{"count", count}, {"sprites", std::move(sprites)}, {"groups", std::move(groups)}};
         FileOutputStream(options.dumpSpritePalettes.output).write(result.dump(2) + "\n");
         fmt::println(stderr, "Wrote {} palettes for {} sprites to '{}'.", count, palettes.size(), options.dumpSpritePalettes.output);
     });
