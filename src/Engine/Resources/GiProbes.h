@@ -28,7 +28,7 @@ struct GiProbes {
     Vec3f spacing; // World units between neighbouring probes.
     Vec3i dims; // Probes along x, y and z.
     std::vector<float> timeHours; // Time of day of each key, a single key at hour 0 indoors.
-    std::vector<Vec3f> averageIrradiance; // Mean irradiance over the map for each key, linear RGB.
+    std::vector<Vec3f> averageIrradiance; // Mean irradiance for each key where the party walks, linear RGB.
     std::vector<float> layerHeights; // Height above the terrain of each z layer, only for `GI_PROBES_TERRAIN_LAYERS`.
     std::vector<uint16_t> coefficients; // Half floats, for each key, each probe in z, y, x order, `COEFFICIENTS` each.
 
