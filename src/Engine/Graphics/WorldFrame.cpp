@@ -13,12 +13,15 @@
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Camera.h"
 #include "Engine/Graphics/Sprites.h"
+#include "Engine/Graphics/Weather.h"
 #include "Engine/Graphics/SpriteEnumFunctions.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Decoration.h"
 #include "Engine/Tables/DecorationTable.h"
 #include "Engine/Party.h"
 #include "Engine/Timer.h"
+
+#include "GUI/GUIWindow.h"
 
 #include "Utility/Math/TrigLut.h"
 
@@ -74,6 +77,8 @@ void WorldFrame::prepareOutdoor() {
     engine->particle_engine->prepareFrame();
     // pWeather->updateSnow(); // Engine::DrawGUI already calls this once a frame, a second call doubles the snow speed.
     trail_particle_generator.UpdateParticles();
+    if (render->uiLayer() && current_screen_type == SCREEN_GAME)
+        pWeather->addWorldSnow(); // Engine::DrawGUI draws it into the UI otherwise.
     render->sortBillboardRenderList();
 }
 

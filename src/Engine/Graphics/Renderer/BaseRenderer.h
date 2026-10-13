@@ -30,6 +30,7 @@ class BaseRenderer : public Renderer {
 
     virtual void DrawSpriteObjects() override;
     virtual void PrepareDecorationsRenderList_ODM() override;
+    virtual void addWorldBillboard(const WorldBillboard &billboard) override;
     virtual void MakeParticleBillboardAndPush(const Particle& p) override;
     virtual float GetGamma() override;
 

@@ -190,6 +190,14 @@ class Renderer {
      */
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) = 0;
 
+    /**
+     * Adds a billboard to this frame's list that has no screen space version, for 3D passes that draw world space
+     * billboards. A pass that draws screen space billboards draws nothing for it.
+     *
+     * @param billboard                 Billboard to add, sorted by its distance from the camera.
+     */
+    virtual void addWorldBillboard(const WorldBillboard &billboard) = 0;
+
     virtual void MakeParticleBillboardAndPush(const Particle& p) = 0;
     virtual float GetGamma() = 0;
 
