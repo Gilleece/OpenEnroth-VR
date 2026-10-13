@@ -60,6 +60,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void applyPipelineSettings() override;
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
     virtual void drawTorchShadows() override;
+    virtual void drawAmbientOcclusion() override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;
@@ -265,6 +266,20 @@ class OpenGLRenderer : public BaseRenderer {
     void _ensureSunShadowResources();
 
     /**
+     * Creates the depth-only vertex buffers of the loaded outdoor level's terrain and buildings, if they don't exist
+     * yet.
+     */
+    void _ensureOutdoorDepthGeometry();
+
+    /**
+     * Binds the ambient occlusion of the current view and sets the uniforms `ao.glsl` reads. Does nothing for
+     * programs compiled without `AMBIENT_OCCLUSION`.
+     *
+     * @param shader                    Program in use.
+     */
+    void _submitAmbientOcclusion(const OpenGLShader &shader);
+
+    /**
      * Binds the sun shadow map and sets the uniforms `shadow.glsl` reads. Does nothing for programs compiled without
      * `SUN_SHADOWS`.
      *
@@ -352,6 +367,9 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader shadowshader;
     OpenGLShader shadowspriteshader;
     OpenGLShader torchshadowshader;
+    OpenGLShader aodepthshader;
+    OpenGLShader aoshader;
+    OpenGLShader aoblurshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -415,6 +433,15 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<float, SUN_SHADOW_CASCADES> _sunShadowTexels = {};
     float _sunShadowFade = 0;
 
+    // ambient occlusion
+    OpenGLRenderTarget _aoDepthTarget; // Half resolution, the distance along the view axis in r.
+    OpenGLRenderTarget _aoTarget; // Occlusion in r and the distance in g.
+    OpenGLRenderTarget _aoBlurTarget; // Same, blurred.
+    OpenGLVertexBuffer<ShadowVertex> _aoIndoorBuffer; // Every visible face of the loaded indoor level.
+    int _aoIndoorVertexCount = 0;
+    int _aoIndoorVersion = 0; // `IndoorLocation::geometryVersion` of `_aoIndoorBuffer`.
+    Recti _aoViewport; // World viewport the occlusion was drawn for.
+
     // linear pipeline sky and water
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
     GraphicsImage *_skyAverageTexture = nullptr;
@@ -477,6 +504,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _linearPipeline = false; // Decided once at startup, the world shaders are compiled for it.
     bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.
     bool _torchShadows = false; // Same for the indoor shaders.
+    bool _ambientOcclusion = false; // Same for the lit world shaders.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;
 };

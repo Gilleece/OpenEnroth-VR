@@ -73,6 +73,7 @@ static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader sample
 static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
 static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
 static constexpr GLint TORCH_SHADOW_TEXTURE_UNIT = 16; // The indoor pass binds its arrays to units 0 to 15.
+static constexpr GLint AMBIENT_OCCLUSION_TEXTURE_UNIT = 17;
 static constexpr int TORCH_SHADOW_SIZE = 512;
 static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
@@ -898,6 +899,131 @@ void OpenGLRenderer::drawTorchShadows() {
         glDisable(GL_DEPTH_TEST);
 }
 
+void OpenGLRenderer::drawAmbientOcclusion() {
+    if (!_ambientOcclusion || (uCurrentlyLoadedLevelType != LEVEL_OUTDOOR && uCurrentlyLoadedLevelType != LEVEL_INDOOR))
+        return;
+
+    std::array<GLint, 4> viewport;
+    glGetIntegerv(GL_VIEWPORT, viewport.data());
+    _aoViewport = Recti(viewport[0], viewport[1], viewport[2], viewport[3]);
+    Sizei size(std::max(1, viewport[2] / 2), std::max(1, viewport[3] / 2));
+    if (_aoDepthTarget.size() != size) {
+        _aoDepthTarget.reset(size, RENDER_TARGET_FORMAT_R16F, true);
+        _aoTarget.reset(size, RENDER_TARGET_FORMAT_RG16F, false);
+        _aoBlurTarget.reset(size, RENDER_TARGET_FORMAT_RG16F, false);
+    }
+
+    if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
+        _ensureOutdoorDepthGeometry();
+    } else if (!_aoIndoorBuffer || _aoIndoorVersion != pIndoor->geometryVersion) {
+        std::vector<ShadowVertex> vertices;
+        for (const BLVFace &face : pIndoor->faces) {
+            if (face.Invisible() || face.isPortal() || face.vertexIds.size() < 3)
+                continue;
+            for (int z = 0; z + 2 < static_cast<int>(face.vertexIds.size()); z++)
+                for (int i : {0, z + 1, z + 2})
+                    vertices.push_back({pIndoor->vertices[face.vertexIds[i]]});
+        }
+        if (!_aoIndoorBuffer)
+            _aoIndoorBuffer.reset(GL_DYNAMIC_DRAW, &ShadowVertex::pos);
+        if (!vertices.empty())
+            _aoIndoorBuffer.update(vertices);
+        _aoIndoorVertexCount = static_cast<int>(vertices.size());
+        _aoIndoorVersion = pIndoor->geometryVersion;
+    }
+
+    GLint framebuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+    std::array<GLfloat, 4> clearColor;
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor.data());
+    GLboolean cullFace = glIsEnabled(GL_CULL_FACE);
+    GLboolean blend = glIsEnabled(GL_BLEND);
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean depthTest = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean depthMask = GL_TRUE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+
+    // The distance to the nearest face at every pixel, at half resolution.
+    _aoDepthTarget.bind();
+    glViewport(0, 0, size.w, size.h);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    aodepthshader.use();
+    glUniformMatrix4fv(aodepthshader.uniformLocation("projection"), 1, GL_FALSE, &_view.projectionMatrix[0][0]);
+    glUniformMatrix4fv(aodepthshader.uniformLocation("view"), 1, GL_FALSE, &_view.viewMatrix[0][0]);
+    if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
+        _sunShadowTerrainBuffer.bind();
+        glDrawArrays(GL_TRIANGLES, 0, 127 * 127 * 6);
+        _sunShadowBuildingBuffer.bind();
+        if (!_sunShadowModelRanges.empty())
+            glDrawArrays(GL_TRIANGLES, 0, _sunShadowModelRanges.back().first + _sunShadowModelRanges.back().second);
+        _sunShadowBuildingBuffer.unbind();
+        drawcalls += 2;
+    } else if (_aoIndoorVertexCount > 0) {
+        _aoIndoorBuffer.bind();
+        glDrawArrays(GL_TRIANGLES, 0, _aoIndoorVertexCount);
+        _aoIndoorBuffer.unbind();
+        drawcalls++;
+    }
+    glDisable(GL_DEPTH_TEST);
+
+    _ensureFullscreenTriangle();
+    _compositeBuffer.bind();
+    glActiveTexture(GL_TEXTURE0);
+    auto drawPass = [&](OpenGLShader &shader, OpenGLRenderTarget &target, const OpenGLRenderTarget &source, const char *sampler) {
+        target.bind();
+        glBindTexture(GL_TEXTURE_2D, source.colorTexture());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        shader.use();
+        glUniform1i(shader.uniformLocation(sampler), 0);
+        if (&shader == &aoshader) {
+            const glm::mat4 &projection = _view.projectionMatrix;
+            glUniform4f(shader.uniformLocation("projection"), projection[0][0], projection[1][1], projection[2][0], projection[2][1]);
+        }
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        drawcalls++;
+    };
+    drawPass(aoshader, _aoTarget, _aoDepthTarget, "depthMap");
+    drawPass(aoblurshader, _aoBlurTarget, _aoTarget, "source");
+    _compositeBuffer.unbind();
+    aoblurshader.unuse();
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+    glDepthMask(depthMask);
+    if (depthTest)
+        glEnable(GL_DEPTH_TEST);
+    if (cullFace)
+        glEnable(GL_CULL_FACE);
+    if (blend)
+        glEnable(GL_BLEND);
+    if (scissor)
+        glEnable(GL_SCISSOR_TEST);
+}
+
+void OpenGLRenderer::_submitAmbientOcclusion(const OpenGLShader &shader) {
+    if (!shader.hasDefine("AMBIENT_OCCLUSION"))
+        return;
+
+    glActiveTexture(GL_TEXTURE0 + AMBIENT_OCCLUSION_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, _aoBlurTarget.colorTexture());
+    glActiveTexture(GL_TEXTURE0);
+    const glm::mat4 &projection = _view.projectionMatrix;
+    glUniform1i(shader.uniformLocation("ambientOcclusionMap"), AMBIENT_OCCLUSION_TEXTURE_UNIT);
+    glUniform4f(shader.uniformLocation("ambientOcclusionViewport"), _aoViewport.x, _aoViewport.y, _aoViewport.w, _aoViewport.h);
+    glUniform2f(shader.uniformLocation("ambientOcclusionDepth"), projection[2][2], projection[3][2]);
+}
+
 void OpenGLRenderer::_submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers) {
     if (!shader.hasDefine("TORCH_SHADOWS"))
         return;
@@ -1109,6 +1235,10 @@ void OpenGLRenderer::_ensureSunShadowResources() {
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
+    _ensureOutdoorDepthGeometry();
+}
+
+void OpenGLRenderer::_ensureOutdoorDepthGeometry() {
     if (uCurrentlyLoadedLevelType != LEVEL_OUTDOOR || _sunShadowTerrainBuffer)
         return;
 
@@ -1257,6 +1387,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _linearPipeline = config->graphics.LinearPipeline.value();
     _sunShadows = config->graphics.SunShadows.value();
     _torchShadows = config->graphics.TorchShadows.value();
+    _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
@@ -2347,6 +2478,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     uniforms.submit(shader);
     _submitSunShadow(shader);
     _submitHeightFog(shader, true);
+    _submitAmbientOcclusion(shader);
     if (shader.hasDefine("LINEAR_PIPELINE")) {
         _ensureWaterNormals();
         glActiveTexture(GL_TEXTURE0 + WATER_NORMALS_TEXTURE_UNIT);
@@ -3963,12 +4095,14 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
     uniforms.submit(outbuildshader);
     _submitSunShadow(outbuildshader);
     _submitHeightFog(outbuildshader, true);
+    _submitAmbientOcclusion(outbuildshader);
     bool hasMaterials = std::ranges::any_of(outbuildmaterials, [](GLuint id) { return id != 0; });
     if (hasMaterials) {
         outbuildmaterialshader.use();
         uniforms.submit(outbuildmaterialshader);
         _submitSunShadow(outbuildmaterialshader);
         _submitHeightFog(outbuildmaterialshader, true);
+        _submitAmbientOcclusion(outbuildmaterialshader);
         glUniform1i(outbuildmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
     }
 
@@ -4453,11 +4587,13 @@ void OpenGLRenderer::DrawIndoorFaces() {
         // remaining lights are default-initialized (type = 0)
         uniforms.submit(bspshader);
         _submitTorchShadows(bspshader, torchShadowLayers);
+        _submitAmbientOcclusion(bspshader);
         bool hasMaterials = std::ranges::any_of(bspmaterials, [](GLuint id) { return id != 0; });
         if (hasMaterials) {
             bspmaterialshader.use();
             uniforms.submit(bspmaterialshader);
             _submitTorchShadows(bspmaterialshader, torchShadowLayers);
+            _submitAmbientOcclusion(bspmaterialshader);
             glUniform1i(bspmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         }
 
@@ -4787,9 +4923,16 @@ bool OpenGLRenderer::ReloadShaders() {
         indoorDefines.push_back("TORCH_SHADOWS");
         indoorMaterialDefines.push_back("TORCH_SHADOWS");
     }
+    static constexpr std::string_view aoBlurDefines[] = {"AO_BLUR"};
+    std::vector<std::string_view> outdoorLitDefines = outdoorDefines;
+    std::vector<std::string_view> outdoorLitMaterialDefines = outdoorMaterialDefines;
+    if (_ambientOcclusion) {
+        for (std::vector<std::string_view> *defines : {&outdoorLitDefines, &outdoorLitMaterialDefines, &indoorDefines, &indoorMaterialDefines})
+            defines->push_back("AMBIENT_OCCLUSION");
+    }
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
-        {&terrainshader,          "glterrain",        "Terrain",                          outdoorDefines},
-        {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorDefines},
+        {&terrainshader,          "glterrain",        "Terrain",                          outdoorLitDefines},
+        {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorLitDefines},
         {&bspshader,              "glbspshader",      "Indoor BSP",                       indoorDefines},
         {&textshader,             "gltextshader",     "Text",                             {}},
         {&lineshader,             "gllinesshader",    "Lines",                            {}},
@@ -4804,10 +4947,13 @@ bool OpenGLRenderer::ReloadShaders() {
         {&fxaashader,             "glfxaa",           "FXAA",                             {}},
         {&shadowshader,           "glshadow",         "Shadow map",                       {}},
         {&shadowspriteshader,     "glshadow",         "Sprite shadow map",                spriteShadowDefines},
-        {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           outdoorMaterialDefines},
-        {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", outdoorMaterialDefines},
+        {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           outdoorLitMaterialDefines},
+        {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", outdoorLitMaterialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        indoorMaterialDefines},
-        {&torchshadowshader,      "gltorchshadow",    "Torch shadow map",                 {}}
+        {&torchshadowshader,      "gltorchshadow",    "Torch shadow map",                 {}},
+        {&aodepthshader,          "glaodepth",        "Ambient occlusion depth",          {}},
+        {&aoshader,               "glao",             "Ambient occlusion",                {}},
+        {&aoblurshader,           "glao",             "Ambient occlusion blur",           aoBlurDefines}
     };
 
     SubFileSystem shadersFs("shaders", dfs);
@@ -4894,6 +5040,7 @@ void OpenGLRenderer::ReleaseBSP() {
 
     bsptexmap.clear();
     _torchShadowDrawnLights.clear();
+    _aoIndoorBuffer.reset();
 
     for (int i = 0; i < 16; i++) {
         glDeleteTextures(1, &bsptextures[i]);
