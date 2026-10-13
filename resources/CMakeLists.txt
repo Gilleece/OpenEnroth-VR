@@ -56,6 +56,8 @@ set(RESOURCE_SOURCES
         shaders/glbspshader.frag
         shaders/glbspshader.vert
         shaders/glcomposite.frag
+        shaders/glcontactshadow.frag
+        shaders/glcontactshadow.vert
         shaders/glcomposite.vert
         shaders/gldecalshader.frag
         shaders/gldecalshader.vert

@@ -111,6 +111,11 @@ struct ShadowVertex {
     Vec3f pos;
 };
 
+struct ContactShadowVertex {
+    Vec3f pos;
+    Vec3f shape; // Position in the ellipse, -1 to 1 on both axes, and the shadow's strength.
+};
+
 struct TorchShadowVertex {
     Vec3f pos;
     Vec3f normal;

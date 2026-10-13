@@ -31,6 +31,7 @@
 #include "Engine/Graphics/Image.h"
 #include "Engine/Graphics/Lighting.h"
 #include "Engine/Graphics/DecalBuilder.h"
+#include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Decoration.h"
 #include "Engine/Graphics/LightsStack.h"
 #include "Engine/Graphics/Outdoor.h"
@@ -81,6 +82,14 @@ static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
 static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
+static constexpr float CONTACT_SHADOW_STRENGTH = 0.7f; // Darkening of the linear colour at the middle of the ellipse in full daylight.
+static constexpr float CONTACT_SHADOW_SUNLIT_SCALE = 0.6f; // Part of the strength left when the sun casts shadows.
+static constexpr float CONTACT_SHADOW_MIN_SIZE = 24.0f; // World units across the ellipse's long axis.
+static constexpr float CONTACT_SHADOW_MAX_SIZE = 160.0f;
+static constexpr float CONTACT_SHADOW_FULL_HEIGHT = 16.0f; // Height above the floor up to which a sprite casts the full shadow.
+static constexpr float CONTACT_SHADOW_NO_HEIGHT = 96.0f; // Height above the floor from which it casts none.
+static constexpr float CONTACT_SHADOW_PROBE_HEIGHT = 40.0f; // How far above a point the floor under it is looked for.
+static constexpr float CONTACT_SHADOW_LIFT = 6.0f; // World units above the floor, on top of the polygon offset.
 static constexpr GLint WATER_NORMALS_TEXTURE_UNIT = 9; // After the terrain arrays, the material array and the sun shadow map.
 static constexpr int WATER_NORMALS_SIZE = 256;
 static constexpr float INDOOR_WATER_REFLECTION = 0.25f; // Brightness of the walls in the ambient light, which indoor water reflects.
@@ -2972,7 +2981,126 @@ static bool billboardShadowAnchor(const RenderBillboardD3D &billboard, Vec3f *an
     return true;
 }
 
+/**
+ * @param pos                           Point in the world.
+ * @param[out] floor                    Height of the floor under `pos`.
+ * @return                              Whether there's a floor under `pos`.
+ */
+static bool contactShadowFloor(Vec3f pos, float *floor) {
+    if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
+        int sector = 0;
+        int face = -1;
+        *floor = GetIndoorFloorZ(pos + Vec3f(0, 0, CONTACT_SHADOW_PROBE_HEIGHT), &sector, &face);
+        return *floor != -30000 && face != -1;
+    }
+    bool onWater = false;
+    int face = 0;
+    *floor = ODM_GetFloorLevel(pos + Vec3f(0, 0, CONTACT_SHADOW_PROBE_HEIGHT), &onWater, &face);
+    return !onWater;
+}
+
+void OpenGLRenderer::_drawContactShadows() {
+    if (uCurrentlyLoadedLevelType != LEVEL_INDOOR && uCurrentlyLoadedLevelType != LEVEL_OUTDOOR)
+        return;
+
+    // The ambient light the world is lit with, as the terrain and indoor shaders compute it.
+    float ambient = 0;
+    if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR) {
+        float minutes = pParty->uCurrentMinute + pParty->uCurrentHour * 60.0f;
+        ambient = 0.15f + (std::sin((minutes - 360.0f) * 2 * static_cast<float>(M_PI) / 1440) + 1) * 0.27f;
+    } else {
+        ambient = (248.0f - (pIndoor->ambientLightLevel() << 3)) / 255.0f;
+    }
+    float strength = CONTACT_SHADOW_STRENGTH * std::sqrt(std::clamp(ambient / 0.69f, 0.0f, 1.0f)); // 0.69 is noon outdoors.
+    if (_sunShadowFade > 0)
+        strength *= 1.0f - (1.0f - CONTACT_SHADOW_SUNLIT_SCALE) * _sunShadowFade; // The sun already casts a shadow.
+
+    _contactShadowVertices.clear();
+    for (int i = 0; i < ::uNumBillboardsToDraw; i++) {
+        const RenderBillboard &billboard = pBillboardRenderList[i];
+        Vec3f foot;
+        if (billboard.object_pid.type() == OBJECT_Actor) {
+            foot = pActors[billboard.object_pid.id()].pos;
+        } else if (billboard.object_pid.type() == OBJECT_Decoration) {
+            foot = pLevelDecorations[billboard.object_pid.id()].vPosition;
+        } else {
+            continue;
+        }
+        if (!billboard.hwsprite)
+            continue;
+
+        float centreFloor = 0;
+        if (!contactShadowFloor(foot, &centreFloor))
+            continue;
+        float height = foot.z - centreFloor;
+        float fade = 1.0f - std::clamp((height - CONTACT_SHADOW_FULL_HEIGHT) / (CONTACT_SHADOW_NO_HEIGHT - CONTACT_SHADOW_FULL_HEIGHT), 0.0f, 1.0f);
+        if (fade <= 0)
+            continue;
+
+        float width = std::clamp(billboard.hwsprite->uWidth * billboard.scale.x * 0.5f, CONTACT_SHADOW_MIN_SIZE, CONTACT_SHADOW_MAX_SIZE);
+        Vec2f radius(width / 2, width * 0.35f);
+
+        // A 2x2 grid of quads, each corner on the floor under it, so the ellipse follows the ground's slopes and folds.
+        std::array<std::array<ContactShadowVertex, 3>, 3> grid;
+        for (int gy = 0; gy < 3; gy++) {
+            for (int gx = 0; gx < 3; gx++) {
+                Vec2f local(gx - 1.0f, gy - 1.0f);
+                Vec3f pos(foot.x + local.x * radius.x, foot.y + local.y * radius.y, centreFloor);
+                float floor = 0;
+                if (contactShadowFloor(pos, &floor) && std::abs(floor - centreFloor) < radius.x)
+                    pos.z = floor; // Follows the slope, but not off a ledge.
+                pos.z += CONTACT_SHADOW_LIFT;
+                grid[gy][gx] = {pos, Vec3f(local.x, local.y, strength * fade)};
+            }
+        }
+        for (int gy = 0; gy < 2; gy++) {
+            for (int gx = 0; gx < 2; gx++) {
+                std::array<ContactShadowVertex, 4> quad = {{grid[gy][gx], grid[gy][gx + 1], grid[gy + 1][gx + 1], grid[gy + 1][gx]}};
+                for (int c : {0, 1, 2, 0, 2, 3})
+                    _contactShadowVertices.push_back(quad[c]);
+            }
+        }
+    }
+    if (_contactShadowVertices.empty())
+        return;
+
+    if (!_contactShadowBuffer)
+        _contactShadowBuffer.reset(GL_DYNAMIC_DRAW, &ContactShadowVertex::pos, &ContactShadowVertex::shape);
+    _contactShadowBuffer.update(_contactShadowVertices);
+
+    GLboolean blend = glIsEnabled(GL_BLEND);
+    GLboolean cullFace = glIsEnabled(GL_CULL_FACE);
+    GLboolean depthMask = GL_TRUE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_DST_COLOR, GL_ZERO);
+    glDisable(GL_CULL_FACE);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(-1.0f, -4.0f);
+
+    contactshadowshader.use();
+    glUniformMatrix4fv(contactshadowshader.uniformLocation("projection"), 1, GL_FALSE, &_view.projectionMatrix[0][0]);
+    glUniformMatrix4fv(contactshadowshader.uniformLocation("view"), 1, GL_FALSE, &_view.viewMatrix[0][0]);
+    _contactShadowBuffer.bind();
+    glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(_contactShadowVertices.size()));
+    drawcalls++;
+    _contactShadowBuffer.unbind();
+    contactshadowshader.unuse();
+
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glDepthMask(depthMask);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (!blend)
+        glDisable(GL_BLEND);
+    if (cullFace)
+        glEnable(GL_CULL_FACE);
+}
+
 void OpenGLRenderer::DoRenderBillboards_D3D() {
+    if (_linearPipeline)
+        _drawContactShadows();
+
     if (worldSpaceBillboards()) {
         drawWorldBillboards();
         return;
@@ -5122,6 +5250,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", outdoorLitMaterialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        indoorMaterialDefines},
         {&torchshadowshader,      "gltorchshadow",    "Torch shadow map",                 {}},
+        {&contactshadowshader,    "glcontactshadow",  "Contact shadow",                   {}},
         {&aodepthshader,          "glaodepth",        "Ambient occlusion depth",          {}},
         {&aoshader,               "glao",             "Ambient occlusion",                {}},
         {&aoblurshader,           "glao",             "Ambient occlusion blur",           aoBlurDefines}

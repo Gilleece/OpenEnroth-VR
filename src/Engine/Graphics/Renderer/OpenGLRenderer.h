@@ -336,6 +336,12 @@ class OpenGLRenderer : public BaseRenderer {
     void _copySceneDepth();
 
     /**
+     * Darkens the ground under the actors and decorations that stand on it, with a soft ellipse under each. Linear
+     * pipeline only.
+     */
+    void _drawContactShadows();
+
+    /**
      * Creates `_waterNormals` if it doesn't exist yet.
      */
     void _ensureWaterNormals();
@@ -391,6 +397,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader shadowshader;
     OpenGLShader shadowspriteshader;
     OpenGLShader torchshadowshader;
+    OpenGLShader contactshadowshader;
     OpenGLShader aodepthshader;
     OpenGLShader aoshader;
     OpenGLShader aoblurshader;
@@ -472,6 +479,10 @@ class OpenGLRenderer : public BaseRenderer {
     Sizei _sceneDepthSize;
     Recti _sceneDepthViewport; // World viewport `_sceneDepth` was copied from.
     bool _sceneDepthCopied = false; // Whether `_sceneDepth` holds the current view.
+
+    // contact shadows
+    OpenGLVertexBuffer<ContactShadowVertex> _contactShadowBuffer;
+    std::vector<ContactShadowVertex> _contactShadowVertices;
 
     // linear pipeline sky and water
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
