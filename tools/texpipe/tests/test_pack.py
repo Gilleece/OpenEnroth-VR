@@ -1,10 +1,11 @@
 import json
+import random
 
 import pytest
-from PIL import Image
+from PIL import Image, PngImagePlugin
 
 from texpipe.maps import MAPS, map_path
-from texpipe.pack import build_manifest, run_pack
+from texpipe.pack import build_manifest, optimize_png, run_pack
 from texpipe.workdir import UpscaledImage, WorkImage, images_dir, save_image_info, save_upscaled_info, upscaled_dir
 
 
@@ -58,6 +59,7 @@ def test_pack_writes_images_manifest_and_readme(tmp_path):
         "generated": 0,
         "shapes": 0,
         "gi": 0,
+        "optimized MiB": 0.0,
     }
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["bitmaps"] == {"wall": {"crc32": "deadbeef"}}
@@ -104,3 +106,64 @@ def test_pack_groups_sprite_palettes_into_one_manifest_entry(tmp_path):
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["sprites"] == {"m246a0": {"crc32": "deadbeef", "palettes": [247, 248]}}
     assert Image.open(out / "sprites" / "m246a0" / "247.png").size == (6, 10)
+
+
+def noisy_image(mode: str, size=(64, 32)) -> Image.Image:
+    # Smooth gradients with some noise, so that the harder compression has something to find.
+    rng = random.Random(1)
+    image = Image.new("RGBA", size)
+    image.putdata(
+        [
+            (x * 4 % 256, y * 8 % 256, (x + y + rng.randrange(8)) % 256, 255 if (x + y) % 5 else 0)
+            for y in range(size[1])
+            for x in range(size[0])
+        ]
+    )
+    return image.convert(mode) if mode != "P" else image.convert("RGB").quantize(64)
+
+
+@pytest.mark.parametrize("mode", ["RGB", "RGBA", "L", "LA", "P"])
+def test_optimized_pngs_decode_to_the_same_pixels_and_are_no_larger(tmp_path, mode):
+    path, original = tmp_path / "image.png", tmp_path / "original.png"
+    params = {"transparency": 3} if mode == "P" else {}
+    noisy_image(mode).save(path, compress_level=1, **params)
+    original.write_bytes(path.read_bytes())
+    saved = optimize_png(path)
+    assert saved == original.stat().st_size - path.stat().st_size > 0
+    with Image.open(path) as optimized, Image.open(original) as expected:
+        assert optimized.mode == expected.mode == mode
+        assert optimized.info.get("transparency") == expected.info.get("transparency")
+        assert optimized.convert("RGBA").tobytes() == expected.convert("RGBA").tobytes()
+        assert optimized.tobytes() == expected.tobytes() or mode == "P"
+
+
+def test_pngs_with_other_chunks_are_left_alone(tmp_path):
+    # A chunk a plain save drops, like gamma or a text chunk, may change how the image is read.
+    path = tmp_path / "image.png"
+    info = PngImagePlugin.PngInfo()
+    info.add_text("Comment", "kept")
+    noisy_image("RGB").save(path, compress_level=1, pnginfo=info)
+    before = path.read_bytes()
+    assert optimize_png(path) == 0
+    assert path.read_bytes() == before
+
+
+def test_pack_optimizes_the_pngs_it_writes_unless_told_not_to(tmp_path):
+    work = tmp_path / "work"
+    add_image(work, "bitmaps", "wall", (32, 16), 2)
+    upscaled = upscaled_dir(work, "bitmaps") / "wall.png"
+    noisy_image("RGB").save(upscaled, compress_level=1)
+    for kind in MAPS:
+        map_path(work, kind, "wall").parent.mkdir(parents=True, exist_ok=True)
+        noisy_image("RGB").save(map_path(work, kind, "wall"), compress_level=1)
+
+    run_pack(work, tmp_path / "plain", "raw", None, config={"pack": {"optimize_png": False}})
+    assert (tmp_path / "plain" / "bitmaps" / "wall.png").read_bytes() == upscaled.read_bytes()
+
+    counts = run_pack(work, tmp_path / "optimized", "raw", None)
+    for relative in ("bitmaps/wall.png", "normal/bitmaps/wall.png", "roughness/bitmaps/wall.png"):
+        optimized = tmp_path / "optimized" / relative
+        assert optimized.stat().st_size < (tmp_path / "plain" / relative).stat().st_size
+        with Image.open(optimized) as image, Image.open(tmp_path / "plain" / relative) as plain:
+            assert image.tobytes() == plain.tobytes()
+    assert counts["optimized MiB"] == 0.0  # A few kilobytes.

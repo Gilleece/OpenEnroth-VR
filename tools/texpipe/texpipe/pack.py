@@ -1,7 +1,11 @@
 """The pack step: the upscaled images and a manifest.json in the layout the engine loads."""
 
+import io
+import os
 import shutil
+import struct
 import zipfile
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from PIL import Image
@@ -61,11 +65,13 @@ def run_pack(
     With `regen_from`, a model whose regen outputs exist, sprites and icons come from those outputs that passed. Images
     upscaled past the config's `[pack] max_scale` are scaled down to it, and their maps made again at that size.
     The baked lighting a `bake` run left in the pack stays, unless the config's `[pack] gi` is off, which removes it.
+    Every PNG written is compressed harder, as `optimize_pngs` does, unless `[pack] optimize_png` is off.
     Returns the number of entries per section, of bitmaps with maps, of sprite images, of generated sprites, of sprite
-    shapes and of baked maps.
+    shapes and of baked maps, and the MiB the harder compression saved.
     """
     config = config or {}
     max_scale = config.get("pack", {}).get("max_scale", 4)
+    written: list[Path] = []
     map_options = MapOptions.from_config(config)
     entries: dict[str, dict[str, dict]] = {section: {} for section in SECTIONS}
     generated: set[str] = set()
@@ -91,9 +97,12 @@ def run_pack(
             _downscale(source, out / image.section / f"{image.name}.png", size)
         else:
             _copy(source, out / image.section / f"{image.name}.png")
+        written.append(out / image.section / f"{image.name}.png")
         if image.section == "sprites":
             _add_sprite_image(entries["sprites"], image)
-            _add_sprite_shape(work, out, entries["sprites"], image.name.rsplit("/", 1)[0], size)
+            shape = _add_sprite_shape(work, out, entries["sprites"], image.name.rsplit("/", 1)[0], size)
+            if shape is not None:
+                written.append(shape)
             continue
         entry = {"crc32": image.crc32}
         if image.section == "bitmaps" and all(map_path(work, kind, image.name).is_file() for kind in MAPS):
@@ -103,8 +112,10 @@ def run_pack(
                 for kind in MAPS:
                     _check_size(map_path(work, kind, image.name), size)
                     _copy(map_path(work, kind, image.name), out / kind / "bitmaps" / f"{image.name}.png")
+            written += [out / kind / "bitmaps" / f"{image.name}.png" for kind in MAPS]
             entry["maps"] = list(MAPS)
         entries[image.section][image.name] = entry
+    saved = optimize_pngs(written) if config.get("pack", {}).get("optimize_png", True) else 0
     manifest = build_manifest(entries, colors)
     _carry_gi(out, manifest, config.get("pack", {}).get("gi", True))
     write_json(out / "manifest.json", manifest)
@@ -119,6 +130,7 @@ def run_pack(
     counts["generated"] = len(generated)
     counts["shapes"] = sum(1 for entry in entries["sprites"].values() if "shape" in entry)
     counts["gi"] = len(manifest.get("gi", {}))
+    counts["optimized MiB"] = round(saved / 2**20, 1)
     return counts
 
 
@@ -219,14 +231,17 @@ def _add_sprite_image(sprites: dict[str, dict], image: WorkImage) -> None:
     entry["palettes"] = sorted([*entry["palettes"], int(palette_id)])
 
 
-def _add_sprite_shape(work: Path, out: Path, sprites: dict[str, dict], name: str, size: tuple[int, int]) -> None:
-    """Copies a sprite's shape image into the pack and adds `"shape": {"thickness": ...}` to its entry, once."""
+def _add_sprite_shape(work: Path, out: Path, sprites: dict[str, dict], name: str, size: tuple[int, int]) -> Path | None:
+    """Copies a sprite's shape image into the pack and adds `"shape": {"thickness": ...}` to its entry, once.
+
+    Returns the path written, if it wrote one.
+    """
     entry = sprites[name]
     if "shape" in entry:
-        return
+        return None
     shape = shape_entry(work, name)
     if shape is None:
-        return
+        return None
     target = out / "shape" / "sprites" / f"{name}.png"
     with Image.open(shape_path(work, name)) as image:
         shape_size = image.size
@@ -237,6 +252,57 @@ def _add_sprite_shape(work: Path, out: Path, sprites: dict[str, dict], name: str
     else:
         raise ValueError(f"{shape_path(work, name)} is {shape_size}, expected {size}")
     entry["shape"] = shape
+    return target
+
+
+PLAIN_CHUNKS = {b"IHDR", b"PLTE", b"tRNS", b"IDAT", b"IEND"}  # What a Pillow save without extra parameters writes.
+
+
+def _chunk_types(data: bytes) -> set[bytes]:
+    types, offset = set(), 8
+    while offset + 8 <= len(data):
+        length, kind = struct.unpack_from(">I4s", data, offset)
+        types.add(kind)
+        offset += length + 12
+    return types
+
+
+def _pixels(image: Image.Image) -> bytes:
+    return image.convert("RGBA").tobytes() if image.mode == "P" else image.tobytes()
+
+
+def optimize_png(path: Path) -> int:
+    """Saves a PNG again with Pillow's `optimize`, if that makes it smaller and decodes to the same pixels.
+
+    PNGs with chunks that a plain save would drop are left alone. Returns the bytes saved.
+    """
+    data = path.read_bytes()
+    if not _chunk_types(data) <= PLAIN_CHUNKS:
+        return 0
+    with Image.open(io.BytesIO(data)) as image:
+        image.load()
+        output = io.BytesIO()
+        params = {"transparency": image.info["transparency"]} if "transparency" in image.info else {}
+        image.save(output, "PNG", optimize=True, **params)
+        optimized = output.getvalue()
+        with Image.open(io.BytesIO(optimized)) as check:
+            check.load()
+            same = check.mode == image.mode and check.size == image.size and _pixels(check) == _pixels(image)
+    if not same or len(optimized) >= len(data):
+        return 0
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_bytes(optimized)
+    temp.replace(path)
+    return len(data) - len(optimized)
+
+
+def optimize_pngs(paths: list[Path]) -> int:
+    """Runs `optimize_png` over `paths` on every core. Returns the bytes saved."""
+    if not paths:
+        return 0
+    workers = os.cpu_count() or 1
+    with ProcessPoolExecutor(workers) as pool:
+        return sum(pool.map(optimize_png, paths, chunksize=max(1, len(paths) // (workers * 16))))
 
 
 def _downscale(source: Path, target: Path, size: tuple[int, int]) -> None:
