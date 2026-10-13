@@ -20,7 +20,7 @@ vec3 WaterNormal(vec3 pos) {
 vec3 WaterSurface(vec3 lit, vec3 normal, vec3 pos, vec3 viewDir) {
     vec3 reflected = reflect(-viewDir, normal);
     vec3 sky = mix(skyHorizon, skyZenith, clamp(reflected.z, 0.0, 1.0)) * SkyGradient(reflected);
-    float fresnel = 0.02 + 0.98 * pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0);
+    float fresnel = 0.02 + 0.98 * pow(clamp(1.0 - dot(normal, viewDir), 0.0, 1.0), 5.0); // The dot rounds past 1 looking straight down, and pow of a negative base is NaN.
     vec3 result = mix(lit, sky, fresnel * WATER_REFLECTIVITY);
 
     float highlight = pow(max(dot(reflected, sunDirection), 0.0), 500.0) * sunVisibility;
