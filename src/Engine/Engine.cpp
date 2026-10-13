@@ -446,7 +446,7 @@ Vis_PIDAndDepth Engine::PickKeyboard(float pick_depth, Vis_SelectionFilter *spri
         Vec3f origin;
         Vec3f direction;
         if (_worldFrameViews && _worldFrameViews->forwardRay(&origin, &direction))
-            return PickRay(pick_depth, origin, direction, sprite_filter, face_filter);
+            return PickRayGrid(pick_depth, origin, direction, sprite_filter, face_filter);
         return vis->PickKeyboard(pick_depth, sprite_filter, face_filter);
     } else {
         return Vis_PIDAndDepth();
@@ -461,6 +461,34 @@ Vis_PIDAndDepth Engine::PickRay(float fPickDepth, Vec3f origin, Vec3f direction,
     pCamera3D->updateFromPose(origin, yaw, pitch, 0, 0);
     Vis_PIDAndDepth result = vis->PickRay(fPickDepth, origin, direction, sprite_filter, face_filter);
     pCamera3D->updateFromParty();
+    return result;
+}
+
+constexpr int KEYBOARD_PICK_GRID_COLUMNS = 25; // About three degrees apart outdoors.
+constexpr int KEYBOARD_PICK_GRID_ROWS = 19;
+
+Vis_PIDAndDepth Engine::PickRayGrid(float fPickDepth, Vec3f origin, Vec3f forward,
+                                    Vis_SelectionFilter *sprite_filter, Vis_SelectionFilter *face_filter) {
+    Vec3f right = cross(forward, Vec3f(0, 0, 1));
+    if (right.length() < 0.001f)
+        right = Vec3f(0, 1, 0); // Looking straight up or down any horizontal axis will do.
+    right /= right.length();
+    Vec3f up = cross(right, forward);
+
+    float halfHeight = std::tan(pCamera3D->fov_y_deg * static_cast<float>(M_PI) / 360);
+    float halfWidth = halfHeight * pCamera3D->aspect;
+    Vis_PIDAndDepth result;
+    for (int column = 0; column < KEYBOARD_PICK_GRID_COLUMNS; column++) {
+        for (int row = 0; row < KEYBOARD_PICK_GRID_ROWS; row++) {
+            float x = halfWidth * (2.0f * column / (KEYBOARD_PICK_GRID_COLUMNS - 1) - 1);
+            float y = halfHeight * (2.0f * row / (KEYBOARD_PICK_GRID_ROWS - 1) - 1);
+            Vec3f direction = forward + right * x + up * y;
+            direction /= direction.length();
+            Vis_PIDAndDepth hit = PickRay(fPickDepth, origin, direction, sprite_filter, face_filter);
+            if (hit.pid && (!result.pid || hit.depth < result.depth))
+                result = hit;
+        }
+    }
     return result;
 }
 

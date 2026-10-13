@@ -51,7 +51,7 @@ class WorldFrameViews {
     /**
      * @param[out] origin               Start of the ray in world space.
      * @param[out] direction            Direction the head looks along in world space, normalized.
-     * @return                          Whether keyboard picking goes along this ray, from the last frame drawn,
+     * @return                          Whether keyboard picking looks around this ray, from the last frame drawn,
      *                                  instead of through the party camera.
      */
     virtual bool forwardRay(Vec3f *origin, Vec3f *direction) = 0;
