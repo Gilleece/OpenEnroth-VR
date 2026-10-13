@@ -115,6 +115,21 @@ Android is not actively tested by the dev team — expect issues and be prepared
    `/sdcard/Android/data/io.github.openenroth.openenroth/files/` on your device.
 
 
+# Texture packs and VR
+
+`tools/texpipe` builds a texture pack of higher resolution bitmaps, icons and sprites from your own copy of MM7,
+with normal and roughness maps for the bitmaps. [tools/texpipe/README.md](tools/texpipe/README.md) has the steps and
+the `openenroth.ini` lines that turn a pack on, together with `graphics.enhanced` and `graphics.ui_scale`.
+
+VR runs on Windows through OpenXR, in a build configured with `-DOE_BUILD_VR=ON`. Start the game with `--vr` for one
+run, or set `enabled = true` in the `[vr]` section of `openenroth.ini` to keep it on. F8, the `recenter` entry,
+recenters the view on the head's current pose. The other `[vr]` entries set the distance and width of the floating
+game screen (`ui_distance`, `ui_width`), snap turning (`snap_turn`, `snap_turn_degrees`), a smaller HUD
+(`minimal_hud`), the near clip distance (`near_clip`) and how far the head may lean (`head_offset_radius`). If no
+headset is found the game carries on flat. See the VR section of [HACKING.md](HACKING.md) for how it fits into the
+renderer.
+
+
 # Development
 
 See [HACKING.md](HACKING.md) for build instructions, code style guidelines, and contribution guidelines.
