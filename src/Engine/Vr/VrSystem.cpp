@@ -437,6 +437,15 @@ void VrSystem::swapBuffers() {
     beginFrame();
 }
 
+void VrSystem::setGrabsMouse(bool grabsMouse) {
+    _grabsMouse = grabsMouse;
+    ProxyWindow::setGrabsMouse(grabsMouse || _running);
+}
+
+bool VrSystem::grabsMouse() const {
+    return _running ? _grabsMouse : ProxyWindow::grabsMouse();
+}
+
 bool VrSystem::keyPressEvent(const PlatformKeyEvent *event) {
     if (!event->isAutoRepeat && keyboardActionMapping && keyboardActionMapping->isBound(INPUT_ACTION_VR_RECENTER, event->key))
         recenter();
@@ -699,6 +708,14 @@ void VrSystem::setRunning(bool running) {
     if (_running == running)
         return;
 
+    if (ProxyWindow::base()) { // Gone once the component is removed, on exit.
+        if (running) {
+            _grabsMouse = ProxyWindow::grabsMouse();
+            ProxyWindow::setGrabsMouse(true);
+        } else {
+            ProxyWindow::setGrabsMouse(_grabsMouse);
+        }
+    }
     _running = running;
     if (running) {
         _desktopSwapInterval = desktopSwapInterval();

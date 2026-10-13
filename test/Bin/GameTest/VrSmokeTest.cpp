@@ -12,6 +12,7 @@
 #include "Application/GameConfig.h"
 
 #include "Engine/Engine.h"
+#include "Engine/EngineGlobals.h"
 #include "Engine/Party.h"
 #include "Engine/Graphics/RenderEntities.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
@@ -22,6 +23,8 @@
 #include "Library/Environment/Interface/Environment.h"
 #include "Library/Logger/Logger.h"
 #include "Library/Logger/LogSink.h"
+#include "Library/Platform/Application/PlatformApplication.h"
+#include "Library/Platform/Interface/PlatformWindow.h"
 
 #include "Utility/ScopeGuard.h"
 
@@ -127,8 +130,11 @@ GAME_TEST(VrSmoke, Session) {
     game.skipLoadingScreen();
     game.tick(10);
     phase("new game");
-    if (vr)
+    if (vr) {
         EXPECT_TRUE(vr->focused());
+        // The session grabs the mouse, and the window still reports the setting that window.mouse_grab is saved from.
+        EXPECT_EQ(application->window()->grabsMouse(), engine->config->window.MouseGrab.value());
+    }
     int startYaw = pParty->_viewYaw * 90 / 512;
 
     // A few seconds of walking and turning.
