@@ -617,20 +617,20 @@ static void dilate(std::vector<GiProbeCoefficients> *probes, std::vector<bool> v
 }
 
 /**
- * Appends a time key to `result`, with the average irradiance over the probes inside the level.
+ * Appends a time key to `result`, with the average irradiance over some of its probes.
  *
  * @param result                        Probes to append to.
  * @param hour                          Time of day of the key.
  * @param probes                        Coefficients of each probe at that time.
- * @param valid                         Whether each probe is inside the level.
+ * @param averaged                      Whether each probe counts towards the average.
  */
-static void appendKey(GiProbes *result, float hour, const std::vector<GiProbeCoefficients> &probes, const std::vector<bool> &valid) {
+static void appendKey(GiProbes *result, float hour, const std::vector<GiProbeCoefficients> &probes, const std::vector<bool> &averaged) {
     Vec3f sum(0, 0, 0);
     int count = 0;
     for (size_t i = 0; i < probes.size(); i++) {
         for (float value : probes[i])
             result->coefficients.push_back(floatToHalf(value));
-        if (valid[i]) {
+        if (averaged[i]) {
             sum += Vec3f(probes[i][0], probes[i][4], probes[i][8]) * SH_Y0; // Irradiance averaged over all normals.
             count++;
         }
@@ -645,11 +645,12 @@ static void appendKey(GiProbes *result, float hour, const std::vector<GiProbeCoe
  * @param result                        Probes to append to.
  * @param hours                         Time of day of each key.
  * @param probes                        Baked probes, with a key for each of `hours`.
+ * @param averaged                      Whether each probe counts towards the average irradiance.
  */
-static void appendKeys(GiProbes *result, std::span<const float> hours, BakedProbes probes) {
+static void appendKeys(GiProbes *result, std::span<const float> hours, BakedProbes probes, const std::vector<bool> &averaged) {
     for (size_t key = 0; key < hours.size(); key++) {
         dilate(&probes.keys[key], probes.valid, result->dims);
-        appendKey(result, hours[key], probes.keys[key], probes.valid);
+        appendKey(result, hours[key], probes.keys[key], averaged);
     }
 }
 
@@ -686,7 +687,9 @@ static GiProbes bakeIndoor() {
                 positions.push_back(result.origin + Vec3f(x, y, z) * spacing);
 
     std::array<float, 1> hours = {0.0f};
-    appendKeys(&result, hours, bakeProbes(scene, indoorLights(), {indoorSky()}, positions, GI_MAX_INDOOR_MISSES));
+    BakedProbes probes = bakeProbes(scene, indoorLights(), {indoorSky()}, positions, GI_MAX_INDOOR_MISSES);
+    std::vector<bool> averaged = probes.valid;
+    appendKeys(&result, hours, std::move(probes), averaged);
     return result;
 }
 
@@ -715,7 +718,11 @@ static GiProbes bakeOutdoor() {
     std::vector<BakeSky> skies;
     for (float hour : GI_OUTDOOR_HOURS)
         skies.push_back(outdoorSky(hour));
-    appendKeys(&result, GI_OUTDOOR_HOURS, bakeProbes(scene, outdoorLights(), skies, positions, GI_RAYS_PER_PROBE));
+    BakedProbes probes = bakeProbes(scene, outdoorLights(), skies, positions, GI_RAYS_PER_PROBE);
+    std::vector<bool> averaged = probes.valid;
+    for (size_t i = 0; i < positions.size(); i++) // The lowest layer over land, where the party walks.
+        averaged[i] = averaged[i] && i < GI_OUTDOOR_GRID * GI_OUTDOOR_GRID && !pOutdoor->pTerrain.isWaterByPos(positions[i]);
+    appendKeys(&result, GI_OUTDOOR_HOURS, std::move(probes), averaged);
     return result;
 }
 
