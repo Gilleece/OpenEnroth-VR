@@ -31,7 +31,7 @@ struct CameraView;
  * calls `drawViews` with the prepared world frame, and it's drawn once per eye.
  *
  * Eye poses are taken relative to a head origin, the head pose on the first tracked frame once the session is focused,
- * levelled to its yaw. The `vr.recenter` key captures it again.
+ * levelled to its yaw. The `vr.recenter` key captures it again, and so does a recenter in the runtime.
  *
  * While the session runs the renderer draws the UI as a layer of its own, which goes to the headset as a quad locked to
  * the head, in front of the world.
@@ -310,6 +310,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     bool _running = false;
     bool _focused = false;
     bool _recenterRequested = false;
+    XrTime _localChangeTime = 0; // From when the runtime's last move of its LOCAL space shows in the poses it gives.
     int _desktopSwapInterval = 1;
     XrFrameState _frameState = {XR_TYPE_FRAME_STATE};
     bool _frameBegun = false;

@@ -670,6 +670,13 @@ void VrSystem::pollEvents() {
         } else if (event.type == XR_TYPE_EVENT_DATA_INSTANCE_LOSS_PENDING) {
             MM_WARNING("VR: the OpenXR runtime is going away, continuing without VR.");
             setRunning(false);
+        } else if (event.type == XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
+            const auto &change = reinterpret_cast<const XrEventDataReferenceSpaceChangePending &>(event);
+            if (change.referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+                MM_INFO("VR: the runtime moves its LOCAL space, the head origin will be captured again.");
+                _localChangeTime = change.changeTime;
+                recenter();
+            }
         }
         event = {XR_TYPE_EVENT_DATA_BUFFER};
     }
@@ -726,7 +733,8 @@ void VrSystem::beginFrame() {
         return;
     _frameBegun = true;
 
-    if (_focused && (_space == XR_NULL_HANDLE || _recenterRequested) && captureOrigin(_frameState.predictedDisplayTime))
+    if (_focused && (_space == XR_NULL_HANDLE || _recenterRequested) && _frameState.predictedDisplayTime >= _localChangeTime &&
+        captureOrigin(_frameState.predictedDisplayTime))
         _recenterRequested = false;
 
     if (_frameIndex < LOGGED_FRAME_COUNT) {
