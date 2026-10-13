@@ -34,6 +34,13 @@ class Mouse {
     void *DoAllocCursorMem();
     void Initialize();
     void DrawCursor();
+
+    /**
+     * Draws the cursor into the UI target when the UI is a layer of its own and `DrawCursor` hasn't run since the
+     * last call. The main menu, party creation, Arcomage and the other screens with frame loops of their own leave
+     * the cursor to the system, which a headset doesn't show. Call once per frame, before the UI is copied out.
+     */
+    void drawLayerCursor();
     void DrawPickedItem();
 
     void UI_OnMouseLeftClick(bool isDoubleClick);
@@ -57,6 +64,9 @@ class Mouse {
     void DoMouseLook(Pointi relChange);
     void RestoreMouseLook();
     MouseLookState _mouseLook = MouseLookState::Disabled;
+
+ private:
+    bool _cursorDrawn = false; // Whether `DrawCursor` ran since the last `drawLayerCursor`.
 };
 }  // namespace Io
 

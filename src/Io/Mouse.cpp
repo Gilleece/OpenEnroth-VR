@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <list>
 #include <memory>
+#include <utility>
 
 #include "Engine/Engine.h"
 #include "Engine/EngineGlobals.h"
@@ -108,6 +109,8 @@ void Io::Mouse::Initialize() {
 }
 
 void Io::Mouse::DrawCursor() {
+    _cursorDrawn = true;
+
     // get mouse pos
     Pointi pos = this->position();
 
@@ -189,6 +192,22 @@ void Io::Mouse::DrawCursor() {
         }
       }
     */
+}
+
+void Io::Mouse::drawLayerCursor() {
+    bool drawn = std::exchange(_cursorDrawn, false);
+    if (drawn || !render->uiLayer())
+        return;
+    if (current_screen_type == SCREEN_VIDEO)
+        return; // Fullscreen movies hide the system cursor.
+
+    render->BeginScene2D();
+    if (cursor_img) {
+        render->DrawQuad2D(cursor_img, position() - cursor_img->size() / 2);
+    } else {
+        render->DrawQuad2D(assets->getIcon("MICON1"), position());
+    }
+    render->DrawTwodVerts();
 }
 
 void Io::Mouse::DrawPickedItem() {

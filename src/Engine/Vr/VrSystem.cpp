@@ -30,6 +30,7 @@
 
 #include "Io/InputEnums.h"
 #include "Io/KeyboardActionMapping.h"
+#include "Io/Mouse.h"
 
 #include "Library/Logger/Logger.h"
 #include "Library/Platform/Interface/PlatformEvents.h"
@@ -322,6 +323,8 @@ bool VrSystem::drawViews(WorldFrame &frame) {
 }
 
 void VrSystem::swapBuffers() {
+    if (mouse)
+        mouse->drawLayerCursor();
     endFrame();
     ProxyOpenGLContext::swapBuffers();
     pollEvents();
