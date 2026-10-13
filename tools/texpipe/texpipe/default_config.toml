@@ -54,6 +54,9 @@ soften = 0.5
 model = "realesrgan-x4plus"
 model_scale = 4
 wrap_border = 64  # Narrower than the model reads, the two sides of a tile's seam come out slightly different.
+# A tile edge pair that differs more than this many times the step between neighbouring rows inside the tile, like the
+# snow and dirt sides of a transition tile, gets copied padding instead of wrapped padding.
+wrap_tolerance = 1.5
 tile_size = 512  # Pixels the binary upscales at once. Wrapped 256 pixel bitmaps fit, a split would add seams of its own.
 preserve_brightness = ["bitmaps", "sprites"]  # Sections whose upscaled images are rescaled to the mean brightness of the source.
 max_brightness_factor = 3.0  # Cap per channel, so a channel the model left nearly black does not turn into speckles.

@@ -86,6 +86,7 @@ class Prepared:
 
 
 DEFAULT_WRAP_BORDER = 16
+DEFAULT_WRAP_TOLERANCE = 1.5  # See `imageops.matching_edges`.
 
 
 class RealEsrganBackend:
@@ -115,14 +116,15 @@ class RealEsrganBackend:
                 list(pool.map(self._finish, jobs, repeat(out_dir), prepared, chunksize=16))
 
     def _border_for(self, job: Job, size: tuple[int, int]) -> tuple[int, int]:
-        """Tileable images get a wrapped border. Others get clamped edges, but only to reach the minimum size."""
+        """Tileable images get a full border, wrapped where their edges match. Others get clamped edges, but only to
+        reach the minimum size."""
         if job.tileable:
             return self._wrap_border, self._wrap_border
         return tuple(max(0, -(-(self._min_size - side) // 2)) for side in size)
 
     def _pad(self, job: Job, image: Image.Image, border: tuple[int, int]) -> Image.Image:
         if job.tileable:
-            return imageops.wrap_pad(image, border[0])
+            return imageops.tile_pad(image, border[0], *job.wraps)
         return imageops.clamp_pad(image, *border)
 
     def _prepare(self, job: Job, index: int, in_dir: Path) -> Prepared:

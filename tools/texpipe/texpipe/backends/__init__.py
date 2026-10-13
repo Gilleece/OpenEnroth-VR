@@ -10,6 +10,7 @@ class Job:
     target: Path
     scale: int
     tileable: bool  # World textures tile, so their edges must stay continuous across the seam.
+    wraps: tuple[bool, bool] = (True, True)  # Whether a tileable image's padding wraps along x and y, or is copied.
 
 
 def check_size(image_size: tuple[int, int], source_size: tuple[int, int], scale: int) -> None:

@@ -2,7 +2,7 @@
 
 import math
 
-from PIL import Image, ImageChops, ImageFilter, ImageMath, ImageOps
+from PIL import Image, ImageChops, ImageFilter, ImageMath, ImageOps, ImageStat
 
 OPAQUE = 255
 TRANSPARENT = 0
@@ -134,6 +134,45 @@ def wrap_pad(image: Image.Image, border: int) -> Image.Image:
         for tx in range(-tiles_x, tiles_x + 1):
             result.paste(image, (border + tx * width, border + ty * height))
     return result
+
+
+def _mean_difference(a: Image.Image, b: Image.Image) -> float:
+    return sum(ImageStat.Stat(ImageChops.difference(a, b)).mean) / len(a.getbands())
+
+
+def matching_edges(image: Image.Image, tolerance: float) -> tuple[bool, bool]:
+    """Whether the left and right edges of `image`, and its top and bottom edges, continue each other.
+
+    They do when the mean difference across the edge pair is at most `tolerance` times the mean difference between
+    neighbouring columns, or rows, inside the image. A transition tile, like snow running into dirt, has edges that
+    don't: wrapping it would bring the snow side into the dirt side.
+    """
+    rgb = image.convert("RGB")
+    width, height = rgb.size
+    result = []
+    for size, crop in ((width, lambda a, b: (a, 0, b, height)), (height, lambda a, b: (0, a, width, b))):
+        if size < 2:
+            result.append(True)
+            continue
+        across = _mean_difference(rgb.crop(crop(0, 1)), rgb.crop(crop(size - 1, size)))
+        inside = _mean_difference(rgb.crop(crop(0, size - 1)), rgb.crop(crop(1, size)))
+        result.append(across <= tolerance * inside)
+    return result[0], result[1]
+
+
+def tile_pad(image: Image.Image, border: int, wrap_x: bool, wrap_y: bool) -> Image.Image:
+    """Surrounds `image` with `border` pixels, wrapped from the opposite edge along the axes that wrap and copied from
+    the outermost pixels along the others."""
+    if wrap_x and wrap_y:
+        return wrap_pad(image, border)
+    if not wrap_x and not wrap_y:
+        return clamp_pad(image, border, border)
+    if wrap_x:
+        return wrap_pad(clamp_pad(image, 0, border), border).crop(
+            (0, border, image.width + 2 * border, image.height + 3 * border)
+        )
+    rotated = image.transpose(Image.Transpose.TRANSPOSE)
+    return tile_pad(rotated, border, True, False).transpose(Image.Transpose.TRANSPOSE)
 
 
 def clamp_pad(image: Image.Image, border_x: int, border_y: int) -> Image.Image:

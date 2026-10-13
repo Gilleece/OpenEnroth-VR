@@ -64,9 +64,11 @@ batches it finished.
   upscaled separately from the color and put back afterwards. Bitmaps tile across walls and floors, so they are padded
   with a border wrapped around from the opposite edge before upscaling, and cropped back after, which keeps the seams
   continuous. The border, `wrap_border`, is 64 pixels, wide enough for both sides of a seam to come out alike, and
-  `tile_size` keeps the binary from splitting a padded bitmap into tiles of its own. The model also drops the bright
-  speckles of dithered textures, so for the sections listed in `preserve_brightness`, bitmaps and sprites by default,
-  each channel of the result is rescaled to the source's mean over the pixels that are at least half opaque.
+  `tile_size` keeps the binary from splitting a padded bitmap into tiles of its own. Along an axis where the bitmap's
+  opposite edges differ by more than `wrap_tolerance` times the step between neighbouring rows inside it, like the
+  snow and dirt sides of a transition tile, the border copies the edge instead of wrapping. The model also drops the
+  bright speckles of dithered textures, so for the sections listed in `preserve_brightness`, bitmaps and sprites by
+  default, each channel of the result is rescaled to the source's mean over the pixels that are at least half opaque.
   `max_brightness_factor` caps the rescale, 3 by default, so that a channel the model left nearly black does not turn
   into speckles. The factors go into the image's JSON file under `upscaled/`.
 
@@ -87,8 +89,8 @@ come out too crisp, like the wave crests of the sea `hdwtr000` to `hdwtr007`.
 **maps** makes a normal map and a roughness map for every upscaled bitmap, from its luminance. The normal map is a
 Sobel filter over the slightly blurred luminance, in tangent space with the OpenGL convention: red to the right, green
 to the top row, flat is (128, 128, 255). The roughness map sits at 90, the stock specular, where an area is as busy as
-the image's average, and goes rougher or smoother where it is busier or calmer. Both wrap around the edges like the
-upscale does. Their strength, blur and range are in the `[maps]` section of the config.
+the image's average, and goes rougher or smoother where it is busier or calmer. Both wrap around the edges, or copy
+them, as the upscale did. Their strength, blur and range are in the `[maps]` section of the config.
 
 ```
 python -m texpipe maps --work ../../mm7_hd/work

@@ -9,7 +9,7 @@ from PIL import Image
 from texpipe import imageops
 from texpipe.backends import Job
 from texpipe.backends.nearest import NearestBackend
-from texpipe.backends.realesrgan import DEFAULT_WRAP_BORDER, RealEsrganBackend
+from texpipe.backends.realesrgan import DEFAULT_WRAP_BORDER, DEFAULT_WRAP_TOLERANCE, RealEsrganBackend
 from texpipe.brightness import match_brightness
 from texpipe.config import Choice, choose
 from texpipe.workdir import (
@@ -61,16 +61,40 @@ def wrap_border(config: dict, choice: Choice, image: WorkImage) -> int | None:
     return config.get("realesrgan", {}).get("wrap_border", DEFAULT_WRAP_BORDER)
 
 
-def upscaled_info(config: dict, choice: Choice, image: WorkImage, brightness: list[float] | None) -> UpscaledImage:
+def edge_wraps(config: dict, choice: Choice, image: WorkImage, source: Path) -> tuple[bool, bool] | None:
+    """Along which axes the backend wraps the padding of an image, from its source as the backend gets it. None if it
+    pads without wrapping."""
+    if wrap_border(config, choice, image) is None:
+        return None
+    with Image.open(source) as opened:
+        prepared = opened.convert("RGB")
+    if choice.seam_blend:
+        prepared = imageops.blend_wrap_seam(prepared, choice.seam_blend)
+    tolerance = config.get("realesrgan", {}).get("wrap_tolerance", DEFAULT_WRAP_TOLERANCE)
+    return imageops.matching_edges(prepared, tolerance)
+
+
+def upscaled_info(
+    config: dict, choice: Choice, image: WorkImage, brightness: list[float] | None, wraps: tuple[bool, bool] | None
+) -> UpscaledImage:
     return UpscaledImage(
-        choice.backend, choice.scale, brightness, choice.seam_blend, choice.soften, wrap_border(config, choice, image)
+        choice.backend,
+        choice.scale,
+        brightness,
+        choice.seam_blend,
+        choice.soften,
+        wrap_border(config, choice, image),
+        list(wraps) if wraps is not None else None,
     )
 
 
 def is_done(work: Path, image: WorkImage, choice: Choice, config: dict) -> bool:
     """True if the image was already upscaled the same way, from the source as it is now."""
     info = load_upscaled_info(work, image)
-    if info is None or replace(info, brightness=None) != upscaled_info(config, choice, image, None):
+    if info is None:
+        return False
+    wraps = edge_wraps(config, choice, image, make_job(work, image, choice.scale).source)
+    if replace(info, brightness=None) != upscaled_info(config, choice, image, None, wraps):
         return False
     job = make_job(work, image, choice.scale)
     return is_up_to_date([job.target], [job.source])
@@ -116,7 +140,7 @@ def run_upscale(
     for image, choice in brightness_only:
         max_factor = config.get(choice.backend, {}).get("max_brightness_factor", 3.0)
         factors = preserve_brightness(make_job(work, image, choice.scale), max_factor)
-        save_upscaled_info(work, image, upscaled_info(config, choice, image, factors))
+        save_upscaled_info(work, image, replace(load_upscaled_info(work, image), brightness=factors))
     for choice, images in groups.items():
         backend_object = make_backend(choice.backend, config, binary)
         options = config.get(choice.backend, {})
@@ -124,9 +148,7 @@ def run_upscale(
         for start in range(0, len(images), batch_size):
             _run_batch(work, config, backend_object, choice, images[start : start + batch_size])
         key = f"{choice.backend} {choice.scale}x"
-        counts[key] = counts.get(key, 0) + len(
-            images
-        )  # Rules with options make several groups of one backend and scale.
+        counts[key] = counts.get(key, 0) + len(images)  # Rules with options split one backend and scale into groups.
     return counts
 
 
@@ -152,11 +174,15 @@ def finish_target(job: Job, choice: Choice) -> None:
 
 def _run_batch(work: Path, config: dict, backend, choice: Choice, images: list[WorkImage]) -> None:
     """Upscales one batch and records it as done, so an interrupted run keeps every finished batch."""
-    jobs = [prepare_source(work, image, choice, make_job(work, image, choice.scale)) for image in images]
+    jobs, wraps = [], []
+    for image in images:
+        job = make_job(work, image, choice.scale)
+        wraps.append(edge_wraps(config, choice, image, job.source))
+        jobs.append(prepare_source(work, image, choice, replace(job, wraps=wraps[-1] or (True, True))))
     backend.run(jobs)
     options = config.get(choice.backend, {})
     preserve, max_factor = options.get("preserve_brightness", []), options.get("max_brightness_factor", 3.0)
-    for image, job in zip(images, jobs, strict=True):
+    for image, job, image_wraps in zip(images, jobs, wraps, strict=True):
         finish_target(job, choice)
         factors = preserve_brightness(job, max_factor) if image.section in preserve else None
-        save_upscaled_info(work, image, upscaled_info(config, choice, image, factors))
+        save_upscaled_info(work, image, upscaled_info(config, choice, image, factors, image_wraps))
