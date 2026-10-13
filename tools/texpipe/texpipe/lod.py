@@ -47,6 +47,10 @@ class Lod:
             name = _name(self._data[start : start + NAME_SIZE]).lower()
             self._entries.setdefault(name, (root_offset + offset, size))
 
+    def names(self) -> list[str]:
+        """Every entry name, lowercase and sorted."""
+        return sorted(self._entries)
+
     def __contains__(self, name: str) -> bool:
         return name.lower() in self._entries
 

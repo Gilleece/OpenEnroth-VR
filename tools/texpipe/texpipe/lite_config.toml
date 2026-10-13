@@ -122,3 +122,4 @@ erode = 2  # Pack pixels of the silhouette that take their depth from further in
 # at that size. lite_config.toml sets 2, for a pack about half the size of the full one.
 [pack]
 max_scale = 2
+gi = true  # The baked lighting is small next to the images, so the lite pack keeps it.
