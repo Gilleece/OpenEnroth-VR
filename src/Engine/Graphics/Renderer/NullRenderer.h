@@ -30,6 +30,7 @@ class NullRenderer : public BaseRenderer {
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
+    virtual void applyPipelineSettings() override;
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
     virtual void setUiLayer(bool enabled) override;

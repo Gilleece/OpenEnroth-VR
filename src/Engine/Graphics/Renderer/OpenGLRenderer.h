@@ -56,6 +56,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
+    virtual void applyPipelineSettings() override;
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
     virtual void setUiLayer(bool enabled) override;
@@ -241,6 +242,11 @@ class OpenGLRenderer : public BaseRenderer {
     GLuint _drawBloom(const OpenGLRenderTarget &source);
 
     void _ensureFullscreenTriangle();
+
+    /**
+     * Reads the settings the world shaders are compiled for into `_linearPipeline` and `_sunShadows`.
+     */
+    void _readPipelineSettings();
 
     /**
      * Creates the sun shadow map and the depth-only vertex buffers of the loaded outdoor level, if they don't exist yet.

@@ -40,6 +40,18 @@ class GameConfig : public Config {
     GameConfig();
     ~GameConfig();
 
+    /**
+     * Applies or removes the settings `graphics.enhanced` turns on, to match its value. Only entries still at their
+     * default value are set, the others were set by the player and win.
+     */
+    void updateEnhancedGraphics();
+
+    /**
+     * Resets the entries `updateEnhancedGraphics` set and the player hasn't changed since, so that saving the config
+     * doesn't write them out.
+     */
+    void removeEnhancedGraphics();
+
     using Bool = ConfigEntry<bool>;
     using Int = ConfigEntry<int>;
     using Float = ConfigEntry<float>;
@@ -502,6 +514,10 @@ class GameConfig : public Config {
                                "Use a 16-bit floating point world render target. Only applies when the world target size is set."};
         Int WorldTargetFilter = {this, "world_target_filter", 1, &ValidateWorldTargetFilter,
                                  "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
+        Bool Enhanced = {this, "enhanced", false,
+                         "Turn on the enhanced renderer: linear_pipeline, bloom, FXAA, sun_shadows and world_space_billboards, "
+                         "with the 3D world drawn at the window's resolution. Entries in this file that differ from their "
+                         "defaults take precedence over it."};
         Bool LinearPipeline = {this, "linear_pipeline", false,
                                "Blend the 3D world in linear colour in a 16-bit floating point world target, then tonemap it into the"
                                " game viewport. Uses a world target the size of the viewport when world_target_width and"
@@ -867,4 +883,7 @@ class GameConfig : public Config {
     };
 
     CheatCommands commands{this};
+
+ private:
+    std::vector<std::pair<AnyConfigEntry *, std::string>> _enhancedEntries; // Entries `updateEnhancedGraphics` set, with the value it set.
 };

@@ -283,6 +283,12 @@ class Renderer {
 
     virtual bool Reinitialize(bool firstInit = false) = 0;
     virtual bool ReloadShaders() = 0;
+
+    /**
+     * Picks up changed linear pipeline, sun shadow and world target settings: recompiles the world shaders, which are
+     * built for them, and recreates the render targets.
+     */
+    virtual void applyPipelineSettings() = 0;
     virtual void DoRenderBillboards_D3D() = 0;
 
     virtual void flushAndScale() = 0;

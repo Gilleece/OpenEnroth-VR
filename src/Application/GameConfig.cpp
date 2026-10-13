@@ -4,11 +4,39 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <algorithm>
 
 #include "Library/Logger/Logger.h"
 
 GameConfig::GameConfig() = default;
 GameConfig::~GameConfig() = default;
+
+void GameConfig::updateEnhancedGraphics() {
+    if (!graphics.Enhanced.value()) {
+        removeEnhancedGraphics();
+        return;
+    }
+
+    auto apply = [&](auto &entry, auto value) {
+        bool applied = std::ranges::contains(_enhancedEntries, &entry, [](const auto &pair) { return pair.first; });
+        if (applied || entry.value() != entry.defaultValue())
+            return;
+        entry.setValue(value);
+        _enhancedEntries.emplace_back(&entry, entry.string());
+    };
+    apply(graphics.LinearPipeline, true);
+    apply(graphics.Bloom, true);
+    apply(graphics.Antialiasing, ANTIALIASING_FXAA);
+    apply(graphics.SunShadows, true);
+    apply(graphics.WorldSpaceBillboards, true);
+}
+
+void GameConfig::removeEnhancedGraphics() {
+    for (const auto &[entry, value] : _enhancedEntries)
+        if (entry->string() == value)
+            entry->reset();
+    _enhancedEntries.clear();
+}
 
 GameConfig::CheatCommands::CheatCommands(GameConfig *config) : ConfigSection(config, "cheat_commands") {
     // All 40 slots are empty by default. Built-in commands are defined in

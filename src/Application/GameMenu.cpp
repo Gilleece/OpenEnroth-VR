@@ -245,6 +245,12 @@ void Menu::EventLoop() {
             case UIMSG_ToggleTint:
                 engine->config->graphics.Tinting.toggle();
                 continue;
+            case UIMSG_ToggleEnhancedGraphics:
+                engine->config->graphics.Enhanced.toggle();
+                engine->config->updateEnhancedGraphics();
+                render->applyPipelineSettings();
+                gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
+                continue;
 
             case UIMSG_ChangeMusicVolume: {
                 int new_level = engine->config->settings.MusicLevel.value();

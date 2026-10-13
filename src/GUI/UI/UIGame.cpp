@@ -401,6 +401,7 @@ GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
         CreateButton({0x13u, 0x12Eu}, {0xD6u, 0x12u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleColoredLights, 0);
         CreateButton({0x13u, 0x144u}, {0xD6u, 0x12u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleTint, 0);
     }
+    CreateButton({22, 250}, {211, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleEnhancedGraphics, 0);
 
     // update gamma preview
     gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
@@ -433,6 +434,11 @@ void GUIWindow_GameVideoOptions::Update() {
         render->DrawQuad2D(game_ui_menu_options_video_coloredlights, {20, 303});
     if (engine->config->graphics.Tinting.value())
         render->DrawQuad2D(game_ui_menu_options_video_tinting, {20, 325});
+
+    // The original toggles light up when on, this one has no artwork of its own.
+    bool enhanced = engine->config->graphics.Enhanced.value();
+    DrawTitleText(assets->pFontSmallnum.get(), 0, 0, enhanced ? colorTable.White : colorTable.CarbonGray,
+                  enhanced ? "Enhanced graphics: on" : "Enhanced graphics: off", 3, Recti(22, 252, 211, 14));
 }
 
 OptionsMenuSkin options_menu_skin;  // 507C60
