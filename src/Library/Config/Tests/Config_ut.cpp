@@ -92,6 +92,19 @@ UNIT_TEST_FIXTURE(ConfigTest, ExplicitDefaultIsSaved) {
     }
 }
 
+UNIT_TEST_FIXTURE(ConfigTest, UnsetValueIsSavedAsDefault) {
+    // A value that nobody set, like one a preset filled in, is written as its default, as the file's header says.
+    TestConfig config;
+    config.test.value.setValue(7);
+    config.test.value.setExplicit(false);
+    Blob saved;
+    BlobOutputStream out(&saved);
+    config.save(&out);
+    out.close();
+    EXPECT_NE(saved.str().find("\n; value = 42\n"), std::string_view::npos);
+    EXPECT_EQ(saved.str().find("value = 7"), std::string_view::npos);
+}
+
 UNIT_TEST_FIXTURE(ConfigTest, OlderFileDefaultIsNotExplicit) {
     // Files written before defaults were commented out have every entry, so one at its default wasn't chosen.
     TestConfig config;
