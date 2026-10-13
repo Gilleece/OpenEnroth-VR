@@ -13,9 +13,9 @@
 #include <openxr/openxr.h> // NOLINT: not a C system header.
 
 #include "Engine/Graphics/WorldFrameViews.h"
-#include "Engine/MapEnums.h"
 
 #include "Library/Geometry/Point.h"
+#include "Library/Geometry/Rect.h"
 #include "Library/Geometry/Size.h"
 #include "Library/Geometry/Vec.h"
 #include "Library/Platform/Filters/PlatformEventFilter.h"
@@ -35,7 +35,8 @@ struct CameraView;
  * levelled to its yaw. The `vr.recenter` key captures it again, and so does a recenter in the runtime.
  *
  * While the session runs the renderer draws the UI as a layer of its own, which goes to the headset as a quad locked to
- * the head, in front of the world.
+ * the head, in front of the world. With the spread HUD the game screen's viewport and its HUD go on quads of their own
+ * that hang in the head origin space, so that they turn with the party and the eyes move over them.
  *
  * While the session runs the game window also grabs the mouse, so that a click can't land outside it. The window still
  * reports the grab setting it had without VR, and goes back to it when the session stops.
@@ -66,7 +67,8 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
      * What a frame handed to the runtime carried.
      */
     struct FrameKind {
-        bool world = false; // The eyes' projection layer, drawn this frame or held from an earlier one.
+        bool world = false; // The eyes' projection layer, drawn this frame or the last one drawn while it fades out.
+        bool fade = false; // A black quad over the world fading out, after the world stopped being drawn.
         bool spreadHud = false; // The spread HUD instead of the single UI quad.
         uint32_t layers = 0;
 
@@ -115,6 +117,13 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
      */
     void setPositionTracking(bool tracked);
 
+    /**
+     * @param uiPosition                Position in the game's 640x480 layout.
+     * @return                          Whether the spread HUD shows it, on the viewport or a card. The cursor is kept
+     *                                  on those while the HUD is spread.
+     */
+    [[nodiscard]] bool hudShows(Pointi uiPosition) const;
+
  private:
     friend class PlatformIntrospection; // Give access to private bases.
 
@@ -141,10 +150,30 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
         std::vector<uint32_t> images; // OpenGL texture names.
     };
 
+    /**
+     * Quad of the spread HUD, as picking sees it.
+     */
+    struct HudQuad {
+        Recti rect; // Part of the game screen it shows.
+        XrPosef pose = {{0, 0, 0, 1}, {0, 0, 0}}; // Of the middle of `rect`.
+        float metresPerPixel = 0;
+    };
+
     virtual void swapBuffers() override;
     virtual void setGrabsMouse(bool grabsMouse) override;
     virtual bool grabsMouse() const override;
     virtual bool keyPressEvent(const PlatformKeyEvent *event) override;
+    virtual bool mouseMoveEvent(const PlatformMouseEvent *event) override;
+
+    /**
+     * @param from                      Cursor position on the spread HUD before the mouse moved, if there was one.
+     * @param to                        Where the mouse moved it.
+     * @return                          `to` if the spread HUD shows it. Otherwise the first point past it in the
+     *                                  direction the mouse moved that the HUD shows, so that the cursor crosses the
+     *                                  gaps between the cards. With none before the edge of the screen, the point
+     *                                  nearest to `to` on the part the cursor was on, or on any part.
+     */
+    Pointi hudCursor(std::optional<Pointi> from, Pointi to) const;
 
     /**
      * @param result                    Result of an OpenXR call.
@@ -213,11 +242,33 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     bool copyUi(std::vector<XrCompositionLayerQuad> *layers);
 
     /**
-     * Cuts the world viewport out of the UI quad, and adds a quad for each element of the spread HUD.
+     * Cuts the world viewport out of the UI quad and hangs it straight ahead, and adds a quad for each card of the
+     * spread HUD around it.
      *
-     * @param[in,out] layers            The UI quad, placed, followed by the HUD elements' quads.
+     * @param[in,out] layers            The UI quad, followed by the cards' quads.
+     * @return                          Whether the cards were copied into their swapchain. If not, nothing was added.
      */
-    void spreadHud(std::vector<XrCompositionLayerQuad> *layers);
+    bool spreadHud(std::vector<XrCompositionLayerQuad> *layers);
+
+    /**
+     * Copies the parts of the UI layer that the spread HUD's cards show into the HUD swapchain, recreating it if the
+     * UI changed size, and frames each of them with a border.
+     *
+     * @param screen                    Size of the game's layout.
+     * @param[out] rects                Rectangle of each card in the swapchain image, border included.
+     * @return                          Whether the cards were copied.
+     */
+    bool copyHudCards(Sizei screen, std::vector<XrRect2Di> *rects);
+
+    /**
+     * Fills the fade swapchain with black at an opacity, for the quad that darkens the last world frame after the
+     * world stops being drawn.
+     *
+     * @param level                     Opacity from 0 to 1.
+     * @param[out] layer                Quad in front of the eyes, past the edges of their view.
+     * @return                          Whether the swapchain was filled.
+     */
+    bool fadeWorld(float level, XrCompositionLayerQuad *layer);
 
     /**
      * Places the UI quad for this frame, fixed in front of the eyes or following the head lazily as `vr.ui_follow`
@@ -254,14 +305,6 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     bool drawEye(int index, const XrView &view, WorldFrame &frame);
 
     /**
-     * Puts the last eye images drawn back into the eye swapchains, with the poses they were drawn at, so that the
-     * world stays where it was around the head on frames that don't draw it.
-     *
-     * @return                          Whether both eyes were put back.
-     */
-    bool restoreHeldWorld();
-
-    /**
      * @param index                     Eye index, 0 is the left eye.
      * @param view                      Eye view the image was drawn from.
      * @param eye                       Swapchain the image is in.
@@ -294,6 +337,8 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     XrSpace _space = XR_NULL_HANDLE; // Head origin, null until it's captured.
     std::array<Swapchain, 2> _eyes;
     Swapchain _ui;
+    Swapchain _hud; // Cards of the spread HUD, one above the other.
+    Swapchain _fade; // Black at the opacity of the world's fade.
     std::optional<Vec2f> _uiPlacement; // Width and distance of the UI quad last logged.
     std::optional<UiAim> _uiAim; // Where the lazy UI quad goes, null until it's placed.
     UiAim _uiAimFrom; // Where the lazy UI quad was when it started easing to `_uiAim`.
@@ -303,9 +348,12 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     uint32_t _maxLayerCount = 0; // Composition layers the runtime takes in a frame.
     bool _hudSpread = false; // Whether the last frame showed the spread HUD.
     bool _hudWanted = false; // Whether the settings and the screen asked for it in that frame.
-    std::vector<XrPosef> _hudPoses; // Of the spread HUD's element quads in that frame, in VIEW space.
-    float _hudMetresPerPixel = 0; // Of those quads.
-    std::optional<std::array<float, 5>> _hudPlacement; // Settings the spread HUD was last logged with.
+    std::vector<HudQuad> _hudCards; // Of the spread HUD in that frame.
+    HudQuad _hudScreen; // Floating screen that the spread HUD's viewport was cut from in that frame.
+    bool _hudInRoom = false; // Whether those are in the head origin space, rather than VIEW space.
+    glm::vec3 _hudHead = glm::vec3(0); // Head position in the head origin space in that frame.
+    std::optional<Pointi> _hudCursor; // Last cursor position while the HUD is spread.
+    std::optional<std::array<float, 6>> _hudPlacement; // Settings the spread HUD was last logged with.
     int64_t _swapchainFormat = 0;
     bool _running = false;
     bool _grabsMouse = false; // Window's grab setting without VR, while the session runs.
@@ -319,9 +367,8 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     std::array<XrCompositionLayerProjectionView, 2> _projectionViews = {};
     std::array<XrView, 2> _views = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
     bool _viewsLocated = false; // This frame, by `locateViews`.
-    std::array<XrView, 2> _heldViews = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}}; // Of the last eye images drawn, kept by the renderer.
-    bool _heldValid = false; // Whether the renderer holds both eyes of one frame drawn from the current head origin.
-    MapId _heldMap = MAP_INVALID;
+    bool _worldReleased = false; // Whether the eye swapchains last released the world drawn at `_projectionViews` from the current head origin.
+    XrTime _worldTime = 0; // Display time of the last frame that drew the world.
     std::optional<CullingCamera> _lastCullingCamera; // Of the last frame drawn, for picking.
     Vec3f _lastPickOrigin; // Mid-eye position of the last frame drawn.
     glm::quat _lastPickOrientation = glm::quat(1, 0, 0, 0); // VIEW space orientation of the last frame drawn.

@@ -1704,17 +1704,32 @@ void OpenGLRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {
     glEnable(GL_SCISSOR_TEST);
 }
 
-void OpenGLRenderer::holdTexture(int slot, TextureRenderId colorTexture, Sizei size) {
-    OpenGLRenderTarget &held = _heldTextures[slot];
-    if (held.size() != size)
-        held.reset(size, RENDER_TARGET_FORMAT_RGBA8, false);
-    _copyTarget(*_externalTarget(colorTexture, size, _externalTargetsHaveDepth()), held);
+void OpenGLRenderer::copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) {
+    assert(_uiLayer);
+
+    Recti from = _uiPixels(rect);
+    OpenGLRenderTarget *target = _externalTarget(colorTexture, size, false);
+    glDisable(GL_SCISSOR_TEST);
+    target->bind();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
+    glBlitFramebuffer(from.x, from.y, from.x + from.w, from.y + from.h, position.x, position.y, position.x + from.w, position.y + from.h,
+                      GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    _bindUiTarget();
+    glEnable(GL_SCISSOR_TEST);
 }
 
-void OpenGLRenderer::restoreHeldTexture(int slot, TextureRenderId colorTexture) {
-    const OpenGLRenderTarget &held = _heldTextures[slot];
-    assert(held.size());
-    _copyTarget(held, *_externalTarget(colorTexture, held.size(), _externalTargetsHaveDepth()));
+void OpenGLRenderer::fillExternalRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Color color) {
+    GLfloat clearColor[4];
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
+    _externalTarget(colorTexture, size, false)->bind();
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(rect.x, rect.y, rect.w, rect.h);
+    glClearColor(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+    _bindUiTarget();
+    SetUIClipRect(clipRect);
 }
 
 void OpenGLRenderer::forgetExternalTextures(std::span<const TextureRenderId> colorTextures) {
@@ -2427,18 +2442,6 @@ OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture
     if (target->size() != size || target->hasDepth() != withDepth)
         target->resetExternal(static_cast<GLuint>(colorTexture.value()), size, withDepth);
     return target.get();
-}
-
-void OpenGLRenderer::_copyTarget(const OpenGLRenderTarget &source, OpenGLRenderTarget &target) {
-    assert(source.size() == target.size());
-    Sizei size = source.size();
-    glDisable(GL_SCISSOR_TEST);
-    target.bind();
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, source.framebuffer());
-    glBlitFramebuffer(0, 0, size.w, size.h, 0, 0, size.w, size.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-    _bindUiTarget();
-    glEnable(GL_SCISSOR_TEST);
 }
 
 void OpenGLRenderer::_bindUiTarget() {

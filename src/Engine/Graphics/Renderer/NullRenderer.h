@@ -40,8 +40,8 @@ class NullRenderer : public BaseRenderer {
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) override;
-    virtual void holdTexture(int slot, TextureRenderId colorTexture, Sizei size) override;
-    virtual void restoreHeldTexture(int slot, TextureRenderId colorTexture) override;
+    virtual void copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) override;
+    virtual void fillExternalRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Color color) override;
     virtual void forgetExternalTextures(std::span<const TextureRenderId> colorTextures) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,

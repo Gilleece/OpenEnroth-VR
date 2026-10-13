@@ -63,8 +63,8 @@ bool NullRenderer::uiLayer() {
 }
 
 void NullRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {}
-void NullRenderer::holdTexture(int slot, TextureRenderId colorTexture, Sizei size) {}
-void NullRenderer::restoreHeldTexture(int slot, TextureRenderId colorTexture) {}
+void NullRenderer::copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) {}
+void NullRenderer::fillExternalRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Color color) {}
 void NullRenderer::forgetExternalTextures(std::span<const TextureRenderId> colorTextures) {}
 
 bool NullRenderer::worldSpaceBillboards() {

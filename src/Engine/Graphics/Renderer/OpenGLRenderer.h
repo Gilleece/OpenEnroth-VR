@@ -69,8 +69,8 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) override;
-    virtual void holdTexture(int slot, TextureRenderId colorTexture, Sizei size) override;
-    virtual void restoreHeldTexture(int slot, TextureRenderId colorTexture) override;
+    virtual void copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) override;
+    virtual void fillExternalRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Color color) override;
     virtual void forgetExternalTextures(std::span<const TextureRenderId> colorTextures) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
@@ -222,10 +222,6 @@ class OpenGLRenderer : public BaseRenderer {
      */
     [[nodiscard]] bool _externalTargetsHaveDepth() const;
 
-    /**
-     * Copies the colour of one render target into another of the same size, leaving the UI target bound.
-     */
-    void _copyTarget(const OpenGLRenderTarget &source, OpenGLRenderTarget &target);
     void _bindUiTarget();
 
     /**
@@ -572,7 +568,6 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLRenderTarget *_externalOutput = nullptr; // Wraps the colour texture given to `setExternalWorldTarget`.
     OpenGLRenderTarget _externalLinearTarget; // What the world is drawn into for an external target with the linear pipeline.
     OpenGLRenderTarget _mirrorTarget;
-    std::array<OpenGLRenderTarget, 2> _heldTextures; // Copies kept by `holdTexture`.
     bool _mirrorPending = false;
     bool _mirrorPresentPending = false; // The UI layer leaves the mirror for `flushAndScale`.
     bool _uiLayer = false;

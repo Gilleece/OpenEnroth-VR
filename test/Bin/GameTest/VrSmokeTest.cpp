@@ -20,6 +20,8 @@
 
 #include "GUI/GUIWindow.h"
 
+#include "Io/Mouse.h"
+
 #include "Library/Environment/Interface/Environment.h"
 #include "Library/Logger/Logger.h"
 #include "Library/Logger/LogSink.h"
@@ -74,15 +76,26 @@ static std::map<uint16_t, Vec3f> uprightSpriteAxes() {
     return result;
 }
 
+static int64_t countFadeFrames(const VrSystem::FrameStats &stats) {
+    // Frames the runtime wanted drawn with the last world frame fading to black.
+    int64_t result = 0;
+    for (const auto &[kind, count] : stats.kinds)
+        if (kind.fade)
+            result += count;
+    return result;
+}
+
 static void checkFrames(VrSystem *vr, std::string_view phase) {
-    // Each frame carries the eyes' projection layer if it has the world, and the UI as one quad or the spread HUD's six,
-    // which only spreads around the world.
+    // Each frame carries the eyes' projection layer if it has the world, a quad over it while it fades out, and the UI
+    // as one quad or the spread HUD's six, which only spreads around the world.
     if (!vr)
         return;
     for (const auto &[kind, count] : vr->frameStats().kinds) {
-        uint32_t expected = (kind.world ? 1 : 0) + (kind.spreadHud ? 6 : 1);
-        EXPECT_EQ(kind.layers, expected) << phase << ": " << count << " frames, world " << kind.world << ", spread HUD " << kind.spreadHud;
+        uint32_t expected = (kind.world ? 1 : 0) + (kind.fade ? 1 : 0) + (kind.spreadHud ? 6 : 1);
+        EXPECT_EQ(kind.layers, expected) << phase << ": " << count << " frames, world " << kind.world << ", fade " << kind.fade
+                                         << ", spread HUD " << kind.spreadHud;
         EXPECT_TRUE(kind.world || !kind.spreadHud) << phase << ": " << count << " frames spread the HUD without the world";
+        EXPECT_TRUE(kind.world || !kind.fade) << phase << ": " << count << " frames faded out a world they didn't carry";
     }
 }
 
@@ -220,8 +233,13 @@ GAME_TEST(VrSmoke, Session) {
     game.pressAndReleaseKey(PlatformKey::KEY_SPACE);
     game.tick(100);
     EXPECT_EQ(current_screen_type, SCREEN_HOUSE);
+    if (vr)
+        EXPECT_GT(countFadeFrames(vr->frameStats()), 0); // The world fades to black behind the house.
+    phase("entering a house");
     game.pressGuiButton("HouseDialogue_Option0");
     game.tick(30);
+    if (vr)
+        EXPECT_EQ(countFrames(vr->frameStats(), true, false), 0); // And stays black.
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(10);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
@@ -290,6 +308,20 @@ GAME_TEST(VrSmoke, Session) {
         EXPECT_EQ(engine->config->vr.HudLayout.value(), VR_HUD_LAYOUT_SPREAD);
         EXPECT_GT(countFrames(vr->frameStats(), true, true), 0);
     }
+
+    // The cursor stays on the parts of the screen that the spread HUD shows, crossing the gaps between them.
+    game.moveMouse(300, 100);
+    game.tick(2);
+    game.moveMouse(467, 100); // On the frame between the viewport and the minimap.
+    game.tick(2);
+    if (vr)
+        EXPECT_EQ(mouse->position(), Pointi(469, 100));
+    game.moveMouse(300, 340);
+    game.tick(2);
+    game.moveMouse(300, 355); // On the frame between the viewport and the status bar.
+    game.tick(2);
+    if (vr)
+        EXPECT_EQ(mouse->position(), Pointi(300, 359));
     phase("options and the spread HUD");
 
     // Quitting to the main menu.
