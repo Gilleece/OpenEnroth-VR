@@ -21,6 +21,7 @@ permissions:
 
 env:
   TAG_NAME: nightly
+  RELEASE_NOTES: Nightly build. The Windows x86_64 build has VR built in, start it with --vr to play in a headset.
 
 defaults:
   run:
@@ -49,9 +50,9 @@ jobs:
       - name: 'Publish nightly release'
         run: |
           if gh release view "$TAG_NAME" > /dev/null 2>&1; then
-            gh release edit "$TAG_NAME" --draft=false --prerelease
+            gh release edit "$TAG_NAME" --draft=false --prerelease --notes "$RELEASE_NOTES"
           else
-            gh release create "$TAG_NAME" --prerelease --title "$TAG_NAME" --notes 'Nightly build.'
+            gh release create "$TAG_NAME" --prerelease --title "$TAG_NAME" --notes "$RELEASE_NOTES"
           fi
 
       - name: 'Output release tag'
