@@ -113,14 +113,14 @@ static void showSpriteSide(WorldBillboard *billboard, const Sprite *sprite, bool
     billboard->facing = {{{-halfWidth, height}, {-halfWidth, 0}, {halfWidth, 0}, {halfWidth, height}}};
 }
 
+static constexpr float SPRITE_CROSSFADE_BAND = 10.0f / 45.0f; // Part of a side's 45 degrees, on each side of a boundary, where it blends with the next.
+
 /**
  * @param yaw                           Facing of the object.
  * @param pos                           Position of the object.
  * @param eye                           Position it's seen from.
  * @return                              Index of the side of the object's sprite frame that faces `eye`.
  */
-static constexpr float SPRITE_CROSSFADE_BAND = 10.0f / 45.0f; // Part of a side's 45 degrees, on each side of a boundary, where it blends with the next.
-
 static int spriteOctant(int yaw, const Vec3f &pos, const Vec3f &eye) {
     int angle = TrigLUT.atan2(pos.x - eye.x, pos.y - eye.y);
     return ((TrigLUT.uIntegerPi + (TrigLUT.uIntegerPi >> 3) + yaw - angle) >> 8) & 7;
