@@ -1,5 +1,7 @@
 """Small image operations on Pillow images that the pipeline steps share."""
 
+import math
+
 from PIL import Image, ImageChops, ImageFilter, ImageMath, ImageOps
 
 OPAQUE = 255
@@ -36,6 +38,63 @@ def bleed_transparent(image: Image.Image) -> Image.Image:
         channels.append(average.convert("L"))
     bled = Image.merge("RGBA", (*channels, alpha))
     return Image.composite(rgba, bled, alpha.point(lambda value: OPAQUE if value != TRANSPARENT else 0))
+
+
+def fill_transparent(image: Image.Image) -> Image.Image:
+    """Gives every transparent pixel a color, ring by ring from the opaque area: each takes the average color of its
+    neighbours that already have one.
+
+    `bleed_transparent` only colors the first ring, the rest stays black. An upscaler reads far past the first ring, so
+    for it the colors must carry on all the way.
+    """
+    rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    known = alpha.point(lambda value: 1 if value != TRANSPARENT else 0).convert("I")
+    channels = [channel.convert("I") for channel in rgba.split()[:3]]
+    while known.getextrema()[0] == 0:
+        count = _neighbour_sum(known)
+        reached = ImageMath.lambda_eval(lambda a: a["min"](a["c"], 1) * (1 - a["k"]), c=count, k=known)
+        if reached.getextrema()[1] == 0:
+            break  # Nothing opaque to fill from.
+        for i, channel in enumerate(channels):
+            total = _neighbour_sum(ImageMath.lambda_eval(lambda a: a["c"] * a["k"], c=channel, k=known))
+            average = ImageMath.lambda_eval(lambda a: a["t"] / a["max"](a["n"], 1), t=total, n=count)
+            channels[i] = ImageMath.lambda_eval(
+                lambda a: a["c"] * (1 - a["r"]) + a["v"] * a["r"], c=channel, r=reached, v=average
+            )
+        known = ImageMath.lambda_eval(lambda a: a["k"] + a["r"], k=known, r=reached)
+    return Image.merge("RGBA", (*(channel.convert("L") for channel in channels), alpha))
+
+
+def blend_wrap_seam(image: Image.Image, width: int) -> Image.Image:
+    """Eases the jump between the opposite edges of a tile that doesn't quite tile.
+
+    The `width` outermost columns and rows on each side move towards the average of the two edges, the outermost one
+    the most, so that the tile meets its neighbours without a hard line.
+    """
+    result = image.copy()
+    for transpose in (False, True):
+        work = result.transpose(Image.Transpose.TRANSPOSE) if transpose else result
+        columns = work.width
+        first, last = work.crop((0, 0, 1, work.height)), work.crop((columns - 1, 0, columns, work.height))
+        middle = Image.blend(first, last, 0.5)
+        for i in range(min(width, columns // 2)):
+            weight = (width - i) / (width + 1)
+            for x in (i, columns - 1 - i):
+                column = work.crop((x, 0, x + 1, work.height))
+                work.paste(Image.blend(column, middle, weight), (x, 0))
+        result = work.transpose(Image.Transpose.TRANSPOSE) if transpose else work
+    return result
+
+
+def soften(image: Image.Image, strength: float, radius: float, tileable: bool) -> Image.Image:
+    """Blends `image` towards a blurred copy of itself by `strength`, from 0 for unchanged to 1 for fully blurred. The
+    alpha is kept. A tileable image is blurred across its edges as if it were tiled."""
+    rgb, alpha = split_alpha(image)
+    border = math.ceil(radius * 3) if tileable else 0
+    padded = wrap_pad(rgb, border) if tileable else rgb
+    blurred = crop_border(padded.filter(ImageFilter.GaussianBlur(radius)), border)
+    return merge_alpha(Image.blend(rgb, blurred, strength), alpha)
 
 
 def _neighbour_sum(image: Image.Image) -> Image.Image:

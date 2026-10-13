@@ -96,3 +96,50 @@ def test_clamp_pad_repeats_the_edge_pixels():
 def test_clamp_pad_with_no_border_is_a_copy():
     image = make_image(3, 2)
     assert imageops.clamp_pad(image, 0, 0).tobytes() == image.tobytes()
+
+
+def test_fill_transparent_reaches_past_the_first_ring():
+    # Shore tiles were black beyond one pixel from the opaque area, and the upscaler pulled that black into the edge.
+    image = Image.new("RGBA", (5, 1), (0, 0, 0, 0))
+    image.putpixel((0, 0), (200, 100, 50, 255))
+    filled = imageops.fill_transparent(image)
+    assert [filled.getpixel((x, 0)) for x in range(5)] == [(200, 100, 50, 255)] + [(200, 100, 50, 0)] * 4
+
+
+def test_fill_transparent_averages_the_neighbours_that_have_a_color():
+    image = Image.new("RGBA", (3, 1), (0, 0, 0, 0))
+    image.putpixel((0, 0), (100, 0, 0, 255))
+    image.putpixel((2, 0), (200, 0, 0, 255))
+    assert imageops.fill_transparent(image).getpixel((1, 0)) == (150, 0, 0, 0)
+
+
+def test_fill_transparent_leaves_a_fully_transparent_image_black():
+    image = Image.new("RGBA", (2, 2), (9, 9, 9, 0))
+    assert imageops.fill_transparent(image).getpixel((1, 1)) == (9, 9, 9, 0)
+
+
+def test_blend_wrap_seam_eases_both_axes():
+    image = Image.new("RGB", (4, 4), (0, 0, 0))
+    for y in range(4):
+        image.putpixel((3, y), (120, 120, 120))
+    image.putpixel((1, 3), (120, 120, 120))
+    blended = imageops.blend_wrap_seam(image, 1)
+    assert (blended.getpixel((0, 1)), blended.getpixel((3, 1))) == ((30, 30, 30), (90, 90, 90))
+    assert (blended.getpixel((1, 0)), blended.getpixel((1, 3))) == ((30, 30, 30), (90, 90, 90))
+    assert blended.getpixel((1, 1)) == (0, 0, 0)
+
+
+def test_soften_of_a_flat_image_changes_nothing_and_keeps_alpha():
+    image = Image.new("RGBA", (6, 6), (80, 90, 100, 255))
+    image.putpixel((2, 2), (80, 90, 100, 0))
+    softened = imageops.soften(image, 0.5, 1.0, tileable=True)
+    assert softened.getpixel((0, 0)) == (80, 90, 100, 255)
+    assert softened.getpixel((2, 2))[3] == 0
+
+
+def test_soften_of_a_tile_blurs_across_its_edges():
+    image = Image.new("RGB", (8, 8), (0, 0, 0))
+    for y in range(8):
+        image.putpixel((7, y), (255, 255, 255))
+    softened = imageops.soften(image, 1.0, 1.0, tileable=True)
+    assert softened.getpixel((0, 4))[0] > 0

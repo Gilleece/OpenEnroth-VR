@@ -15,3 +15,10 @@ def test_command_line_overrides_the_rules():
 
 def test_sprites_default_to_realesrgan_at_2x():
     assert choose(load_config(None), "sprites", "m246a0/247", 60) == Choice("realesrgan", 2)
+
+
+def test_rule_options_reach_the_choice():
+    config = load_config(None)
+    assert choose(config, "bitmaps", "wtrtyl", 128).seam_blend == 2
+    assert choose(config, "bitmaps", "hdwtr003", 64).soften == 0.5
+    assert choose(config, "bitmaps", "dirttyl", 128) == Choice("realesrgan", 4)

@@ -34,6 +34,9 @@ class UpscaledImage:
     backend: str
     scale: int
     brightness: list[float] | None = None  # Per channel factors the brightness correction applied, if it ran.
+    seam_blend: int = 0
+    soften: float = 0.0
+    wrap_border: int | None = None  # Source pixels of wrapped padding the backend used, None if it used none.
 
 
 def images_dir(work: Path, section: str) -> Path:
@@ -42,6 +45,11 @@ def images_dir(work: Path, section: str) -> Path:
 
 def upscaled_dir(work: Path, section: str) -> Path:
     return work / "upscaled" / section
+
+
+def prepared_dir(work: Path, section: str) -> Path:
+    """Extracted images changed before upscaling, where a rule asks for it."""
+    return work / "prepared" / section
 
 
 def write_json(path: Path, value) -> None:

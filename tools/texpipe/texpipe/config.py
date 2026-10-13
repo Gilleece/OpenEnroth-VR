@@ -13,6 +13,10 @@ SCALES = (2, 4)
 class Choice:
     backend: str
     scale: int
+    seam_blend: int = (
+        0  # Columns and rows on each side to ease across the wrap before upscaling, for tiles with a seam.
+    )
+    soften: float = 0.0  # How far to blend the upscaled image towards a blurred copy, for overly crisp results.
 
 
 def load_config(path: Path | None) -> dict:
@@ -27,7 +31,9 @@ def choose(
     rule = next(
         (rule for rule in config.get("rule", []) if _rule_matches(rule, section, name, width)), config["default"]
     )
-    choice = Choice(backend or rule["backend"], scale or rule["scale"])
+    choice = Choice(
+        backend or rule["backend"], scale or rule["scale"], rule.get("seam_blend", 0), rule.get("soften", 0.0)
+    )
     if choice.scale not in SCALES:
         raise ValueError(f"scale must be one of {SCALES}, got {choice.scale}")
     return choice
