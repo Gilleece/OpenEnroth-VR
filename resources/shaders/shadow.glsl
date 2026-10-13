@@ -11,18 +11,29 @@ uniform int sunShadowFilter; // 0 for 3x3 taps, 1 for a single tap.
 
 const float SUN_SHADOW_BLEND = 0.1; // Part of each cascade, at its border, that blends into the next one.
 
-// Bilinear depth comparisons, 3x3 of them or one. textureGrad keeps the lookup valid in non-uniform control flow.
+// Bilinear depth comparisons in a 2x2 texel block of the 4x4 that 3x3 bilinear taps cover, weighted as those taps
+// would weigh them. The components of a gather are the texels at (0, 1), (1, 1), (1, 0) and (0, 0).
+vec4 SunShadowGatherWeights(vec2 weightsX, vec2 weightsY) {
+    return vec4(weightsX.x * weightsY.y, weightsX.y * weightsY.y, weightsX.y * weightsY.x, weightsX.x * weightsY.x);
+}
+
+// Bilinear depth comparisons, 3x3 of them or one. textureGrad and textureGather keep the lookup valid in non-uniform
+// control flow.
 float SunShadowSample(int cascade, vec3 pos, vec3 normal) {
     vec3 offsetPos = pos + normal * sunShadowTexels[cascade] * 1.5;
     vec4 coord = sunShadowMatrices[cascade] * vec4(offsetPos, 1.0);
     if (sunShadowFilter != 0)
         return textureGrad(sunShadowMap, vec4(coord.xy, float(cascade), coord.z), vec2(0.0), vec2(0.0));
 
-    vec2 texel = vec2(1.0) / vec2(textureSize(sunShadowMap, 0).xy);
-    float lit = 0.0;
-    for (int y = -1; y <= 1; y++)
-        for (int x = -1; x <= 1; x++)
-            lit += textureGrad(sunShadowMap, vec4(coord.xy + vec2(x, y) * texel, float(cascade), coord.z), vec2(0.0), vec2(0.0));
+    vec2 size = vec2(textureSize(sunShadowMap, 0).xy);
+    vec2 texel = vec2(1.0) / size;
+    vec2 f = fract(coord.xy * size - 0.5); // Where the taps sit between texel centres.
+    vec2 lowX = vec2(1.0 - f.x, 1.0), highX = vec2(1.0, f.x);
+    vec2 lowY = vec2(1.0 - f.y, 1.0), highY = vec2(1.0, f.y);
+    float lit = dot(textureGather(sunShadowMap, vec3(coord.xy + vec2(-1.0, -1.0) * texel, float(cascade)), coord.z), SunShadowGatherWeights(lowX, lowY)) +
+                dot(textureGather(sunShadowMap, vec3(coord.xy + vec2(1.0, -1.0) * texel, float(cascade)), coord.z), SunShadowGatherWeights(highX, lowY)) +
+                dot(textureGather(sunShadowMap, vec3(coord.xy + vec2(-1.0, 1.0) * texel, float(cascade)), coord.z), SunShadowGatherWeights(lowX, highY)) +
+                dot(textureGather(sunShadowMap, vec3(coord.xy + vec2(1.0, 1.0) * texel, float(cascade)), coord.z), SunShadowGatherWeights(highX, highY));
     return lit / 9.0;
 }
 
