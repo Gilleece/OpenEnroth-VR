@@ -27,7 +27,7 @@ GUIWindow_GameOver::GUIWindow_GameOver(UIMessageType releaseEvent) : GUIWindow(W
 void GUIWindow_GameOver::Update() {
     // draw winners certificate background
     assert(_winnerCert);
-    render->DrawQuad2D(_winnerCert.get(), {0, 0});
+    render->DrawQuad2D(_winnerCert.get(), Recti(Pointi(0, 0), _winnerCert->size()), Recti(Pointi(0, 0), render->GetRenderDimensions())); // A screenshot of the UI target, which can have more pixels than the UI has coordinates.
 
     // draw pop up box
     if (_showPopUp) {
