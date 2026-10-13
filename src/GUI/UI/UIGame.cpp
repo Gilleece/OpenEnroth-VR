@@ -590,11 +590,13 @@ GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
         CreateButton({0x13u, 0x12Eu}, {0xD6u, 0x12u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleColoredLights, 0);
         CreateButton({0x13u, 0x144u}, {0xD6u, 0x12u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleTint, 0);
     }
-    CreateButton({22, 250}, {211, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleEnhancedGraphics, 0);
+    CreateButton({22, 245}, {211, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleEnhancedGraphics, 0);
+    CreateButton({22, 256}, {105, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleSpriteDepth, 0);
+    CreateButton({128, 256}, {105, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleSpriteCrossfade, 0);
 
     _texturePacks = findTexturePacks(engine->config->graphics.TexturePack.value());
     if (_texturePacks.size() > 1)
-        CreateButton({22, 238}, {211, 12}, BUTTON_TYPE_NORMAL, 0, UIMSG_CycleTexturePack, 0);
+        CreateButton({22, 235}, {211, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_CycleTexturePack, 0);
 
     if (render->uiLayer()) {
         for (int line = 0; line < VR_LINE_COUNT; line++) {
@@ -638,10 +640,16 @@ void GUIWindow_GameVideoOptions::Update() {
     // The original toggles light up when on, this one has no artwork of its own.
     bool enhanced = engine->config->graphics.Enhanced.value();
     DrawTitleText(assets->pFontSmallnum.get(), 0, 0, enhanced ? colorTable.White : colorTable.CarbonGray,
-                  enhanced ? "Enhanced graphics: on" : "Enhanced graphics: off", 3, Recti(22, 252, 211, 14));
+                  enhanced ? "Enhanced graphics: on" : "Enhanced graphics: off", 3, Recti(22, 246, 211, 11));
+    bool spriteDepth = engine->config->graphics.SpriteDepth.value();
+    DrawTitleText(assets->pFontSmallnum.get(), 0, 0, spriteDepth ? colorTable.White : colorTable.CarbonGray,
+                  spriteDepth ? "Depth: on" : "Depth: off", 3, Recti(22, 256, 105, 11));
+    bool crossfade = engine->config->graphics.SpriteCrossfade.value();
+    DrawTitleText(assets->pFontSmallnum.get(), 0, 0, crossfade ? colorTable.White : colorTable.CarbonGray,
+                  crossfade ? "Crossfade: on" : "Crossfade: off", 3, Recti(128, 256, 105, 11));
     if (_texturePacks.size() > 1)
         DrawTitleText(assets->pFontSmallnum.get(), 0, 0, colorTable.White, texturePackText(engine->config->graphics.TexturePack.value()), 3,
-                      Recti(22, 240, 211, 10));
+                      Recti(22, 236, 211, 10));
 
     if (render->uiLayer()) {
         render->FillRect(VR_PANEL_RECT, colorTable.Black);

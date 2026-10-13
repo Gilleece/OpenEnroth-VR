@@ -251,6 +251,17 @@ void Menu::EventLoop() {
                 render->applyPipelineSettings();
                 gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
                 continue;
+            case UIMSG_ToggleSpriteDepth: {
+                bool on = !engine->config->graphics.SpriteDepth.value();
+                engine->config->graphics.SpriteDepth.setValue(on);
+                engine->config->graphics.SpriteLighting.setValue(on);
+                render->applyPipelineSettings();
+                continue;
+            }
+            case UIMSG_ToggleSpriteCrossfade:
+                engine->config->graphics.SpriteCrossfade.toggle();
+                render->applyPipelineSettings();
+                continue;
             case UIMSG_CycleTexturePack:
                 static_cast<GUIWindow_GameVideoOptions *>(pGUIWindow_CurrentMenu.get())->cycleTexturePack();
                 continue;
