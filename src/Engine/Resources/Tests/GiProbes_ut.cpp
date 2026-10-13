@@ -1,4 +1,6 @@
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <string>
 #include <utility>
 
@@ -50,6 +52,13 @@ UNIT_TEST(GiProbes, Malformed) {
     EXPECT_THROW((void) readGiProbes(bad(36, 0)), Exception); // Zero probes along x.
     EXPECT_THROW((void) readGiProbes(Blob::fromString(good.substr(0, good.size() - 1))), Exception);
     EXPECT_THROW((void) readGiProbes(Blob::fromString(good + "x")), Exception);
+
+    // A header that claims more probes than the file holds is refused before the probes are allocated.
+    std::string huge = good;
+    uint32_t dim = 1024;
+    for (size_t offset : {36, 40, 44})
+        std::memcpy(huge.data() + offset, &dim, sizeof(dim));
+    EXPECT_THROW((void) readGiProbes(Blob::fromString(std::move(huge))), Exception);
 }
 
 UNIT_TEST(GiProbes, Halves) {
