@@ -528,6 +528,12 @@ class GameConfig : public Config {
                                " world_target_height are not set. Takes effect on restart."};
         Float Exposure = {this, "exposure", 1.0f, &ValidateExposure,
                           "Brightness multiplier for the 3D world before tonemapping. Only applies with linear_pipeline."};
+        Bool FilmicTonemap = {this, "filmic_tonemap", false,
+                              "Tonemap the 3D world with a filmic curve, with deeper shadows and softer highlights than the"
+                              " default curve. Only applies with linear_pipeline."};
+        Bool EyeAdaptation = {this, "eye_adaptation", false,
+                              "Slowly adjust the exposure to how bright the view is, like eyes do when stepping from sunlight into a"
+                              " dungeon. Only applies with linear_pipeline."};
         Bool Bloom = {this, "bloom", false, "Let light brighter than bloom_threshold glow into its surroundings. Only applies with linear_pipeline."};
         Float BloomThreshold = {this, "bloom_threshold", 1.0f, &ValidateBloomThreshold,
                                 "Linear brightness above which light blooms. At 1 only light stacked past white and additive effects bloom."};

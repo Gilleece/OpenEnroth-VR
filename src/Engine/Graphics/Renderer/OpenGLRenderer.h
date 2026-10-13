@@ -278,6 +278,14 @@ class OpenGLRenderer : public BaseRenderer {
      */
     GLuint _drawBloom(const OpenGLRenderTarget &source);
 
+    /**
+     * Measures the average luminance of a linear colour target and moves `_adaptationTargets` towards the exposure
+     * scale it calls for, once a frame, so that both eyes of a headset share the head's adaptation.
+     *
+     * @param source                    Target with linear colour.
+     */
+    void _updateEyeAdaptation(const OpenGLRenderTarget &source);
+
     void _ensureFullscreenTriangle();
 
     /**
@@ -432,6 +440,8 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader aoshader;
     OpenGLShader depthhalfshader;
     OpenGLShader aoblurshader;
+    OpenGLShader luminanceshader;
+    OpenGLShader adaptshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -533,6 +543,12 @@ class OpenGLRenderer : public BaseRenderer {
     int _torchShadowDrawnVersion = 0; // `IndoorLocation::geometryVersion` the cubes were drawn at.
 
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
+    OpenGLRenderTarget _luminanceTarget; // Log luminance of the world, with mipmaps that average it.
+    std::array<OpenGLRenderTarget, 2> _adaptationTargets; // 1x1 exposure scales, the current one and the previous.
+    int _adaptationIndex = 0; // Which of `_adaptationTargets` is current.
+    uint64_t _frameNumber = 0; // Frames swapped so far.
+    uint64_t _adaptedFrame = UINT64_MAX; // Frame the adaptation was last updated in.
+    int64_t _adaptedTime = 0; // Platform tick count of that update, in milliseconds.
     OpenGLRenderTarget _antialiasingTarget; // Tonemapped world at the size it's composited at, the input to FXAA.
     std::vector<SkyVertex> _skyVertices;
 
@@ -602,6 +618,8 @@ class OpenGLRenderer : public BaseRenderer {
     bool _spriteCrossfade = false; // Same for the billboard shader.
     bool _spriteDepth = false; // Same.
     bool _spriteLighting = false; // Same.
+    bool _filmicTonemap = false; // Same for the composite shader.
+    bool _eyeAdaptation = false; // Same.
     SpriteLightUniforms _spriteLights; // Lights of the level pass in the current view.
     bool _billboardDepthPrepass = false; // `DrawBillboards` only writes the depth of the sprites' opaque parts.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.

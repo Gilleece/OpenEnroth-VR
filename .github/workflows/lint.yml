@@ -178,6 +178,16 @@ jobs:
               echo "Checking $shader with SHADOW_SPRITE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" SHADOW_SPRITE
             done
+            for shader in resources/shaders/glcomposite.{vert,frag}; do
+              for defines in "FILMIC_TONEMAP" "EYE_ADAPTATION" "FILMIC_TONEMAP EYE_ADAPTATION"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
+            for shader in resources/shaders/glluminance.{vert,frag}; do
+              echo "Checking $shader with EYE_ADAPT against GLSL $glsl_version..."
+              ./scripts/check_shader.sh "$shader" "$glsl_version" EYE_ADAPT
+            done
             for shader in resources/shaders/{glterrain,gloutbuild,glbspshader,glbillbshader,gldecalshader,glforcepershader,glskyshader}.{vert,frag}; do
               echo "Checking $shader with LINEAR_PIPELINE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" LINEAR_PIPELINE
