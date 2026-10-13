@@ -102,7 +102,9 @@ python -m texpipe maps --work ../../mm7_hd/work
 `shape/sprites/`, and a `README.txt`.
 `--colors raw`, the default, says the images have the LOD palette colors, and the engine applies its saturation and
 lightness settings to the pack's bitmaps and sprites. Use `--colors final` only if you have graded the
-upscaled images yourself.
+upscaled images yourself. Every PNG pack writes is saved again with Pillow's `optimize` on all cores, which is
+lossless and makes the pack a few percent smaller. A PNG is only replaced when the result decodes to the same pixels
+and is smaller. `optimize_png = false` in the config's `[pack]` section turns it off.
 
 ```
 python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x
