@@ -26,6 +26,8 @@ void GameConfig::updateEnhancedGraphics() {
         _enhancedEntries.emplace_back(&entry, entry.string());
     };
     apply(graphics.LinearPipeline, true);
+    apply(graphics.FilmicTonemap, true);
+    apply(graphics.EyeAdaptation, true);
     apply(graphics.Bloom, true);
     apply(graphics.Antialiasing, ANTIALIASING_FXAA);
     apply(graphics.SunShadows, true);
