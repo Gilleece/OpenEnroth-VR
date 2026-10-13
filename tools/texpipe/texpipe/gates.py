@@ -23,13 +23,13 @@ class Thresholds:
 
 @dataclass(frozen=True)
 class Scores:
-    iou: float
+    iou: float | None  # None where the silhouette is not checked, for opaque images.
     color_delta: float  # Largest per-channel difference of the means over the sprite, 0..255.
     distance: float  # Mean luminance difference after a blur, over the sprite, 0..1.
 
     def passes(self, thresholds: Thresholds) -> bool:
         return (
-            self.iou >= thresholds.min_iou
+            (self.iou is None or self.iou >= thresholds.min_iou)
             and self.color_delta <= thresholds.max_color_delta
             and self.distance <= thresholds.max_distance
         )
@@ -102,6 +102,7 @@ def score(
     reference: Image.Image,
     generated_on_background: Image.Image,
     background: tuple[int, int, int] = BACKGROUND,
+    check_silhouette: bool = True,
 ) -> Scores:
     """Scores a generated sprite against the image it was made from.
 
@@ -111,7 +112,7 @@ def score(
     """
     mask = alpha_mask(reference)
     return Scores(
-        iou=round(iou(foreground_mask(generated_on_background, background), mask), 4),
+        iou=round(iou(foreground_mask(generated_on_background, background), mask), 4) if check_silhouette else None,
         color_delta=round(color_delta(generated, reference, mask), 2),
         distance=round(distance(generated, reference, mask), 4),
     )

@@ -46,6 +46,7 @@ class RegenOptions:
     exclude: tuple[str, ...] = ()
     max_cost: float | None = None
     workers: int = 4  # Calls in flight at once, each one waits seconds for the model.
+    cost_per_image: float = 0.034  # For the dry run's projection, as measured on the pilot.
 
     @staticmethod
     def from_config(config: dict, model: str | None = None, max_cost: float | None = None) -> "RegenOptions":
@@ -61,6 +62,7 @@ class RegenOptions:
             exclude=tuple(section.get("exclude", [])),
             max_cost=max_cost if max_cost is not None else section.get("max_cost"),
             workers=section.get("workers", 4),
+            cost_per_image=section.get("cost_per_image", 0.034),
         )
 
 
@@ -187,9 +189,61 @@ def rescore(work: Path, palettes_json: Path, options: RegenOptions, only: list[s
     return summary
 
 
-def load_summary(work: Path, model: str) -> dict:
-    path = regen_dir(work, model) / "summary.json"
+def summary_path(work: Path, model: str, section: str = "sprites") -> Path:
+    return regen_dir(work, model) / ("summary.json" if section == "sprites" else f"summary-{section}.json")
+
+
+def load_summary(work: Path, model: str, section: str = "sprites") -> dict:
+    path = summary_path(work, model, section)
     return read_json(path) if path.is_file() else {"cost": 0.0, "generated": 0, "fallbacks": 0, "errors": {}}
+
+
+def dry_run(pending: list, options: RegenOptions) -> dict:
+    """What a run would send and what it would cost, without calling anything."""
+    names = [item[0] for item in pending]
+    return {
+        "would_send": len(names),
+        "projected_cost": round(len(names) * options.cost_per_image, 2),
+        "cost_per_image": options.cost_per_image,
+        "first": names[:20],
+    }
+
+
+def run_batches(work: Path, options: RegenOptions, pending: list, generate, section: str = "sprites") -> dict:
+    """Runs `generate` over `pending` items, `options.workers` at a time, and keeps the section's summary.
+
+    Stops before the total would go over `max_cost`, judging the next batch by the average cost so far, and at the
+    first error that every further call would repeat. Other errors are recorded per item, which is retried next run.
+    """
+    summary = load_summary(work, options.model, section)
+    summary.pop("stopped", None)
+    with ThreadPoolExecutor(options.workers) as pool:
+        for start in range(0, len(pending), options.workers):
+            batch = pending[start : start + options.workers]
+            average = summary["cost"] / summary["generated"] if summary["generated"] else 0.0
+            if options.max_cost is not None and summary["cost"] + average * len(batch) > options.max_cost:
+                summary["stopped"] = f"budget of {options.max_cost} reached"
+                break
+            futures = {item[0]: pool.submit(generate, item) for item in batch}
+            for name, future in futures.items():
+                try:
+                    record = future.result()
+                except HTTPError as error:
+                    summary["errors"][name] = str(error)[:300]
+                    if error.code in FATAL_HTTP_CODES:
+                        summary["stopped"] = f"HTTP {error.code}, the account cannot pay for more calls"
+                    continue
+                except (ImageEditError, OSError, ValueError, KeyError) as error:
+                    summary["errors"][name] = str(error)[:300]
+                    continue
+                summary["errors"].pop(name, None)
+                summary["cost"] = round(summary["cost"] + record["cost"], 6)
+                summary["generated"] += 1
+                summary["fallbacks"] += 0 if record["passed"] else 1
+            write_json(summary_path(work, options.model, section), summary)
+            if "stopped" in summary:
+                break
+    return summary
 
 
 def pending_sprites(work: Path, palettes_json: Path, options: RegenOptions, only: list[str] | None) -> list:
@@ -209,50 +263,21 @@ def run_regen(
     options: RegenOptions,
     only: list[str] | None,
     client: ImageEditClient | None = None,
+    dry: bool = False,
 ) -> dict:
-    """Runs the pass over every pending sprite, `options.workers` calls at a time.
-
-    Stops before the total would go over `max_cost`, judging the next batch by the average cost so far. Errors are
-    recorded per sprite and the sprite is retried on the next run.
-    """
-    client = client or ImageEditClient()
-    summary = load_summary(work, options.model)
-    summary.pop("stopped", None)
-    palette_pngs = work / "lodpng" / "bitmaps"
+    """Runs the pass over every pending sprite. With `dry`, only reports what it would send and cost."""
     pending = pending_sprites(work, palettes_json, options, only)
+    if dry:
+        return dry_run(pending, options)
+    client = client or ImageEditClient()
+    palette_pngs = work / "lodpng" / "bitmaps"
 
     def generate(item):
         name, palette_ids = item
         palettes = {palette_id: load_palette(palette_pngs / f"pal{palette_id:03d}.png") for palette_id in palette_ids}
         return regen_sprite(work, client, name, palette_ids, palettes, options)
 
-    with ThreadPoolExecutor(options.workers) as pool:
-        for start in range(0, len(pending), options.workers):
-            batch = pending[start : start + options.workers]
-            average = summary["cost"] / summary["generated"] if summary["generated"] else 0.0
-            if options.max_cost is not None and summary["cost"] + average * len(batch) > options.max_cost:
-                summary["stopped"] = f"budget of {options.max_cost} reached"
-                break
-            futures = {name: pool.submit(generate, (name, ids)) for name, ids in batch}
-            for name, future in futures.items():
-                try:
-                    record = future.result()
-                except HTTPError as error:
-                    summary["errors"][name] = str(error)[:300]
-                    if error.code in FATAL_HTTP_CODES:
-                        summary["stopped"] = f"HTTP {error.code}, the account cannot pay for more calls"
-                    continue
-                except (ImageEditError, OSError, ValueError, KeyError) as error:
-                    summary["errors"][name] = str(error)[:300]
-                    continue
-                summary["errors"].pop(name, None)
-                summary["cost"] = round(summary["cost"] + record["cost"], 6)
-                summary["generated"] += 1
-                summary["fallbacks"] += 0 if record["passed"] else 1
-            write_json(regen_dir(work, options.model) / "summary.json", summary)
-            if "stopped" in summary:
-                break
-    return summary
+    return run_batches(work, options, pending, generate)
 
 
 def generated_image(work: Path, model: str, name: str, palette_id: int) -> Path | None:
