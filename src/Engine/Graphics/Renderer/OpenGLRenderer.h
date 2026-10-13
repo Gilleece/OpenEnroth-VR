@@ -279,8 +279,9 @@ class OpenGLRenderer : public BaseRenderer {
     GLuint _drawBloom(const OpenGLRenderTarget &source);
 
     /**
-     * Measures the average luminance of a linear colour target and moves `_adaptationTargets` towards the exposure
-     * scale it calls for, once a frame, so that both eyes of a headset share the head's adaptation.
+     * Compares the average display brightness of a linear colour target under the shoulder and the filmic curve, and
+     * moves `_adaptationTargets` towards the exposure scale at which they match, once a frame, so that both eyes of a
+     * headset share the head's adaptation.
      *
      * @param source                    Target with linear colour.
      */
@@ -543,7 +544,7 @@ class OpenGLRenderer : public BaseRenderer {
     int _torchShadowDrawnVersion = 0; // `IndoorLocation::geometryVersion` the cubes were drawn at.
 
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
-    OpenGLRenderTarget _luminanceTarget; // Log luminance of the world, with mipmaps that average it.
+    OpenGLRenderTarget _luminanceTarget; // Display brightness of the world under both curves, with mipmaps that average it.
     std::array<OpenGLRenderTarget, 2> _adaptationTargets; // 1x1 exposure scales, the current one and the previous.
     int _adaptationIndex = 0; // Which of `_adaptationTargets` is current.
     uint64_t _frameNumber = 0; // Frames swapped so far.

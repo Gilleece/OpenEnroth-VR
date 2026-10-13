@@ -179,7 +179,7 @@ jobs:
               ./scripts/check_shader.sh "$shader" "$glsl_version" SHADOW_SPRITE
             done
             for shader in resources/shaders/glcomposite.{vert,frag}; do
-              for defines in "FILMIC_TONEMAP" "EYE_ADAPTATION" "FILMIC_TONEMAP EYE_ADAPTATION"; do
+              for defines in "FILMIC_TONEMAP" "FILMIC_TONEMAP EYE_ADAPTATION"; do
                 echo "Checking $shader with $defines against GLSL $glsl_version..."
                 ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
               done

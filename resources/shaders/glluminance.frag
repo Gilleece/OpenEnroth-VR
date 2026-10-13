@@ -1,30 +1,38 @@
 #include "precision.glsl"
+#include "colour.glsl"
+#include "tonemap.glsl"
 
 in vec2 texuv;
 
 out vec4 FragColour;
 
 uniform sampler2D source;
+uniform sampler2D adaptation; // 1x1, the exposure scale the eye has adapted to.
 
 #ifdef EYE_ADAPT
-uniform sampler2D previous; // 1x1, the exposure scale of the previous frame.
-uniform float sourceLevel; // Mip level at which the source's log luminance is averaged down to one texel.
+uniform float sourceLevel; // Mip level at which the source is averaged down to one texel.
 uniform float rate; // Part of the way to the new exposure scale that this frame covers.
 
-const float ADAPT_KEY = 0.1; // Average linear luminance of a sunlit outdoor view, which keeps a scale of 1.
-const float ADAPT_STRENGTH = 0.25; // How much of the difference to the key the eye makes up.
-const float ADAPT_MIN = 0.8;
-const float ADAPT_MAX = 1.6;
+const float ADAPT_MIN = 0.25;
+const float ADAPT_MAX = 8.0;
 
+// Moves the scale towards the one at which the filmic curve gives the view the average brightness the shoulder curve
+// gives it. Display brightness goes roughly with linear brightness to the power of 1 / 2.2, which sets the step.
 void main() {
-    float average = exp(textureLod(source, vec2(0.5), sourceLevel).r);
-    float target = clamp(pow(ADAPT_KEY / max(average, 0.0001), ADAPT_STRENGTH), ADAPT_MIN, ADAPT_MAX);
-    FragColour = vec4(mix(texture(previous, vec2(0.5)).r, target, rate));
+    vec2 average = textureLod(source, vec2(0.5), sourceLevel).rg;
+    float scale = texture(adaptation, vec2(0.5)).r;
+    float target = average.g > 0.001 ? clamp(scale * pow(average.r / average.g, 2.2), ADAPT_MIN, ADAPT_MAX) : scale;
+    FragColour = vec4(mix(scale, target, rate));
 }
 #else
-// Log luminance of the world, averaged afterwards by the mip chain.
+uniform float exposure;
+
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// Display brightness of the world with the shoulder curve, and with the filmic curve at the adapted scale.
 void main() {
-    float luminance = dot(texture(source, texuv).rgb, vec3(0.2126, 0.7152, 0.0722));
-    FragColour = vec4(log(max(luminance, 0.0001)));
+    vec3 colour = texture(source, texuv).rgb * exposure;
+    float scale = texture(adaptation, vec2(0.5)).r;
+    FragColour = vec4(dot(linearToSrgb(Shoulder(colour)), LUMA), dot(linearToSrgb(Filmic(colour * scale)), LUMA), 0.0, 1.0);
 }
 #endif

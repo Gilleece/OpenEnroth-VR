@@ -532,8 +532,9 @@ class GameConfig : public Config {
                               "Tonemap the 3D world with a filmic curve, with deeper shadows and softer highlights than the"
                               " default curve. Only applies with linear_pipeline."};
         Bool EyeAdaptation = {this, "eye_adaptation", false,
-                              "Slowly adjust the exposure to how bright the view is, like eyes do when stepping from sunlight into a"
-                              " dungeon. Only applies with linear_pipeline."};
+                              "Slowly adjust the exposure so that the filmic curve gives the view the average brightness of the"
+                              " default curve, like eyes do when stepping from sunlight into a dungeon. Only applies with"
+                              " filmic_tonemap."};
         Bool Bloom = {this, "bloom", false, "Let light brighter than bloom_threshold glow into its surroundings. Only applies with linear_pipeline."};
         Float BloomThreshold = {this, "bloom_threshold", 1.0f, &ValidateBloomThreshold,
                                 "Linear brightness above which light blooms. At 1 only light stacked past white and additive effects bloom."};
