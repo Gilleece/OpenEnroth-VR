@@ -43,12 +43,22 @@ uniform sampler2DArray materialArray;
 #include "ao.glsl"
 #endif
 
+#ifdef LINEAR_PIPELINE
+#include "sky.glsl"
+#include "water.glsl"
+#endif
+
 void main() {
 #ifdef AMBIENT_OCCLUSION
     ambientOcclusion = AmbientOcclusion();
 #endif
     vec3 fragnorm = normalize(vsNorm);
     vec3 fragviewdir = normalize(CameraPos - vsPos);
+#ifdef LINEAR_PIPELINE
+    bool water = (vsAttrib & 0x2) > 0 && fragnorm.z > 0.7; // Pools and fountain basins, not falling water.
+    // Looked up outside the branch, texture lookups need uniform control flow.
+    vec3 waternormal = WaterNormal(vsPos * 4.0); // Finer ripples than the outdoor waves, basins are small.
+#endif
 
     vec4 fragcol = vec4(1.0);
     vec2 texcoords = vec2(0.0);
@@ -181,6 +191,8 @@ void main() {
     FragColour = vec4(clamps,1)  * vec4(dull,1); // result, 1.0);
 #ifdef LINEAR_PIPELINE
     FragColour.rgb = srgbToLinear(FragColour.rgb);
+    if (water)
+        FragColour.rgb = WaterSurface(FragColour.rgb, waternormal, vsPos, fragviewdir);
 #endif
 
 #ifndef LINEAR_PIPELINE

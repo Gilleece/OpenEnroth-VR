@@ -40,6 +40,11 @@ uniform FogParam fog;
 #include "shadow.glsl"
 #endif
 
+#ifdef LINEAR_PIPELINE
+#include "sky.glsl"
+#include "water.glsl"
+#endif
+
 #ifdef MATERIAL_MAPS
 uniform sampler2DArray materialArray;
 #include "material.glsl"
@@ -55,6 +60,12 @@ void main() {
 #endif
     vec3 fragnorm = normalize(vsNorm);
     vec3 fragviewdir = normalize(CameraPos - vsPos);
+#ifdef LINEAR_PIPELINE
+    bool waterTile = watertiles == 1 && olayer == 0.0 && (vsAttrib & 0x3C00) == 0;
+    bool water = ((vsAttrib & 0x2) > 0 || waterTile) && fragnorm.z > 0.7; // Fountain basins and wells, not falling water.
+    // Looked up outside the branch, texture lookups need uniform control flow.
+    vec3 waternormal = WaterNormal(vsPos * 4.0); // Finer ripples than the outdoor waves, basins are small.
+#endif
 
     vec4 fragcol = vec4(1.0);
     vec2 texcoords = vec2(1.0);
@@ -173,6 +184,8 @@ void main() {
     vec4 inter = vec4(clamps, vertexColour.a) * vec4(dull,1); // result, 1.0);
 #ifdef LINEAR_PIPELINE
     inter.rgb = srgbToLinear(inter.rgb);
+    if (water)
+        inter.rgb = WaterSurface(inter.rgb, waternormal, vsPos, fragviewdir);
 #endif
 #ifdef LINEAR_PIPELINE
     float fograt = getHeightFogRatio(fog, dist, vsPos);

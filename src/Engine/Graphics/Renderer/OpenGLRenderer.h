@@ -313,6 +313,16 @@ class OpenGLRenderer : public BaseRenderer {
     SkyState _skyState();
 
     /**
+     * Binds the water normals and sets the uniforms `water.glsl` and `sky.glsl` read. Does nothing for programs
+     * compiled without `LINEAR_PIPELINE`.
+     *
+     * @param shader                    Program in use.
+     * @param reflection                Colour the water reflects instead of the sky, in display colour. Null for the
+     *                                  sky.
+     */
+    void _submitWater(const OpenGLShader &shader, const Colorf *reflection);
+
+    /**
      * Creates `_waterNormals` if it doesn't exist yet.
      */
     void _ensureWaterNormals();

@@ -81,6 +81,7 @@ static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the s
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
 static constexpr GLint WATER_NORMALS_TEXTURE_UNIT = 9; // After the terrain arrays, the material array and the sun shadow map.
 static constexpr int WATER_NORMALS_SIZE = 256;
+static constexpr float INDOOR_WATER_REFLECTION = 0.25f; // Brightness of the walls in the ambient light, which indoor water reflects.
 static constexpr float FOG_HEIGHT_FALLOFF = 1.0f / 1536.0f; // The fog thins by a factor of e every 1536 units above the eye.
 static constexpr float FOG_INSCATTER = 0.8f; // How much brighter the fog gets looking straight at the sun.
 static constexpr float SUN_SHADOW_SLOPE_BIAS = 2.0f;
@@ -1304,6 +1305,26 @@ OpenGLRenderer::SkyState OpenGLRenderer::_skyState() {
     return result;
 }
 
+void OpenGLRenderer::_submitWater(const OpenGLShader &shader, const Colorf *reflection) {
+    if (!shader.hasDefine("LINEAR_PIPELINE"))
+        return;
+
+    _ensureWaterNormals();
+    glActiveTexture(GL_TEXTURE0 + WATER_NORMALS_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, _waterNormals);
+    glActiveTexture(GL_TEXTURE0);
+
+    SkyState sky = _skyState();
+    if (reflection)
+        sky.zenith = sky.horizon = _worldColor(*reflection);
+    glUniform1i(shader.uniformLocation("waterNormals"), WATER_NORMALS_TEXTURE_UNIT);
+    glUniform1f(shader.uniformLocation("waterTime"), animTimer->time().realtimeMillisecondsFloat());
+    glUniform3f(shader.uniformLocation("skyZenith"), sky.zenith.r, sky.zenith.g, sky.zenith.b);
+    glUniform3f(shader.uniformLocation("skyHorizon"), sky.horizon.r, sky.horizon.g, sky.horizon.b);
+    glUniform3f(shader.uniformLocation("sunDirection"), sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
+    glUniform1f(shader.uniformLocation("sunVisibility"), sky.sunVisibility);
+}
+
 void OpenGLRenderer::_ensureWaterNormals() {
     if (_waterNormals)
         return;
@@ -2479,20 +2500,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _submitSunShadow(shader);
     _submitHeightFog(shader, true);
     _submitAmbientOcclusion(shader);
-    if (shader.hasDefine("LINEAR_PIPELINE")) {
-        _ensureWaterNormals();
-        glActiveTexture(GL_TEXTURE0 + WATER_NORMALS_TEXTURE_UNIT);
-        glBindTexture(GL_TEXTURE_2D, _waterNormals);
-        glActiveTexture(GL_TEXTURE0);
-
-        SkyState sky = _skyState();
-        glUniform1i(shader.uniformLocation("waterNormals"), WATER_NORMALS_TEXTURE_UNIT);
-        glUniform1f(shader.uniformLocation("waterTime"), animTimer->time().realtimeMillisecondsFloat());
-        glUniform3f(shader.uniformLocation("skyZenith"), sky.zenith.r, sky.zenith.g, sky.zenith.b);
-        glUniform3f(shader.uniformLocation("skyHorizon"), sky.horizon.r, sky.horizon.g, sky.horizon.b);
-        glUniform3f(shader.uniformLocation("sunDirection"), sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
-        glUniform1f(shader.uniformLocation("sunVisibility"), sky.sunVisibility);
-    }
+    _submitWater(shader, nullptr);
     if (tileMaterials) {
         glUniform1i(shader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
@@ -4096,6 +4104,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
     _submitSunShadow(outbuildshader);
     _submitHeightFog(outbuildshader, true);
     _submitAmbientOcclusion(outbuildshader);
+    _submitWater(outbuildshader, nullptr);
     bool hasMaterials = std::ranges::any_of(outbuildmaterials, [](GLuint id) { return id != 0; });
     if (hasMaterials) {
         outbuildmaterialshader.use();
@@ -4103,6 +4112,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
         _submitSunShadow(outbuildmaterialshader);
         _submitHeightFog(outbuildmaterialshader, true);
         _submitAmbientOcclusion(outbuildmaterialshader);
+        _submitWater(outbuildmaterialshader, nullptr);
         glUniform1i(outbuildmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
     }
 
@@ -4588,12 +4598,16 @@ void OpenGLRenderer::DrawIndoorFaces() {
         uniforms.submit(bspshader);
         _submitTorchShadows(bspshader, torchShadowLayers);
         _submitAmbientOcclusion(bspshader);
+        float wall = ambient * INDOOR_WATER_REFLECTION;
+        Colorf room(wall, wall, wall); // Indoor water reflects the room around it.
+        _submitWater(bspshader, &room);
         bool hasMaterials = std::ranges::any_of(bspmaterials, [](GLuint id) { return id != 0; });
         if (hasMaterials) {
             bspmaterialshader.use();
             uniforms.submit(bspmaterialshader);
             _submitTorchShadows(bspmaterialshader, torchShadowLayers);
             _submitAmbientOcclusion(bspmaterialshader);
+            _submitWater(bspmaterialshader, &room);
             glUniform1i(bspmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         }
 
