@@ -119,7 +119,9 @@ Android is not actively tested by the dev team — expect issues and be prepared
 
 `tools/texpipe` builds a texture pack of higher resolution bitmaps, icons and sprites from your own copy of MM7,
 with normal and roughness maps for the bitmaps. [tools/texpipe/README.md](tools/texpipe/README.md) has the steps and
-the `openenroth.ini` lines that turn a pack on, together with `graphics.enhanced` and `graphics.ui_scale`.
+the `openenroth.ini` lines that turn a pack on, together with `graphics.enhanced` and `graphics.ui_scale`. Its `bake`
+step adds the indirect light of every map, which `graphics.global_illumination` lights the world with. The enhanced
+preset turns that on, and the video options screen has a toggle for it.
 
 VR runs on Windows through OpenXR, in a build configured with `-DOE_BUILD_VR=ON`. Start the game with `--vr` for one
 run, or set `enabled = true` in the `[vr]` section of `openenroth.ini` to keep it on. F8, the `recenter` entry,

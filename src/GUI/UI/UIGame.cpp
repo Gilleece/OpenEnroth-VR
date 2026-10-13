@@ -590,7 +590,8 @@ GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
         CreateButton({0x13u, 0x12Eu}, {0xD6u, 0x12u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleColoredLights, 0);
         CreateButton({0x13u, 0x144u}, {0xD6u, 0x12u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleTint, 0);
     }
-    CreateButton({22, 245}, {211, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleEnhancedGraphics, 0);
+    CreateButton({22, 245}, {105, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleEnhancedGraphics, 0);
+    CreateButton({128, 245}, {105, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleGlobalIllumination, 0);
     CreateButton({22, 256}, {105, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleSpriteDepth, 0);
     CreateButton({128, 256}, {105, 11}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleSpriteCrossfade, 0);
 
@@ -640,7 +641,10 @@ void GUIWindow_GameVideoOptions::Update() {
     // The original toggles light up when on, this one has no artwork of its own.
     bool enhanced = engine->config->graphics.Enhanced.value();
     DrawTitleText(assets->pFontSmallnum.get(), 0, 0, enhanced ? colorTable.White : colorTable.CarbonGray,
-                  enhanced ? "Enhanced graphics: on" : "Enhanced graphics: off", 3, Recti(22, 246, 211, 11));
+                  enhanced ? "Enhanced: on" : "Enhanced: off", 3, Recti(22, 246, 105, 11));
+    bool globalIllumination = engine->config->graphics.GlobalIllumination.value();
+    DrawTitleText(assets->pFontSmallnum.get(), 0, 0, globalIllumination ? colorTable.White : colorTable.CarbonGray,
+                  globalIllumination ? "Indirect: on" : "Indirect: off", 3, Recti(128, 246, 105, 11));
     bool spriteDepth = engine->config->graphics.SpriteDepth.value();
     DrawTitleText(assets->pFontSmallnum.get(), 0, 0, spriteDepth ? colorTable.White : colorTable.CarbonGray,
                   spriteDepth ? "Depth: on" : "Depth: off", 3, Recti(22, 256, 105, 11));
