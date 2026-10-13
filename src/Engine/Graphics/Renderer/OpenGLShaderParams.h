@@ -57,6 +57,7 @@ struct TwoDVertex {
     Colorf color;
     float texid = 0;
     float paletteid = 0;
+    bool nearest = false; // Sampled without filtering, not passed to the shader.
 };
 
 struct TwoDUniforms {

@@ -429,8 +429,39 @@ void OpenGLRenderer::BeginLines2D() {
     }
 }
 
+/**
+ * @param lines                         Pairs of line ends, in the units of the 2D projection.
+ * @return                              Two triangles for each line, one unit wide, covering the units that a one pixel
+ *                                      wide line covers at one pixel per unit.
+ */
+static std::vector<LineVertex> lineQuads(const std::vector<LineVertex> &lines) {
+    std::vector<LineVertex> result;
+    for (size_t i = 0; i + 1 < lines.size(); i += 2) {
+        Vec2f a = lines[i].pos;
+        Vec2f b = lines[i + 1].pos;
+        float length = (b - a).length();
+        if (length == 0)
+            continue; // A line of no length draws nothing, as with GL_LINES.
+        Vec2f along = (b - a) / length * 0.5f;
+        Vec2f across = Vec2f(-along.y, along.x);
+        LineVertex a0 = {a - along - across, lines[i].color};
+        LineVertex a1 = {a - along + across, lines[i].color};
+        LineVertex b0 = {b - along - across, lines[i + 1].color};
+        LineVertex b1 = {b - along + across, lines[i + 1].color};
+        result.insert(result.end(), {a0, b0, b1, a0, b1, a1}); // Ends like GL_LINES, the last unit is left out.
+    }
+    return result;
+}
+
 void OpenGLRenderer::EndLines2D() {
     if (_lineVertices.empty()) return;
+
+    // Core profiles only draw lines one pixel wide, so lines in a UI scaled up are drawn as quads.
+    GLint framebuffer = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+    bool wide = _uiScale > 1 && static_cast<GLuint>(framebuffer) == _uiTarget.framebuffer();
+    if (wide)
+        _lineVertices = lineQuads(_lineVertices);
 
     _lineBuffer.update(_lineVertices);
     _lineBuffer.bind();
@@ -442,7 +473,7 @@ void OpenGLRenderer::EndLines2D() {
     uniforms.view = viewmat;
     uniforms.submit(lineshader);
 
-    glDrawArrays(GL_LINES, 0, _lineVertices.size());
+    glDrawArrays(wide ? GL_TRIANGLES : GL_LINES, 0, _lineVertices.size());
     drawcalls++;
 
     lineshader.unuse();
@@ -3952,6 +3983,10 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     Colorf cf = color.toColorf();
     int gltexid = texture->renderId().value();
 
+    // Images without a higher resolution replacement stay sharp when the UI scale magnifies them a whole number of times.
+    bool nearest = texture->textureScale() == 1 && _uiScale > 1 && srcRect.w > 0 && srcRect.h > 0 &&
+                   dstRect.w * _uiScale % srcRect.w == 0 && dstRect.h * _uiScale % srcRect.h == 0 && dstRect.w * _uiScale > srcRect.w;
+
     float drawx = clippedDst.x;
     float drawy = clippedDst.y;
     float drawz = clippedDst.x + clippedDst.w;
@@ -3964,6 +3999,7 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     vert0.color = cf;
     vert0.texid = gltexid;
     vert0.paletteid = 0;
+    vert0.nearest = nearest;
 
     TwoDVertex &vert1 = _twodVertices.emplace_back();
     vert1.pos = Vec3f(drawz, drawy, 0);
@@ -3971,6 +4007,7 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     vert1.color = cf;
     vert1.texid = gltexid;
     vert1.paletteid = 0;
+    vert1.nearest = nearest;
 
     TwoDVertex &vert2 = _twodVertices.emplace_back();
     vert2.pos = Vec3f(drawz, draww, 0);
@@ -3978,6 +4015,7 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     vert2.color = cf;
     vert2.texid = gltexid;
     vert2.paletteid = 0;
+    vert2.nearest = nearest;
 
     // Triangle 2: top-left, bottom-right, bottom-left
     TwoDVertex &vert3 = _twodVertices.emplace_back();
@@ -3986,6 +4024,7 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     vert3.color = cf;
     vert3.texid = gltexid;
     vert3.paletteid = 0;
+    vert3.nearest = nearest;
 
     TwoDVertex &vert4 = _twodVertices.emplace_back();
     vert4.pos = Vec3f(drawz, draww, 0);
@@ -3993,6 +4032,7 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     vert4.color = cf;
     vert4.texid = gltexid;
     vert4.paletteid = 0;
+    vert4.nearest = nearest;
 
     TwoDVertex &vert5 = _twodVertices.emplace_back();
     vert5.pos = Vec3f(drawx, draww, 0);
@@ -4000,6 +4040,7 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     vert5.color = cf;
     vert5.texid = gltexid;
     vert5.paletteid = 0;
+    vert5.nearest = nearest;
 }
 
 void OpenGLRenderer::BeginTextNew(GraphicsImage *texture) {
@@ -5685,7 +5726,8 @@ void OpenGLRenderer::_drawTwodVerts(bool premultiplied) {
         // set texture
         GLfloat thistex = _twodVertices[offset].texid;
         glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(_twodVertices[offset].texid));
-        if (_twodVertices[offset].paletteid) {
+        bool nearest = _twodVertices[offset].nearest;
+        if (_twodVertices[offset].paletteid || nearest) {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         } else if (_mipmappedTextures.contains(static_cast<GLuint>(_twodVertices[offset].texid))) {
@@ -5702,7 +5744,7 @@ void OpenGLRenderer::_drawTwodVerts(bool premultiplied) {
             if (offset + (6 * cnt) >= _twodVertices.size()) {
                 break;
             }
-        } while (_twodVertices[offset + (cnt * 6)].texid == thistex);
+        } while (_twodVertices[offset + (cnt * 6)].texid == thistex && _twodVertices[offset + (cnt * 6)].nearest == nearest);
 
         glDrawArrays(GL_TRIANGLES, offset, (6*cnt));
         drawcalls++;
