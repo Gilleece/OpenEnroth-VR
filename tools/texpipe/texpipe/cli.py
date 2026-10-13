@@ -1,4 +1,4 @@
-"""Command line entry point: texpipe extract | upscale | maps | pack."""
+"""Command line entry point: texpipe extract | upscale | maps | depth | pack | verify | regen | regen-report."""
 
 import argparse
 import json
@@ -12,14 +12,16 @@ from texpipe.config import SCALES, load_config
 from texpipe.depth import run_depth
 from texpipe.extract import run_extract
 from texpipe.maps import run_maps
-from texpipe.pack import COLORS, run_pack
+from texpipe.pack import COLORS, run_pack, write_archive
 from texpipe.regen import RegenOptions, regen_report, rescore, run_regen
 from texpipe.regen_icons import icon_options, run_icons
 from texpipe.upscale import BACKENDS, run_upscale
+from texpipe.verify import verify_pack
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MASK_TABLE = REPO_ROOT / "resources" / "data" / "resource_mask_table.json"
 DEPTH_PYTHON_ENV = "TEXPIPE_DEPTH_PYTHON"
+SHOWN_FAILURES = 20
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--out", type=Path, required=True, help="Pack folder to write.")
     pack.add_argument("--colors", choices=COLORS, default="raw", help="How the engine treats the pack's colors.")
     pack.add_argument("--regen-from", help="Take sprites and icons from this model's regen outputs that passed.")
+    pack.add_argument("--archive", type=Path, help="Also zip the written pack into this file, ready to share.")
+
+    verify = commands.add_parser("verify", help="Check a texture pack against the installed game, as the engine would.")
+    verify.add_argument("--pack", type=Path, required=True, help="Pack folder, the one with manifest.json in it.")
+    verify.add_argument("--data", type=Path, required=True, help="MM7 game folder, the one with DATA in it.")
 
     regen = commands.add_parser(
         "regen", help="Generative clean-up pass over the upscaled sprites, with fidelity gates."
@@ -129,9 +136,24 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"Pass --python or set {DEPTH_PYTHON_ENV} to the Python of the depth model's environment.")
         config = load_config(args.config)
         print(f"Depth {run_depth(args.work, args.palettes, config, args.only, Path(python), args.force)}.")
+    elif args.command == "verify":
+        report = verify_pack(args.pack, args.data)
+        print(
+            f"Checked {report.entries} manifest entries and {report.files} image files, {len(report.failures)} failed."
+        )
+        for failure in report.failures[:SHOWN_FAILURES]:
+            print(f"  {failure}")
+        if len(report.failures) > SHOWN_FAILURES:
+            print(f"  and {len(report.failures) - SHOWN_FAILURES} more.")
+        print(f"Took {time.monotonic() - start:.1f} s.")
+        return 1 if report.failures else 0
     elif args.command == "regen-report":
         print(json.dumps(regen_report(args.work, args.palettes, args.model, args.only, args.sheet), indent=2))
     else:
-        print(f"Packed {run_pack(args.work, args.out, args.colors, args.only, args.regen_from)}.")
+        counts = run_pack(args.work, args.out, args.colors, args.only, args.regen_from)
+        print(f"Packed {counts}.")
+        if args.archive:
+            size = write_archive(args.out, args.archive)
+            print(f"Archived to {args.archive}, {size / 2**20:.1f} MiB, {counts}.")
     print(f"Took {time.monotonic() - start:.1f} s.")
     return 0

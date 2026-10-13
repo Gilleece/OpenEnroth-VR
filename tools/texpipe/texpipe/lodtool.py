@@ -1,4 +1,4 @@
-"""Runs the engine's LodTool, which is the only thing here that reads LOD archives."""
+"""Runs the engine's LodTool, which decodes the LOD archives for extract. `lod.py` reads just enough for `verify`."""
 
 import os
 import shutil

@@ -97,13 +97,28 @@ python -m texpipe maps --work ../../mm7_hd/work
 ```
 
 **pack** writes the pack folder: `manifest.json`, `bitmaps/` and `icons/` with one PNG per LOD entry, the maps under
-`normal/bitmaps/` and `roughness/bitmaps/`, sprites as `sprites/<entry>/<palette id>.png`, and a `README.txt`.
+`normal/bitmaps/` and `roughness/bitmaps/`, sprites as `sprites/<entry>/<palette id>.png`, sprite shapes under
+`shape/sprites/`, and a `README.txt`.
 `--colors raw`, the default, says the images have the LOD palette colors, and the engine applies its saturation and
 lightness settings to the pack's bitmaps and sprites. Use `--colors final` only if you have graded the
 upscaled images yourself.
 
 ```
 python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x
+```
+
+With `--archive <file.zip>`, pack also zips the pack folder for sharing, under a folder of the pack's name with
+`README.txt` first, and prints the archive's size. The order and the timestamps are fixed, so the same pack makes the
+same archive. PNGs are stored as they are, they don't compress any further.
+
+**verify** checks a pack against the installed game the way the engine loads it, for packs that came from elsewhere:
+every manifest entry against the CRC-32 of its LOD entry, every listed file present, color images at the LOD image's
+size times 1, 2 or 4, and maps and sprite shapes the size of the color images they go with. It prints the counts and
+the first failures, and exits with 1 if anything failed. The engine uses the original image for an entry that fails,
+so a failure is an image the pack doesn't replace in game. It reads the LOD archives itself, LodTool isn't needed.
+
+```
+python -m texpipe verify --pack ../../mm7_hd/esrgan --data ../../mm7
 ```
 
 All commands take `--only <glob>`, which can be repeated, to handle only the LOD entries matching it, e.g.
@@ -116,6 +131,10 @@ a prompt that asks for a cleaner version of exactly that image and nothing else.
 `google/gemini-3.1-flash-lite-image`, set in `[regen]`, and `--model` picks another. The key is read from the
 `OPENROUTER_API_KEY` environment variable and nowhere else, and a run without it stops with an error. A run also stops
 at once when the API answers that the key is invalid or out of credit.
+
+The released pack doesn't use this pass: the full run was too expensive. A pilot on this computer's GPU with SDXL and
+a tile ControlNet passed the gates but looked worse than the plain upscale. Flux Kontext, the stronger candidate for
+a local run, is gated: its weights need a Hugging Face login with the model's licence accepted.
 
 `--section sprites`, the default, sends each sprite once, in the first palette it is drawn with. `--section icons`
 sends the icons that `[regen.icons]` includes, the character and NPC portraits and the UI frame by default, with their

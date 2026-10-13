@@ -1,6 +1,7 @@
 """The pack step: the upscaled images and a manifest.json in the layout the engine loads."""
 
 import shutil
+import zipfile
 from pathlib import Path
 
 from PIL import Image
@@ -98,6 +99,27 @@ def run_pack(
     counts["generated"] = len(generated)
     counts["shapes"] = sum(1 for entry in entries["sprites"].values() if "shape" in entry)
     return counts
+
+
+ARCHIVE_TIME = (1980, 1, 1, 0, 0, 0)  # The earliest a zip can hold, so the same pack makes the same archive.
+STORED_SUFFIXES = (".png",)  # Already compressed, deflating them again only costs time.
+
+
+def write_archive(pack: Path, archive: Path) -> int:
+    """Zips the pack folder into `archive` under a folder of the pack's name, README.txt first and the rest sorted, with
+    fixed timestamps. Returns the archive's size in bytes."""
+    files = sorted(
+        (path for path in pack.rglob("*") if path.is_file()), key=lambda path: path.relative_to(pack).as_posix()
+    )
+    files.sort(key=lambda path: path.relative_to(pack).as_posix() != "README.txt")
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive, "w") as output:
+        for path in files:
+            info = zipfile.ZipInfo(f"{pack.name}/{path.relative_to(pack).as_posix()}", ARCHIVE_TIME)
+            info.compress_type = zipfile.ZIP_STORED if path.suffix in STORED_SUFFIXES else zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            output.writestr(info, path.read_bytes())
+    return archive.stat().st_size
 
 
 def _add_sprite_image(sprites: dict[str, dict], image: WorkImage) -> None:
