@@ -965,7 +965,6 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
     if (!shader.hasDefine("SUN_SHADOWS"))
         return;
 
-    _ensureSunShadowResources();
     glActiveTexture(GL_TEXTURE0 + SUN_SHADOW_TEXTURE_UNIT);
     glBindTexture(GL_TEXTURE_2D_ARRAY, _sunShadowMap);
     glActiveTexture(GL_TEXTURE0);
