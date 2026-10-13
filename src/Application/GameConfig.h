@@ -538,6 +538,9 @@ class GameConfig : public Config {
                             "Give sprites the depth of a texture pack's sprite shapes: they cut into walls, floors and each other,"
                             " and each eye sees them with its own parallax. Only applies with linear_pipeline and"
                             " world_space_billboards."};
+        Bool SpriteLighting = {this, "sprite_lighting", false,
+                               "Light sprites with the normals of a texture pack's sprite shapes, from the sun, the torch and the"
+                               " level's lights, keeping their stock brightness on average. Only applies with sprite_depth."};
         Bool SpriteCrossfade = {this, "sprite_crossfade", false,
                                 "Blend a sprite between its two nearest sides as it turns, instead of switching sides every 45"
                                 " degrees. Only applies with world_space_billboards."};

@@ -1477,6 +1477,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _terrainVariation = _linearPipeline && config->graphics.TerrainVariation.value();
     _spriteCrossfade = config->graphics.SpriteCrossfade.value();
     _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
+    _spriteLighting = _spriteDepth && config->graphics.SpriteLighting.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
@@ -3640,6 +3641,8 @@ void OpenGLRenderer::DrawBillboards() {
         glUniform3f(billbshader.uniformLocation("parallaxOrigin"), origin.x, origin.y, origin.z);
         glUniform1i(billbshader.uniformLocation("depthPrepass"), _billboardDepthPrepass);
     }
+    if (billbshader.hasDefine("SPRITE_LIGHTING"))
+        _spriteLights.submit(billbshader);
 
     auto setFilter = [&](GLuint texture, bool paletted) {
         if (paletted) {
@@ -4472,6 +4475,8 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
 
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(outbuildshader);
+    _spriteLights.sun = uniforms.sun;
+    std::copy_n(uniforms.pointLights.begin(), _spriteLights.pointLights.size(), _spriteLights.pointLights.begin());
     _submitSunShadow(outbuildshader);
     _submitHeightFog(outbuildshader, true);
     _submitAmbientOcclusion(outbuildshader);
@@ -4967,6 +4972,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
         // remaining lights are default-initialized (type = 0)
         uniforms.submit(bspshader);
+        _spriteLights.sun = uniforms.sun;
+        std::copy_n(uniforms.pointLights.begin(), _spriteLights.pointLights.size(), _spriteLights.pointLights.begin());
         _submitTorchShadows(bspshader, torchShadowLayers);
         _submitAmbientOcclusion(bspshader);
         float wall = ambient * INDOOR_WATER_REFLECTION;
@@ -5326,6 +5333,8 @@ bool OpenGLRenderer::ReloadShaders() {
         billboardDefines.push_back("SPRITE_CROSSFADE");
     if (_spriteDepth)
         billboardDefines.push_back("SPRITE_DEPTH");
+    if (_spriteLighting)
+        billboardDefines.push_back("SPRITE_LIGHTING");
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          terrainDefines},
         {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorLitDefines},

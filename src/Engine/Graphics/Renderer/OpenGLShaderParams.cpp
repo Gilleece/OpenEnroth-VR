@@ -126,6 +126,13 @@ static void submitPointLights(const OpenGLShader &shader, const std::array<Point
         submitPointLight(shader, lights[i], static_cast<int>(i));
 }
 
+void SpriteLightUniforms::submit(const OpenGLShader &shader) const {
+    glUniform3f(shader.uniformLocation("sun.direction"), sun.direction.x, sun.direction.y, sun.direction.z);
+    glUniform3f(shader.uniformLocation("sun.ambient"), sun.ambient.r, sun.ambient.g, sun.ambient.b);
+    glUniform3f(shader.uniformLocation("sun.diffuse"), sun.diffuse.r, sun.diffuse.g, sun.diffuse.b); // Sprites have no sun specular.
+    submitPointLights(shader, pointLights);
+}
+
 void TerrainUniforms::submit(const OpenGLShader &shader) const {
     glUniformMatrix4fv(shader.uniformLocation("projection"), 1, GL_FALSE, &projection[0][0]);
     glUniformMatrix4fv(shader.uniformLocation("view"), 1, GL_FALSE, &view[0][0]);

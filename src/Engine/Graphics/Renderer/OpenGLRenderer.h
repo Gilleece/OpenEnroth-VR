@@ -552,6 +552,8 @@ class OpenGLRenderer : public BaseRenderer {
     bool _terrainVariation = false; // Same for the terrain shaders.
     bool _spriteCrossfade = false; // Same for the billboard shader.
     bool _spriteDepth = false; // Same.
+    bool _spriteLighting = false; // Same.
+    SpriteLightUniforms _spriteLights; // Lights of the level pass in the current view.
     bool _billboardDepthPrepass = false; // `DrawBillboards` only writes the depth of the sprites' opaque parts.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;

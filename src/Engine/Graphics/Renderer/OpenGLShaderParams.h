@@ -236,6 +236,16 @@ struct SunLightUniform {
     Colorf specular;
 };
 
+/**
+ * The sun and the point lights the level was lit with in the current view, for the sprites.
+ */
+struct SpriteLightUniforms {
+    SunLightUniform sun;
+    std::array<PointLightUniform, 20> pointLights;
+
+    void submit(const OpenGLShader &shader) const;
+};
+
 struct TerrainUniforms {
     glm::mat4 projection = {};
     glm::mat4 view = {};
