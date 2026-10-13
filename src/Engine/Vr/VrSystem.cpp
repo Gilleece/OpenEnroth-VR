@@ -717,6 +717,9 @@ void VrSystem::setRunning(bool running) {
     }
     _lastCullingCamera.reset();
     _uiPlacement.reset();
+    _uiAim.reset();
+    _vignettePose.reset();
+    _vignetteLevel = 0;
 }
 
 void VrSystem::beginFrame() {
