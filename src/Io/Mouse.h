@@ -41,6 +41,11 @@ class Mouse {
      * the cursor to the system, which a headset doesn't show. Call once per frame, before the UI is copied out.
      */
     void drawLayerCursor();
+
+    /**
+     * Draws the cursor's image at the cursor, without touching the system cursor or mouse look.
+     */
+    void drawCursorImage();
     void DrawPickedItem();
 
     void UI_OnMouseLeftClick(bool isDoubleClick);

@@ -83,6 +83,7 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     struct FrameStats {
         std::map<FrameKind, int64_t> kinds; // Frames the runtime wanted drawn, by what they carried.
         int64_t frames = 0; // All frames ended, drawn or not.
+        int64_t partialImageQuads = 0; // Quads that showed part of their swapchain image, which runtimes place differently.
         std::chrono::steady_clock::time_point firstFrameTime;
         std::chrono::steady_clock::time_point lastFrameTime;
     };
@@ -172,7 +173,8 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
      */
     struct HudQuad {
         Recti rect; // Part of the game screen it shows.
-        XrPosef pose = {{0, 0, 0, 1}, {0, 0, 0}}; // Of the middle of `rect`.
+        Recti frame; // Part of the game screen the whole quad covers, `rect` and the frame around it.
+        XrPosef pose = {{0, 0, 0, 1}, {0, 0, 0}}; // Of the middle of `frame`.
         float metresPerPixel = 0;
     };
 
@@ -259,23 +261,35 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     bool copyUi(std::vector<XrCompositionLayerQuad> *layers);
 
     /**
-     * Cuts the world viewport out of the UI quad and hangs it straight ahead, and adds a quad for each card of the
-     * spread HUD around it.
+     * Turns the UI quad into the world viewport's overlay, hung straight ahead, and adds a quad for each card of the
+     * spread HUD around it. Every quad shows the whole of its swapchain image.
      *
      * @param[in,out] layers            The UI quad, followed by the cards' quads.
-     * @return                          Whether the cards were copied into their swapchain. If not, nothing was added.
+     * @return                          Whether the cards were drawn into their swapchains. If not, nothing changed.
      */
     bool spreadHud(std::vector<XrCompositionLayerQuad> *layers);
 
     /**
-     * Copies the parts of the UI layer that the spread HUD's cards show into the HUD swapchain, recreating it if the
-     * UI changed size, and frames each of them with a border.
+     * Draws each card of the spread HUD into a swapchain of its own at `HUD_CARD_SCALE`, from the game's own panel
+     * drawing in the renderer's card mode, framed like a popup, and copies the world viewport's overlay into one more.
      *
-     * @param screen                    Size of the game's layout.
-     * @param[out] rects                Rectangle of each card in the swapchain image, border included.
-     * @return                          Whether the cards were copied.
+     * @return                          Whether all of them were drawn.
      */
-    bool copyHudCards(Sizei screen, std::vector<XrRect2Di> *rects);
+    bool drawHudCards();
+
+    /**
+     * @param target                    Swapchain to make, or to make again if its size differs.
+     * @param size                      Size of its images.
+     * @param name                      For the log.
+     * @return                          Whether the swapchain is there.
+     */
+    bool ensureSwapchain(Swapchain *target, Sizei size, const char *name);
+
+    /**
+     * @param swapchain                 One of this system's swapchains.
+     * @return                          Size of its images.
+     */
+    Sizei swapchainSize(XrSwapchain swapchain) const;
 
     /**
      * Fills the fade swapchain with black at an opacity, for the quad that darkens the last world frame after the
@@ -364,7 +378,8 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     XrSpace _space = XR_NULL_HANDLE; // Head origin, null until it's captured.
     std::array<Swapchain, 2> _eyes;
     Swapchain _ui;
-    Swapchain _hud; // Cards of the spread HUD, one above the other.
+    std::vector<Swapchain> _hudCardSwapchains; // One per card of the spread HUD.
+    Swapchain _hudViewport; // Overlay of the world viewport in the spread HUD.
     Swapchain _fade; // Black at the opacity of the world's fade.
     std::optional<Vec2f> _uiPlacement; // Width and distance of the UI quad last logged.
     std::optional<UiAim> _uiAim; // Where the lazy UI quad goes, null until it's placed.

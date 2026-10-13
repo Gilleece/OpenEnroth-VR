@@ -184,20 +184,7 @@ void Engine::drawHUD() {
     mouse->DrawCursor();
 }
 
-//----- (0044103C) --------------------------------------------------------
-void Engine::Draw() {
-    drawWorld();
-    render->compositeWorldTarget();
-    drawHUD();
-    render->flushAndScale();
-    drawOverlay();
-    render->swapBuffers();
-}
-
-
-void Engine::DrawGUI() {
-    render->ResetUIClipRect();
-
+void Engine::drawHudPanels() {
     if (!minimalHud())
         GameUI_DrawRightPanelFrames();
     _statusBar->draw();
@@ -219,6 +206,26 @@ void Engine::DrawGUI() {
         turnBasedOverlay.draw();
         GameUI_DrawTorchlightAndWizardEye();
     }
+}
+
+//----- (0044103C) --------------------------------------------------------
+void Engine::Draw() {
+    drawWorld();
+    render->compositeWorldTarget();
+    drawHUD();
+    render->flushAndScale();
+    drawOverlay();
+    render->swapBuffers();
+}
+
+
+void Engine::DrawGUI() {
+    render->ResetUIClipRect();
+
+    pParty->updateDelayedReaction();
+    if (!pMovie_Track)
+        spell_fx_renedrer->UpdatePlayerBuffAnims();
+    drawHudPanels();
 
     // TODO(captainurist): function-local statics, move the FPS counter state into Engine.
     static bool render_framerate = false;

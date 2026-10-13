@@ -259,12 +259,10 @@ static void CharacterUI_DrawTooltip(std::string_view title, std::string_view con
     GUIWindow::DrawText(assets->pFontSmallnum.get(), {1, assets->pFontLucida->GetHeight()}, colorTable.White, content, popup_window);  // popup_window.uFrameY + popup_window.uFrameHeight
 }
 
-//----- (004151D9) --------------------------------------------------------
-void DrawPopupWindow(int uX, int uY, int uWidth, int uHeight) {
-    if (!parchment) return;
-
-    render->SetUIClipRect(Recti(uX, uY, uWidth, uHeight));
-
+/**
+ * Tiles the parchment over a rectangle, within the clip rectangle that is set.
+ */
+static void drawParchment(int uX, int uY, int uWidth, int uHeight) {
     int parchment_width = parchment->width();
     int parchment_height = parchment->height();
 
@@ -279,7 +277,43 @@ void DrawPopupWindow(int uX, int uY, int uWidth, int uHeight) {
         }
         coord_y += parchment_height;
     }
+}
 
+static void drawPopupEdges(int uX, int uY, int uWidth, int uHeight);
+
+//----- (004151D9) --------------------------------------------------------
+void DrawPopupWindow(int uX, int uY, int uWidth, int uHeight) {
+    if (!parchment) return;
+
+    render->SetUIClipRect(Recti(uX, uY, uWidth, uHeight));
+    drawParchment(uX, uY, uWidth, uHeight);
+    drawPopupEdges(uX, uY, uWidth, uHeight);
+}
+
+Recti PopupFrameAround(const Recti &content) {
+    int left = messagebox_border_left->width();
+    int top = messagebox_border_top->height();
+    return Recti(content.x - left, content.y - top, content.w + left + messagebox_border_right->width(),
+                 content.h + top + messagebox_border_bottom->height());
+}
+
+void DrawPopupFrameAround(const Recti &content) {
+    Recti frame = PopupFrameAround(content);
+    for (const Recti &band : {Recti(frame.x, frame.y, frame.w, content.y - frame.y),
+                              Recti(frame.x, content.y + content.h, frame.w, frame.y + frame.h - content.y - content.h),
+                              Recti(frame.x, content.y, content.x - frame.x, content.h),
+                              Recti(content.x + content.w, content.y, frame.x + frame.w - content.x - content.w, content.h)}) {
+        render->SetUIClipRect(band);
+        drawParchment(frame.x, frame.y, frame.w, frame.h);
+    }
+    drawPopupEdges(frame.x, frame.y, frame.w, frame.h);
+}
+
+/**
+ * Draws a popup's corners and edges around a rectangle.
+ */
+static void drawPopupEdges(int uX, int uY, int uWidth, int uHeight) {
+    render->SetUIClipRect(Recti(uX, uY, uWidth, uHeight));
     render->DrawQuad2D(messagebox_corner_x, {uX, uY});
     render->DrawQuad2D(messagebox_corner_y, {uX, uY + uHeight - messagebox_corner_y->height()});
     render->DrawQuad2D(messagebox_corner_z, {uX + uWidth - messagebox_corner_z->width(), uY});

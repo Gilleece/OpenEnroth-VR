@@ -63,6 +63,8 @@ bool NullRenderer::uiLayer() {
 }
 
 void NullRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {}
+void NullRenderer::beginUiCard(TextureRenderId colorTexture, Sizei size, const Recti &screenRect) {}
+void NullRenderer::endUiCard() {}
 void NullRenderer::copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) {}
 void NullRenderer::fillExternalRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Color color) {}
 void NullRenderer::forgetExternalTextures(std::span<const TextureRenderId> colorTextures) {}

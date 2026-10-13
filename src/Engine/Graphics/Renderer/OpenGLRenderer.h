@@ -69,6 +69,8 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) override;
+    virtual void beginUiCard(TextureRenderId colorTexture, Sizei size, const Recti &screenRect) override;
+    virtual void endUiCard() override;
     virtual void copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) override;
     virtual void fillExternalRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Color color) override;
     virtual void forgetExternalTextures(std::span<const TextureRenderId> colorTextures) override;
@@ -571,6 +573,16 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLRenderTarget *_externalOutput = nullptr; // Wraps the colour texture given to `setExternalWorldTarget`.
     OpenGLRenderTarget _externalLinearTarget; // What the world is drawn into for an external target with the linear pipeline.
     OpenGLRenderTarget _mirrorTarget;
+
+    /**
+     * Texture that the 2D drawing goes into instead of the UI, see `beginUiCard`.
+     */
+    struct UiCard {
+        OpenGLRenderTarget *target = nullptr;
+        Recti screenRect; // Rectangle of the game screen that fills the target.
+    };
+
+    std::optional<UiCard> _uiCard;
     bool _mirrorPending = false;
     bool _mirrorPresentPending = false; // The UI layer leaves the mirror for `flushAndScale`.
     bool _uiLayer = false;

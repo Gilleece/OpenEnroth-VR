@@ -224,6 +224,22 @@ class Renderer {
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) = 0;
 
     /**
+     * Sends the 2D drawing that follows into a colour texture owned by the caller instead of the UI, until `endUiCard`,
+     * with a rectangle of the game screen filling the texture. The texture is cleared to transparent black first. The
+     * 2D calls and clip rectangles keep using the game screen's coordinates.
+     *
+     * @param colorTexture              Texture to draw into.
+     * @param size                      Size of the texture.
+     * @param screenRect                Rectangle of the game screen that fills the texture.
+     */
+    virtual void beginUiCard(TextureRenderId colorTexture, Sizei size, const Recti &screenRect) = 0;
+
+    /**
+     * Draws what is still queued into the texture given to `beginUiCard`, and sends the 2D drawing back to the UI.
+     */
+    virtual void endUiCard() = 0;
+
+    /**
      * Copies a rectangle of the UI target into a colour texture owned by the caller, pixel for pixel. Only valid when
      * `uiLayer` is true.
      *

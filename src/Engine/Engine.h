@@ -136,6 +136,12 @@ class Engine {
     void drawHUD();
     void drawOverlay();
     void DrawGUI();
+
+    /**
+     * Draws the panels of the game screen around the world view: the frames, the status bar, the minimap, the portraits
+     * and the right panel. It only draws, so it can run again in the same frame, like for the cards of the VR HUD.
+     */
+    void drawHudPanels();
     void ResetCursor_Palettes_LODs_Level_Audio_SFT_Windows();
     void SecondaryInitialization();
     void _461103_load_level_sub();
