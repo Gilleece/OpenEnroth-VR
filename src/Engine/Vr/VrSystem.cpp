@@ -346,7 +346,6 @@ bool VrSystem::drawViews(WorldFrame &frame) {
     _heldMap = engine->_currentLoadedMapId;
     billboards[1] = render->worldBillboardsDrawn;
     render->setExternalWorldTarget(TextureRenderId(), Sizei());
-    render->setVignette(0, Vec2f());
 
     if (_worldFrameCount < LOGGED_FRAME_COUNT) {
         MM_INFO("VR: frame {} billboards face {:.2f} degrees of yaw, the eyes look along {:.2f} and {:.2f}.", _frameIndex,
@@ -873,11 +872,6 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
     if (!check(xrWaitSwapchainImage(eye.swapchain, &waitInfo), "xrWaitSwapchainImage"))
         return false;
 
-    float strength = engine->config->vr.Vignette.value() ? _vignetteLevel * engine->config->vr.VignetteStrength.value() : 0;
-    const XrFovf &fov = view.fov;
-    float left = std::tan(fov.angleLeft), right = std::tan(fov.angleRight), up = std::tan(fov.angleUp), down = std::tan(fov.angleDown);
-    render->setVignette(strength, Vec2f(-(right + left) / (right - left), -(up + down) / (up - down))); // Where the eye looks straight ahead.
-
     TextureRenderId texture(eye.images[imageIndex]);
     render->setExternalWorldTarget(texture, eye.size);
     render->BeginScene3D(eyeView(view, eye.size));
@@ -888,6 +882,12 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
 
     render->holdTexture(index, texture, eye.size);
     _heldViews[index] = view;
+
+    float strength = engine->config->vr.Vignette.value() ? _vignetteLevel * engine->config->vr.VignetteStrength.value() : 0;
+    const XrFovf &fov = view.fov;
+    float left = std::tan(fov.angleLeft), right = std::tan(fov.angleRight), up = std::tan(fov.angleUp), down = std::tan(fov.angleDown);
+    Vec2f center(-(right + left) / (right - left), -(up + down) / (up - down)); // Where the eye looks straight ahead.
+    render->drawVignette(texture, eye.size, strength, center); // Drawn after the hold, so a held world isn't darkened.
 
     XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     check(xrReleaseSwapchainImage(eye.swapchain, &releaseInfo), "xrReleaseSwapchainImage");

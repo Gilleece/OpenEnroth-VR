@@ -119,13 +119,14 @@ class Renderer {
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) = 0;
 
     /**
-     * Darkens the edges of what the following 3D passes draw into an external world target, over everything they
-     * draw there. Other targets are left alone.
+     * Darkens the edges of a colour texture owned by the caller, over everything already in it.
      *
+     * @param colorTexture              Texture to darken.
+     * @param size                      Size of the texture.
      * @param strength                  Darkness at the edges, from 0 for none to 1 for black.
      * @param center                    Middle of the darkening, in normalized device coordinates.
      */
-    virtual void setVignette(float strength, Vec2f center) = 0;
+    virtual void drawVignette(TextureRenderId colorTexture, Sizei size, float strength, Vec2f center) = 0;
 
     /**
      * @param external                  Whether something other than the frame rate limiter, like a VR runtime, paces
