@@ -1,6 +1,8 @@
 #pragma once
 
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include "GUI/GUIWindow.h"
 
@@ -51,6 +53,15 @@ class GUIWindow_GameVideoOptions : public GUIWindow {
     virtual ~GUIWindow_GameVideoOptions() {}
 
     virtual void Update() override;
+
+    /**
+     * Sets `graphics.texture_pack` to the next texture pack found when the screen opened, after the last one to none.
+     * Takes effect on restart.
+     */
+    void cycleTexturePack();
+
+ private:
+    std::vector<std::string> _texturePacks; // Values for `graphics.texture_pack`, the first one is none.
 };
 
 class GraphicsImage;

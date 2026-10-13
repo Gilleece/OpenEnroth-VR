@@ -3,3 +3,5 @@
 FileSystem *dfs = nullptr;
 FileSystem *ufs = nullptr;
 FileSystem *tfs = nullptr;
+Path dataDirPath;
+Path texturePackDirPath;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 #include <utility>
+#include <vector>
 #include <memory>
 
 #include "GUI/UI/UIGame.h"
@@ -27,6 +28,7 @@
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Image.h"
 #include "Engine/Localization.h"
+#include "Engine/Resources/EngineFileSystem.h"
 #include "Engine/MapEnumFunctions.h"
 #include "Engine/Tables/MapTable.h"
 #include "Engine/Objects/Actor.h"
@@ -58,6 +60,7 @@
 
 #include "Utility/Math/TrigLut.h"
 #include "Utility/Segment.h"
+#include "Utility/System/Fs.h"
 
 #include "Library/Logger/Logger.h"
 
@@ -435,6 +438,62 @@ static std::string vrSettingText(VrSetting setting) {
     return {};
 }
 
+/**
+ * @param texturePack                   Value of `graphics.texture_pack`.
+ * @return                              Values for `graphics.texture_pack` to choose from: none, then every folder with
+ *                                      a pack manifest next to `texturePack`. When `texturePack` is empty, the folders
+ *                                      in `../mm7_hd` and in the data folder itself instead. `texturePack` itself is
+ *                                      always in the list.
+ */
+static std::vector<std::string> findTexturePacks(const std::string &texturePack) {
+    std::vector<std::string> parents;
+    if (texturePack.empty()) {
+        parents = {"../mm7_hd", ""};
+    } else {
+        size_t slash = texturePack.find_last_of("/\\");
+        parents = {slash == std::string::npos ? std::string() : texturePack.substr(0, slash)};
+    }
+
+    std::vector<std::string> result = {""};
+    for (const std::string &parent : parents) {
+        Path folder = parent.empty() ? dataDirPath : dataDirPath / Path(parent);
+        if (!fs::exists(folder))
+            continue;
+
+        std::vector<DirectoryEntry> entries = fs::ls(folder);
+        std::ranges::sort(entries, {}, &DirectoryEntry::name);
+        for (const DirectoryEntry &entry : entries)
+            if (entry.type == FILE_DIRECTORY && fs::exists(folder / Path(entry.name) / Path("manifest.json")))
+                result.push_back(parent.empty() ? entry.name : parent + "/" + entry.name);
+    }
+
+    if (!texturePack.empty() && std::ranges::find(result, texturePack) == result.end())
+        result.insert(result.begin() + 1, texturePack);
+    return result;
+}
+
+/**
+ * @param texturePack                   Value of `graphics.texture_pack`.
+ * @return                              Text of the texture pack line on the video options screen.
+ */
+static std::string texturePackText(const std::string &texturePack) {
+    std::string name = "none";
+    if (!texturePack.empty())
+        name = texturePack.substr(texturePack.find_last_of("/\\") + 1);
+    if (name.size() > 13)
+        name = name.substr(0, 10) + "..."; // Keeps the line on one line of the text box.
+
+    Path folder = texturePack.empty() ? Path() : dataDirPath / Path(texturePack);
+    bool pending = folder.str() != texturePackDirPath.str(); // The pack is opened once, at startup.
+    return fmt::format("Pack: {}{}", name, pending ? " (restart)" : "");
+}
+
+void GUIWindow_GameVideoOptions::cycleTexturePack() {
+    auto pos = std::ranges::find(_texturePacks, engine->config->graphics.TexturePack.value());
+    auto next = pos == _texturePacks.end() || pos + 1 == _texturePacks.end() ? _texturePacks.begin() : pos + 1;
+    engine->config->graphics.TexturePack.setValue(*next);
+}
+
 GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
     : GUIWindow(WINDOW_VIDEO_OPTIONS, {0, 0}, render->GetRenderDimensions()) {
     // -------------------------------------
@@ -475,6 +534,10 @@ GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
         CreateButton({0x13u, 0x144u}, {0xD6u, 0x12u}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleTint, 0);
     }
     CreateButton({22, 250}, {211, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleEnhancedGraphics, 0);
+
+    _texturePacks = findTexturePacks(engine->config->graphics.TexturePack.value());
+    if (_texturePacks.size() > 1)
+        CreateButton({22, 238}, {211, 12}, BUTTON_TYPE_NORMAL, 0, UIMSG_CycleTexturePack, 0);
 
     if (render->uiLayer()) {
         for (VrSetting setting : Segment(VR_SETTING_FIRST, VR_SETTING_LAST)) {
@@ -519,6 +582,9 @@ void GUIWindow_GameVideoOptions::Update() {
     bool enhanced = engine->config->graphics.Enhanced.value();
     DrawTitleText(assets->pFontSmallnum.get(), 0, 0, enhanced ? colorTable.White : colorTable.CarbonGray,
                   enhanced ? "Enhanced graphics: on" : "Enhanced graphics: off", 3, Recti(22, 252, 211, 14));
+    if (_texturePacks.size() > 1)
+        DrawTitleText(assets->pFontSmallnum.get(), 0, 0, colorTable.White, texturePackText(engine->config->graphics.TexturePack.value()), 3,
+                      Recti(22, 240, 211, 10));
 
     if (render->uiLayer()) {
         render->FillRect(VR_PANEL_RECT, colorTable.Black);

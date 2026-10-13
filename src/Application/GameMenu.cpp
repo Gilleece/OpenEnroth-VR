@@ -251,6 +251,9 @@ void Menu::EventLoop() {
                 render->applyPipelineSettings();
                 gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
                 continue;
+            case UIMSG_CycleTexturePack:
+                static_cast<GUIWindow_GameVideoOptions *>(pGUIWindow_CurrentMenu.get())->cycleTexturePack();
+                continue;
             case UIMSG_ChangeVrSetting:
                 changeVrSetting(static_cast<VrSetting>(param));
                 continue;
