@@ -11,6 +11,7 @@ set(ENGINE_GRAPHICS_SOURCES
         Collisions.cpp
         DecalBuilder.cpp
         FrameLimiter.cpp
+        GiBaker.cpp
         Image.cpp
         ImageLoader.cpp
         Indoor.cpp
@@ -39,6 +40,7 @@ set(ENGINE_GRAPHICS_HEADERS
         DecalBuilder.h
         FaceEnums.h
         FrameLimiter.h
+        GiBaker.h
         Image.h
         ImageLoader.h
         Indoor.h
