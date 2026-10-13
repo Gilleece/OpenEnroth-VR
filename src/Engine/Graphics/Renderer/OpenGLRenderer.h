@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <map>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -13,6 +14,8 @@
 
 #include "Engine/Graphics/CameraView.h"
 #include "Engine/Graphics/FrameLimiter.h"
+#include "Engine/MapEnums.h"
+#include "Engine/Resources/GiProbes.h"
 #include "BaseRenderer.h"
 
 #include "Library/Color/Colorf.h"
@@ -298,6 +301,20 @@ class OpenGLRenderer : public BaseRenderer {
     void _submitAmbientOcclusion(const OpenGLShader &shader);
 
     /**
+     * Loads the baked indirect light of the current map when the map changes, and blends its time keys for the time of
+     * day when the game minute changes. Does nothing unless global illumination is enabled.
+     */
+    void _updateGlobalIllumination();
+
+    /**
+     * Binds the baked indirect light of the current map and sets the uniforms `gi.glsl` reads. Does nothing for
+     * programs compiled without `GLOBAL_ILLUMINATION`.
+     *
+     * @param shader                    Program in use.
+     */
+    void _submitGlobalIllumination(const OpenGLShader &shader);
+
+    /**
      * Binds the sun shadow map and sets the uniforms `shadow.glsl` reads. Does nothing for programs compiled without
      * `SUN_SHADOWS`.
      *
@@ -558,6 +575,14 @@ class OpenGLRenderer : public BaseRenderer {
     bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.
     bool _torchShadows = false; // Same for the indoor shaders.
     bool _ambientOcclusion = false; // Same for the lit world shaders.
+    bool _globalIllumination = false; // Same for the lit world shaders and the billboards.
+    MapId _giMap = MAP_INVALID; // Map that `_giProbes` were looked up for.
+    std::optional<GiProbes> _giProbes; // Baked indirect light of `_giMap`, empty if the texture pack has none.
+    std::vector<float> _giKeys; // Coefficients of each time key as floats, laid out as `_giTexture` holds them.
+    int _giMinute = -1; // Minute of the day that `_giTexture` holds the light of.
+    Vec3f _giAverage; // Mean irradiance where the party walks, at that minute.
+    GLuint _giTexture = 0;
+    GLuint _giTerrainHeights = 0;
     bool _terrainVariation = false; // Same for the terrain shaders.
     bool _spriteCrossfade = false; // Same for the billboard shader.
     bool _spriteDepth = false; // Same.

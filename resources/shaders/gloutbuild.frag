@@ -54,11 +54,18 @@ uniform sampler2DArray materialArray;
 #include "ao.glsl"
 #endif
 
+#ifdef GLOBAL_ILLUMINATION
+#include "gi.glsl"
+#endif
+
 void main() {
 #ifdef AMBIENT_OCCLUSION
     ambientOcclusion = AmbientOcclusion();
 #endif
     vec3 fragnorm = normalize(vsNorm);
+#ifdef GLOBAL_ILLUMINATION
+    indirectLight = GlobalIllumination(vsPos, fragnorm);
+#endif
     vec3 fragviewdir = normalize(CameraPos - vsPos);
 #ifdef LINEAR_PIPELINE
     bool waterTile = watertiles == 1 && olayer == 0.0 && (vsAttrib & 0x3C00) == 0;

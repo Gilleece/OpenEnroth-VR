@@ -38,6 +38,7 @@
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/ParticleEngine.h"
+#include "Engine/Tables/MapTable.h"
 #include "Engine/Tables/TextureFrameTable.h"
 #include "Engine/Graphics/Viewport.h"
 #include "Engine/Graphics/Vis.h"
@@ -79,6 +80,9 @@ static constexpr float SOFT_PARTICLE_DISTANCE = 64.0f; // World units in front o
 static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
 static constexpr GLint TORCH_SHADOW_TEXTURE_UNIT = 16; // The indoor pass binds its arrays to units 0 to 15.
 static constexpr GLint AMBIENT_OCCLUSION_TEXTURE_UNIT = 17;
+static constexpr GLint GI_PROBES_TEXTURE_UNIT = 18;
+static constexpr GLint GI_TERRAIN_HEIGHTS_TEXTURE_UNIT = 19;
+static constexpr int GI_MAX_LAYERS = 8; // As `gi.glsl` declares it.
 static constexpr int TORCH_SHADOW_SIZE = 512;
 static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
@@ -1090,6 +1094,149 @@ void OpenGLRenderer::_submitAmbientOcclusion(const OpenGLShader &shader) {
     glUniform2f(shader.uniformLocation("ambientOcclusionDepth"), projection[2][2], projection[3][2]);
 }
 
+/**
+ * @param probes                        Baked indirect light of a map.
+ * @return                              Why the renderer can't use `probes`, or an empty string if it can.
+ */
+static std::string giProbesProblem(const GiProbes &probes) {
+    GLint maxSize = 0;
+    glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE, &maxSize);
+    if (std::max({probes.dims.x, probes.dims.y, probes.dims.z * 3}) > maxSize)
+        return fmt::format("its grid of {}x{}x{} probes doesn't fit in a 3D texture", probes.dims.x, probes.dims.y, probes.dims.z);
+    if (probes.layout == GI_PROBES_TERRAIN_LAYERS && (probes.dims.z > GI_MAX_LAYERS || std::ssize(probes.layerHeights) != probes.dims.z))
+        return fmt::format("it has {} layers over the terrain, at most {} are supported", probes.dims.z, GI_MAX_LAYERS);
+    if (probes.spacing.x <= 0 || probes.spacing.y <= 0 || (probes.layout == GI_PROBES_GRID && probes.spacing.z <= 0))
+        return "its probe spacing isn't positive";
+    if (!std::ranges::is_sorted(probes.timeHours))
+        return "its time keys aren't in order";
+    return {};
+}
+
+void OpenGLRenderer::_updateGlobalIllumination() {
+    if (!_globalIllumination)
+        return;
+
+    if (_giMap != engine->_currentLoadedMapId) {
+        _giMap = engine->_currentLoadedMapId;
+        _giMinute = -1;
+        _giKeys.clear();
+        _giProbes.reset();
+        if (_giMap != MAP_INVALID) {
+            std::string_view mapFile = pMapTable->pInfos[_giMap].fileName;
+            _giProbes = engine->resources()->packGiProbes(mapFile);
+            if (_giProbes) {
+                if (std::string problem = giProbesProblem(*_giProbes); !problem.empty()) {
+                    MM_WARNING("Baked indirect light of '{}' isn't used, {}.", mapFile, problem);
+                    _giProbes.reset();
+                }
+            }
+        }
+        if (!_giProbes)
+            return;
+
+        // The file holds each probe's red, green and blue coefficients together, the texture holds each colour's
+        // coefficients as a block along z.
+        const GiProbes &probes = *_giProbes;
+        int count = probes.probeCount();
+        _giKeys.resize(probes.timeHours.size() * count * GiProbes::COEFFICIENTS);
+        for (size_t key = 0; key < probes.timeHours.size(); key++) {
+            const uint16_t *src = probes.coefficients.data() + key * count * GiProbes::COEFFICIENTS;
+            float *dst = _giKeys.data() + key * count * GiProbes::COEFFICIENTS;
+            for (int probe = 0; probe < count; probe++)
+                for (int channel = 0; channel < 3; channel++)
+                    for (int i = 0; i < 4; i++)
+                        dst[(channel * count + probe) * 4 + i] = halfToFloat(src[probe * GiProbes::COEFFICIENTS + channel * 4 + i]);
+        }
+
+        if (!_giTexture)
+            glGenTextures(1, &_giTexture);
+        glBindTexture(GL_TEXTURE_3D, _giTexture);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, probes.dims.x, probes.dims.y, probes.dims.z * 3, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        for (GLenum wrap : {GL_TEXTURE_WRAP_S, GL_TEXTURE_WRAP_T, GL_TEXTURE_WRAP_R})
+            glTexParameteri(GL_TEXTURE_3D, wrap, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_3D, 0);
+
+        if (probes.layout == GI_PROBES_TERRAIN_LAYERS) {
+            std::vector<float> heights;
+            for (int y = 0; y < probes.dims.y; y++)
+                for (int x = 0; x < probes.dims.x; x++)
+                    heights.push_back(pOutdoor->pTerrain.heightByPos(probes.origin + Vec3f(x * probes.spacing.x, y * probes.spacing.y, 0)));
+            if (!_giTerrainHeights)
+                glGenTextures(1, &_giTerrainHeights);
+            glBindTexture(GL_TEXTURE_2D, _giTerrainHeights);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, probes.dims.x, probes.dims.y, 0, GL_RED, GL_FLOAT, heights.data());
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+    }
+
+    if (!_giProbes)
+        return;
+    int minute = pParty->uCurrentHour * 60 + pParty->uCurrentMinute;
+    if (minute == _giMinute)
+        return;
+    _giMinute = minute;
+
+    // The keys before and after the time of day, around midnight if it's past the last key or before the first.
+    const std::vector<float> &hours = _giProbes->timeHours;
+    float hour = minute / 60.0f;
+    size_t next = std::ranges::upper_bound(hours, hour) - hours.begin();
+    size_t prev = next == 0 ? hours.size() - 1 : next - 1;
+    next %= hours.size();
+    float span = std::fmod(hours[next] - hours[prev] + 24.0f, 24.0f);
+    float weight = span > 0 ? std::fmod(hour - hours[prev] + 24.0f, 24.0f) / span : 0.0f;
+
+    size_t size = _giKeys.size() / hours.size();
+    std::vector<float> blended(size);
+    const float *a = _giKeys.data() + prev * size;
+    const float *b = _giKeys.data() + next * size;
+    for (size_t i = 0; i < size; i++)
+        blended[i] = a[i] + (b[i] - a[i]) * weight;
+    _giAverage = _giProbes->averageIrradiance[prev] + (_giProbes->averageIrradiance[next] - _giProbes->averageIrradiance[prev]) * weight;
+
+    const Vec3i &dims = _giProbes->dims;
+    glBindTexture(GL_TEXTURE_3D, _giTexture);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0, dims.x, dims.y, dims.z * 3, GL_RGBA, GL_FLOAT, blended.data());
+    glBindTexture(GL_TEXTURE_3D, 0);
+}
+
+void OpenGLRenderer::_submitGlobalIllumination(const OpenGLShader &shader) {
+    if (!shader.hasDefine("GLOBAL_ILLUMINATION"))
+        return;
+
+    glActiveTexture(GL_TEXTURE0 + GI_PROBES_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_3D, _giProbes ? _giTexture : 0);
+    glActiveTexture(GL_TEXTURE0 + GI_TERRAIN_HEIGHTS_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, _giProbes ? _giTerrainHeights : 0);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(shader.uniformLocation("giProbes"), GI_PROBES_TEXTURE_UNIT);
+    glUniform1i(shader.uniformLocation("giTerrainHeights"), GI_TERRAIN_HEIGHTS_TEXTURE_UNIT);
+
+    if (!_giProbes) { // A zero average turns the indirect light off.
+        glUniform3f(shader.uniformLocation("giOrigin"), 0, 0, 0);
+        glUniform3f(shader.uniformLocation("giSpacing"), 1, 1, 1);
+        glUniform3i(shader.uniformLocation("giDims"), 1, 1, 1);
+        glUniform1i(shader.uniformLocation("giTerrainLayers"), 0);
+        glUniform3f(shader.uniformLocation("giAverage"), 0, 0, 0);
+        return;
+    }
+
+    const GiProbes &probes = *_giProbes;
+    bool terrainLayers = probes.layout == GI_PROBES_TERRAIN_LAYERS;
+    glUniform3f(shader.uniformLocation("giOrigin"), probes.origin.x, probes.origin.y, probes.origin.z);
+    glUniform3f(shader.uniformLocation("giSpacing"), probes.spacing.x, probes.spacing.y, terrainLayers ? 1.0f : probes.spacing.z);
+    glUniform3i(shader.uniformLocation("giDims"), probes.dims.x, probes.dims.y, probes.dims.z);
+    glUniform1i(shader.uniformLocation("giTerrainLayers"), terrainLayers);
+    if (terrainLayers)
+        glUniform1fv(shader.uniformLocation("giLayerHeights"), probes.dims.z, probes.layerHeights.data());
+    glUniform3f(shader.uniformLocation("giAverage"), _giAverage.x, _giAverage.y, _giAverage.z);
+}
+
 void OpenGLRenderer::_submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers) {
     if (!shader.hasDefine("TORCH_SHADOWS"))
         return;
@@ -1474,6 +1621,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _sunShadows = config->graphics.SunShadows.value();
     _torchShadows = config->graphics.TorchShadows.value();
     _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
+    _globalIllumination = _linearPipeline && config->graphics.GlobalIllumination.value();
     _terrainVariation = _linearPipeline && config->graphics.TerrainVariation.value();
     _spriteCrossfade = config->graphics.SpriteCrossfade.value();
     _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
@@ -2293,6 +2441,7 @@ RgbaImage OpenGLRenderer::makeWorldTargetScreenshot(int width, int height) {
 // ---------------------- terrain -----------------------
 void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _initWaterTiles();
+    _updateGlobalIllumination();
     // shader version
     // draws entire terrain in one go at the moment
     // textures must all be square and same size
@@ -2609,6 +2758,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _submitSunShadow(shader);
     _submitHeightFog(shader, true);
     _submitAmbientOcclusion(shader);
+    _submitGlobalIllumination(shader);
     _submitWater(shader, nullptr);
     if (tileMaterials) {
         glUniform1i(shader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
@@ -3623,6 +3773,7 @@ void OpenGLRenderer::DrawBillboards() {
     uniforms.paltex2D = PALETTE_TEXTURE_UNIT;
     uniforms.submit(billbshader);
     _submitHeightFog(billbshader, worldSpaceBillboards());
+    _submitGlobalIllumination(billbshader);
     bool soft = _sceneDepthCopied && worldSpaceBillboards();
     if (billbshader.hasDefine("LINEAR_PIPELINE")) {
         glActiveTexture(GL_TEXTURE0 + SCENE_DEPTH_TEXTURE_UNIT);
@@ -4488,6 +4639,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
     _submitSunShadow(outbuildshader);
     _submitHeightFog(outbuildshader, true);
     _submitAmbientOcclusion(outbuildshader);
+    _submitGlobalIllumination(outbuildshader);
     _submitWater(outbuildshader, nullptr);
     bool hasMaterials = std::ranges::any_of(outbuildmaterials, [](GLuint id) { return id != 0; });
     if (hasMaterials) {
@@ -4496,6 +4648,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
         _submitSunShadow(outbuildmaterialshader);
         _submitHeightFog(outbuildmaterialshader, true);
         _submitAmbientOcclusion(outbuildmaterialshader);
+        _submitGlobalIllumination(outbuildmaterialshader);
         _submitWater(outbuildmaterialshader, nullptr);
         glUniform1i(outbuildmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
     }
@@ -4537,6 +4690,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
 
 void OpenGLRenderer::DrawIndoorFaces() {
     _initWaterTiles();
+    _updateGlobalIllumination();
     // void RenderOpenGL::DrawIndoorBSP() {
 
         glEnable(GL_CULL_FACE);
@@ -4984,6 +5138,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
         std::copy_n(uniforms.pointLights.begin(), _spriteLights.pointLights.size(), _spriteLights.pointLights.begin());
         _submitTorchShadows(bspshader, torchShadowLayers);
         _submitAmbientOcclusion(bspshader);
+        _submitGlobalIllumination(bspshader);
         float wall = ambient * INDOOR_WATER_REFLECTION;
         Colorf room(wall, wall, wall); // Indoor water reflects the room around it.
         _submitWater(bspshader, &room);
@@ -4993,6 +5148,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
             uniforms.submit(bspmaterialshader);
             _submitTorchShadows(bspmaterialshader, torchShadowLayers);
             _submitAmbientOcclusion(bspmaterialshader);
+            _submitGlobalIllumination(bspmaterialshader);
             _submitWater(bspmaterialshader, &room);
             glUniform1i(bspmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         }
@@ -5330,6 +5486,10 @@ bool OpenGLRenderer::ReloadShaders() {
         for (std::vector<std::string_view> *defines : {&outdoorLitDefines, &outdoorLitMaterialDefines, &indoorDefines, &indoorMaterialDefines})
             defines->push_back("AMBIENT_OCCLUSION");
     }
+    if (_globalIllumination) {
+        for (std::vector<std::string_view> *defines : {&outdoorLitDefines, &outdoorLitMaterialDefines, &indoorDefines, &indoorMaterialDefines})
+            defines->push_back("GLOBAL_ILLUMINATION");
+    }
     std::vector<std::string_view> terrainDefines = outdoorLitDefines;
     std::vector<std::string_view> terrainMaterialDefines = outdoorLitMaterialDefines;
     if (_terrainVariation) {
@@ -5343,6 +5503,8 @@ bool OpenGLRenderer::ReloadShaders() {
         billboardDefines.push_back("SPRITE_DEPTH");
     if (_spriteLighting)
         billboardDefines.push_back("SPRITE_LIGHTING");
+    if (_globalIllumination)
+        billboardDefines.push_back("GLOBAL_ILLUMINATION");
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          terrainDefines},
         {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorLitDefines},

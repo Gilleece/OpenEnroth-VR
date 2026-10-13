@@ -44,6 +44,7 @@ set(RESOURCE_SOURCES
         shaders/ao.glsl
         shaders/colour.glsl
         shaders/fog.glsl
+        shaders/gi.glsl
         shaders/heightfog.glsl
         shaders/glao.frag
         shaders/glao.vert

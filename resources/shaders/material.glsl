@@ -18,11 +18,7 @@ vec3 CalcSunLightMaterial(Sunlight light, vec3 normal, vec3 viewDir, float shini
     vec3 lightDir = normalize(light.direction);
     float diff = max(dot(normal, lightDir), 0.0);
     float spec = MaterialSpecular(normal, lightDir, viewDir, shininess);
-#ifdef AMBIENT_OCCLUSION
-    return clamp(light.ambient * ambientOcclusion + light.diffuse * diff + light.specular * spec, 0.0, 1.0);
-#else
-    return clamp(light.ambient + light.diffuse * diff + light.specular * spec, 0.0, 1.0);
-#endif
+    return clamp(SunAmbient(light.ambient) + light.diffuse * diff + light.specular * spec, 0.0, 1.0);
 }
 
 #ifdef SUN_SHADOWS
@@ -31,11 +27,7 @@ vec3 CalcSunLightMaterialShadowed(Sunlight light, vec3 normal, vec3 viewDir, flo
     vec3 lightDir = normalize(light.direction);
     float diff = max(dot(normal, lightDir), 0.0);
     float spec = MaterialSpecular(normal, lightDir, viewDir, shininess);
-#ifdef AMBIENT_OCCLUSION
-    return clamp(light.ambient * SunShadowAmbient(shadow) * ambientOcclusion + (light.diffuse * diff + light.specular * spec) * shadow, 0.0, 1.0);
-#else
-    return clamp(light.ambient * SunShadowAmbient(shadow) + (light.diffuse * diff + light.specular * spec) * shadow, 0.0, 1.0);
-#endif
+    return clamp(SunAmbient(light.ambient * SunShadowAmbient(shadow)) + (light.diffuse * diff + light.specular * spec) * shadow, 0.0, 1.0);
 }
 #endif
 

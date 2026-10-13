@@ -52,11 +52,18 @@ uniform sampler2DArray materialArray;
 #include "ao.glsl"
 #endif
 
+#ifdef GLOBAL_ILLUMINATION
+#include "gi.glsl"
+#endif
+
 void main() {
 #ifdef AMBIENT_OCCLUSION
     ambientOcclusion = AmbientOcclusion();
 #endif
     vec3 fragnorm = normalize(vsNorm);
+#ifdef GLOBAL_ILLUMINATION
+    indirectLight = GlobalIllumination(vsPos, fragnorm);
+#endif
     vec3 fragviewdir = normalize(CameraPos - vsPos);
 
     // get water textures at point
@@ -88,6 +95,9 @@ void main() {
     // Water tiles are all water, shore tiles where they're transparent. Filtered high resolution shore tiles are partly
     // transparent along the shoreline.
     float waterAmount = (vsAttrib & 0x1) > 0 ? 1.0 : 1.0 - fragcol.a;
+#ifdef GLOBAL_ILLUMINATION
+    indirectLight = mix(indirectLight, vec3(1.0), waterAmount); // Water shows the sky, not the light around it.
+#endif
     vec3 waternormal = WaterNormal(vsPos); // Outside the branch, texture lookups need uniform control flow.
     fragcol = vec4(mix(fragcol.rgb, watercol.rgb, waterAmount), mix(fragcol.a, watercol.a, waterAmount));
 #else

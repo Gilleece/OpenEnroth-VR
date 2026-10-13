@@ -43,6 +43,10 @@ uniform sampler2DArray materialArray;
 #include "ao.glsl"
 #endif
 
+#ifdef GLOBAL_ILLUMINATION
+#include "gi.glsl"
+#endif
+
 #ifdef LINEAR_PIPELINE
 #include "sky.glsl"
 #include "water.glsl"
@@ -53,6 +57,9 @@ void main() {
     ambientOcclusion = AmbientOcclusion();
 #endif
     vec3 fragnorm = normalize(vsNorm);
+#ifdef GLOBAL_ILLUMINATION
+    indirectLight = GlobalIllumination(vsPos, fragnorm);
+#endif
     vec3 fragviewdir = normalize(CameraPos - vsPos);
 #ifdef LINEAR_PIPELINE
     bool water = (vsAttrib & 0x2) > 0 && fragnorm.z > 0.7; // Pools and fountain basins, not falling water.

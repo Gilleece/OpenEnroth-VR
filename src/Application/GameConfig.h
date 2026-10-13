@@ -554,6 +554,10 @@ class GameConfig : public Config {
         Bool AmbientOcclusion = {this, "ambient_occlusion", false,
                                  "Darken the ambient light and the point lights in corners, under stairs and behind pillars, with"
                                  " screen-space ambient occlusion. Only applies with linear_pipeline."};
+        Bool GlobalIllumination = {this, "global_illumination", false,
+                                   "Light the world with the indirect light that a texture pack bakes for each map, so that walls tint"
+                                   " the ground next to them and enclosed places get less ambient light. Only applies with"
+                                   " linear_pipeline."};
         Bool SunShadows = {this, "sun_shadows", false,
                            "Let terrain, buildings, trees and monsters cast shadows from the sun outdoors. Takes effect on restart."};
         Int ShadowDistance = {this, "shadow_distance", 8192, &ValidateShadowDistance,
