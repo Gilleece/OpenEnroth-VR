@@ -814,9 +814,9 @@ class GameConfig : public Config {
 
         ConfigEntry<VrHudLayout> HudLayout = {this, "hud_layout", VR_HUD_LAYOUT_CLASSIC,
             "How the game screen is shown in the headset, 'classic' as one floating screen or 'spread', where the "
-            "portraits, status bar, minimap, right panel and buttons hang around the view on their own and the rest of "
-            "the game screen stays where the floating screen would be. Other screens, like books and houses, always "
-            "show as one floating screen."};
+            "portraits, status bar, minimap, right panel, books and buttons hang around the view on cards of their own "
+            "and the rest of the game screen hangs straight ahead. The spread HUD turns with the party, not with the "
+            "head. Other screens, like books and houses, always show as one floating screen."};
 
         Float HudDistance = {this, "hud_distance", 1.2f, &ValidateUiDistance,
             "Distance of the spread HUD from the eyes in metres."};

@@ -224,21 +224,26 @@ class Renderer {
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) = 0;
 
     /**
-     * Keeps a copy of a colour texture owned by the caller, for `restoreHeldTexture` to put back later.
+     * Copies a rectangle of the UI target into a colour texture owned by the caller, pixel for pixel. Only valid when
+     * `uiLayer` is true.
      *
-     * @param slot                      Which of the two copies to keep it in, 0 or 1.
-     * @param colorTexture              Texture to copy.
+     * @param colorTexture              Texture to copy into.
      * @param size                      Size of the texture.
+     * @param rect                      Rectangle to copy, in render coordinates.
+     * @param position                  Where the copy's bottom left corner goes in the texture, in pixels from its
+     *                                  bottom left. The copy takes up `rect` times the UI scale.
      */
-    virtual void holdTexture(int slot, TextureRenderId colorTexture, Sizei size) = 0;
+    virtual void copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) = 0;
 
     /**
-     * Copies what `holdTexture` kept in a slot into a colour texture owned by the caller.
+     * Fills a rectangle of a colour texture owned by the caller with one colour.
      *
-     * @param slot                      Copy to put back.
-     * @param colorTexture              Texture to copy into, the size the copy was kept at.
+     * @param colorTexture              Texture to fill.
+     * @param size                      Size of the texture.
+     * @param rect                      Rectangle to fill, in pixels from the texture's bottom left.
+     * @param color                     Colour to fill it with, alpha included.
      */
-    virtual void restoreHeldTexture(int slot, TextureRenderId colorTexture) = 0;
+    virtual void fillExternalRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Color color) = 0;
 
     /**
      * Releases what the renderer keeps for colour textures owned by the caller, before the caller deletes them.

@@ -52,27 +52,42 @@ static constexpr std::chrono::seconds FRAME_SUMMARY_INTERVAL(5);
 static constexpr int64_t CULLING_LOG_INTERVAL = 90;
 static constexpr float CULLING_MARGIN_RAD = 5 * M_PI / 180; // Slack for the culling yaw and pitch, rounded to the party's units.
 static constexpr float MAX_CULLING_HALF_FOV_RAD = 85 * M_PI / 180;
+static constexpr float WORLD_FADE_SECONDS = 0.2f; // How long the last world frame takes to go black once the world isn't drawn.
+static constexpr Sizei FADE_SWAPCHAIN_SIZE(16, 16);
+static constexpr float FADE_QUAD_SIZE = 10; // Metres at 1 m from the eyes, past the edges of any headset's view.
+
+enum class HudSide {
+    HUD_SIDE_ABOVE, // Middles lined up.
+    HUD_SIDE_RIGHT, // Bottoms lined up.
+};
+using enum HudSide;
 
 /**
- * Part of the game screen that the spread HUD shows on a quad of its own, hanging in VIEW space around the head and
- * facing it.
+ * Part of the game screen that the spread HUD shows on a card of its own, a quad framed by a border that hangs around
+ * the head origin and is tilted to face it.
  */
-struct HudElement {
+struct HudCard {
     const char *name;
-    Recti rect; // In the game's 640x480 layout.
-    float yawDegrees; // Of the quad's centre, positive to the right.
+    Recti rect; // In the game's 640x480 layout, cut to what the card shows.
+    float yawDegrees; // Of the card's middle from the head origin, positive to the right. Unused for an attached card.
     float pitchDegrees; // Positive up.
+    int attachedTo = -1; // Earlier card that this one touches, in the same plane, or -1.
+    HudSide side = HUD_SIDE_ABOVE; // Of that card.
 };
 
-static constexpr std::array<HudElement, 5> HUD_ELEMENTS = {{
-    {"status bar", Recti(0, 352, 468, 24), 0, -24},
-    {"portraits", Recti(0, 376, 468, 104), 0, -31},
-    {"minimap", Recti(468, 0, 172, 140), 30, 20},
-    {"right panel", Recti(468, 140, 172, 204), 34, 0},
-    {"buttons", Recti(468, 344, 172, 136), 30, -21},
+static constexpr std::array<HudCard, 5> HUD_CARDS = {{
+    {"portraits", Recti(8, 376, 460, 100), 0, -40},
+    {"status bar", Recti(6, 359, 465, 15), 0, 0, 0, HUD_SIDE_ABOVE},
+    {"right panel", Recti(472, 148, 166, 194), 0, 0, 0, HUD_SIDE_RIGHT},
+    {"minimap", Recti(469, 0, 171, 148), 28, 18},
+    {"books and buttons", Recti(474, 344, 162, 134), -28, 18},
 }};
-static constexpr Recti HUD_VIEWPORT(8, 8, 460, 344); // Inside the frame around the world view.
-static constexpr uint32_t HUD_LAYER_COUNT = static_cast<uint32_t>(2 + HUD_ELEMENTS.size()); // With the viewport and the world's projection layer.
+static constexpr Recti HUD_VIEWPORT(9, 9, 458, 342); // Inside the frame around the world view, a pixel in from its black edge.
+static constexpr int HUD_BORDER = 3; // Width of a card's border in the game's pixels, a light line between two dark ones.
+static constexpr int HUD_MARGIN = 2; // Pixels of the dark colour around each card in the swapchain image.
+static constexpr Color HUD_BORDER_DARK(24, 18, 12);
+static constexpr Color HUD_BORDER_LIGHT(196, 160, 96);
+static constexpr uint32_t HUD_LAYER_COUNT = static_cast<uint32_t>(3 + HUD_CARDS.size()); // With the viewport, the world and its fade.
 
 using PfnWglSwapIntervalExt = BOOL (WINAPI *)(int interval);
 using PfnWglGetSwapIntervalExt = int (WINAPI *)();
@@ -158,6 +173,33 @@ static glm::quat toGlm(const XrQuaternionf &orientation) {
     return glm::quat(orientation.w, orientation.x, orientation.y, orientation.z);
 }
 
+static glm::vec3 toGlm(const XrVector3f &position) {
+    return glm::vec3(position.x, position.y, position.z);
+}
+
+/**
+ * @param uiPosition                    Position in the game's 640x480 layout.
+ * @return                              Part of the game screen that the spread HUD shows there, the viewport or a
+ *                                      card, or null if it shows nothing there.
+ */
+static const Recti *hudPartAt(Pointi uiPosition) {
+    if (HUD_VIEWPORT.contains(uiPosition))
+        return &HUD_VIEWPORT;
+    for (const HudCard &card : HUD_CARDS)
+        if (card.rect.contains(uiPosition))
+            return &card.rect;
+    return nullptr;
+}
+
+/**
+ * @param rect                          Rectangle.
+ * @param point                         Point.
+ * @return                              Point of the rectangle nearest to `point`.
+ */
+static Pointi nearestIn(const Recti &rect, Pointi point) {
+    return Pointi(std::clamp(point.x, rect.x, rect.x + rect.w - 1), std::clamp(point.y, rect.y, rect.y + rect.h - 1));
+}
+
 /**
  * @param views                         Eye views.
  * @param head                          Mid-eye view the culling camera looks along.
@@ -212,7 +254,7 @@ static int visibleModelCount() {
     return result;
 }
 
-VrSystem::VrSystem() : PlatformEventFilter({EVENT_KEY_PRESS}) {}
+VrSystem::VrSystem() : PlatformEventFilter({EVENT_KEY_PRESS, EVENT_MOUSE_MOVE}) {}
 
 VrSystem::~VrSystem() {
     shutdown();
@@ -270,23 +312,29 @@ bool VrSystem::pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) {
     if (!_running || !_lastCullingCamera)
         return false;
 
+    glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
     if (_hudSpread) {
-        for (size_t i = 0; i < HUD_ELEMENTS.size(); i++) {
-            const Recti &rect = HUD_ELEMENTS[i].rect;
-            if (!rect.contains(uiPosition))
-                continue;
+        // The point under the cursor on its card, or on the floating screen that the viewport is cut from.
+        const HudQuad *quad = &_hudScreen;
+        for (const HudQuad &card : _hudCards)
+            if (card.rect.contains(uiPosition))
+                quad = &card;
+        const Recti &rect = quad->rect;
+        glm::vec3 local((uiPosition.x + 0.5f - rect.x - rect.w / 2.0f) * quad->metresPerPixel,
+                        (rect.y + rect.h / 2.0f - uiPosition.y - 0.5f) * quad->metresPerPixel, 0);
+        glm::vec3 point = toGlm(quad->pose.position) + toGlm(quad->pose.orientation) * local;
 
-            // The point under the cursor on the element's quad in VIEW space, then in the game's view axes, forward, left and up.
-            const XrPosef &pose = _hudPoses[i];
-            glm::quat facing(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
-            glm::vec3 local((uiPosition.x + 0.5f - rect.x - rect.w / 2.0f) * _hudMetresPerPixel,
-                            (rect.y + rect.h / 2.0f - uiPosition.y - 0.5f) * _hudMetresPerPixel, 0);
-            glm::vec3 point = glm::vec3(pose.position.x, pose.position.y, pose.position.z) + facing * local;
-            glm::vec3 world = _lastPickOrientation * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
-            *origin = _lastPickOrigin;
-            *direction = Vec3f(world.x, world.y, world.z);
-            return true;
+        // Then in the game's view axes, forward, left and up.
+        glm::vec3 world;
+        if (_hudInRoom) {
+            point -= _hudHead;
+            world = partyYaw * _headTurn * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
+        } else {
+            world = _lastPickOrientation * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
         }
+        *origin = _lastPickOrigin;
+        *direction = Vec3f(world.x, world.y, world.z);
+        return true;
     }
 
     Sizei size = render->GetRenderDimensions();
@@ -301,7 +349,6 @@ bool VrSystem::pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) {
         const XrPosef &pose = *_uiPose;
         glm::quat facing(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
         glm::vec3 point = glm::vec3(pose.position.x, pose.position.y, pose.position.z) + facing * glm::vec3(right, up, 0) - _uiHead;
-        glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
         world = partyYaw * _headTurn * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
     } else {
         // Without a located head the quad hangs in VIEW space, the same point in the game's view axes, forward, left and up.
@@ -399,12 +446,12 @@ bool VrSystem::drawViews(WorldFrame &frame) {
     render->buildWorldBillboardQuads(eyeView(head, _eyes[0].size), SPRITE_FACING_VIEW_POSITION);
 
     std::array<int, 2> billboards = {};
+    _worldReleased = false;
     if (!drawEye(0, views[0], frame))
         return false;
     billboards[0] = render->worldBillboardsDrawn;
     _layerReady = drawEye(1, views[1], frame);
-    _heldValid = _layerReady;
-    _heldMap = engine->_currentLoadedMapId;
+    _worldReleased = _layerReady;
     billboards[1] = render->worldBillboardsDrawn;
     render->setExternalWorldTarget(TextureRenderId(), Sizei());
     render->turnWorldSpritesTo(eyeView(head, _eyes[0].size).position, HEAD_SPRITE_VIEW); // Back to the culling camera that picking reads.
@@ -450,6 +497,61 @@ bool VrSystem::keyPressEvent(const PlatformKeyEvent *event) {
     if (!event->isAutoRepeat && keyboardActionMapping && keyboardActionMapping->isBound(INPUT_ACTION_VR_RECENTER, event->key))
         recenter();
     return false;
+}
+
+bool VrSystem::mouseMoveEvent(const PlatformMouseEvent *event) {
+    if (!_hudSpread || !mouse || !render || mouse->_mouseLook == Io::Mouse::MouseLookState::Enabled) {
+        _hudCursor.reset();
+        return false;
+    }
+
+    // The spread HUD shows only parts of the game screen, the cursor is kept on them so that it can always be seen.
+    Pointi position = render->MapToRender(event->pos);
+    Pointi shown = hudCursor(_hudCursor, position);
+    _hudCursor = shown;
+    if (shown == position)
+        return false;
+
+    mouse->setPosition(shown);
+    mouse->warpMouse(shown);
+    return true;
+}
+
+bool VrSystem::hudShows(Pointi uiPosition) const {
+    return hudPartAt(uiPosition) != nullptr;
+}
+
+Pointi VrSystem::hudCursor(std::optional<Pointi> from, Pointi to) const {
+    if (hudShows(to))
+        return to;
+
+    // Across the gap in the direction the mouse moved, so that the cursor goes on to the next part.
+    Sizei screen = render->GetRenderDimensions();
+    Recti bounds(0, 0, screen.w, screen.h);
+    if (from && *from != to) {
+        float dx = static_cast<float>(to.x - from->x);
+        float dy = static_cast<float>(to.y - from->y);
+        float length = std::sqrt(dx * dx + dy * dy);
+        for (int i = 1; i <= screen.w + screen.h; i++) {
+            Pointi point(to.x + static_cast<int>(std::lround(dx * i / length)), to.y + static_cast<int>(std::lround(dy * i / length)));
+            if (!bounds.contains(point))
+                break;
+            if (hudShows(point))
+                return point;
+        }
+    }
+
+    // Otherwise to the edge of the part it was on, or of the nearest part if it wasn't on one.
+    if (const Recti *part = from ? hudPartAt(*from) : nullptr)
+        return nearestIn(*part, to);
+    Pointi result = nearestIn(HUD_VIEWPORT, to);
+    auto distance = [&](Pointi point) { return (point.x - to.x) * (point.x - to.x) + (point.y - to.y) * (point.y - to.y); };
+    for (const HudCard &card : HUD_CARDS) {
+        Pointi point = nearestIn(card.rect, to);
+        if (distance(point) < distance(result))
+            result = point;
+    }
+    return result;
 }
 
 void VrSystem::recenter() {
@@ -730,6 +832,8 @@ void VrSystem::setRunning(bool running) {
     _lastCullingCamera.reset();
     _uiPlacement.reset();
     _uiAim.reset();
+    _hudCursor.reset();
+    _worldReleased = false;
 }
 
 void VrSystem::beginFrame() {
@@ -760,9 +864,18 @@ void VrSystem::endFrame() {
     if (!_frameBegun)
         return;
 
+    // Once the world isn't drawn, the eye images last handed to the runtime go out again with their poses, darkened by a
+    // quad in front of them until they're black, and then the world is left out.
     bool worldDrawn = _layerReady;
-    if (!_layerReady && _frameState.shouldRender && window_SpeakInHouse && _heldValid && _heldMap == engine->_currentLoadedMapId)
-        _layerReady = restoreHeldWorld(); // House screens stop the world being drawn.
+    if (worldDrawn)
+        _worldTime = _frameState.predictedDisplayTime;
+    XrCompositionLayerQuad fade = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+    bool fading = false;
+    if (!worldDrawn && _frameState.shouldRender && _worldReleased) {
+        float level = static_cast<float>(_frameState.predictedDisplayTime - _worldTime) / 1e9f / WORLD_FADE_SECONDS;
+        fading = level < 1 && fadeWorld(level, &fade);
+        _layerReady = fading;
+    }
 
     std::vector<const XrCompositionLayerBaseHeader *> layers;
     XrCompositionLayerProjection projection = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
@@ -772,6 +885,8 @@ void VrSystem::endFrame() {
         projection.views = _projectionViews.data();
         layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&projection));
     }
+    if (fading)
+        layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&fade));
     std::vector<XrCompositionLayerQuad> ui;
     if (_frameState.shouldRender && copyUi(&ui))
         for (const XrCompositionLayerQuad &quad : ui)
@@ -789,7 +904,7 @@ void VrSystem::endFrame() {
         _frameStats.firstFrameTime = endTime;
     _frameStats.lastFrameTime = endTime;
     if (_frameState.shouldRender)
-        _frameStats.kinds[FrameKind{_layerReady, _hudSpread, endInfo.layerCount}]++;
+        _frameStats.kinds[FrameKind{_layerReady, fading, _hudSpread, endInfo.layerCount}]++;
 
     if (worldDrawn)
         _worldFrameCount++;
@@ -848,13 +963,19 @@ bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     layer.subImage.swapchain = _ui.swapchain;
     layer.subImage.imageRect.extent = {_ui.size.w, _ui.size.h};
     layer.size = {width, width * _ui.size.h / _ui.size.w};
-    placeUi(&layer, distance);
 
     // The HUD only spreads around the world, which the main menu, also the game screen, doesn't have.
     bool wanted = engine->config->vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD && current_screen_type == SCREEN_GAME && _layerReady;
     bool spread = wanted && _maxLayerCount >= HUD_LAYER_COUNT;
+    if (spread) {
+        _uiAim.reset(); // The floating screen comes back in front of the head.
+        _uiPose.reset();
+        spread = spreadHud(layers);
+    }
+    if (!spread)
+        placeUi(&layers->front(), distance);
     if (spread != _hudSpread || wanted != _hudWanted) {
-        if (wanted && !spread) {
+        if (wanted && _maxLayerCount < HUD_LAYER_COUNT) {
             MM_INFO("VR: frame {} shows the HUD on one quad, the runtime takes {} layers and the spread HUD needs {}.", _frameIndex, _maxLayerCount,
                     HUD_LAYER_COUNT);
         } else {
@@ -863,8 +984,6 @@ bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     }
     _hudSpread = spread;
     _hudWanted = wanted;
-    if (spread)
-        spreadHud(layers);
     return true;
 }
 
@@ -884,48 +1003,146 @@ static XrRect2Di imageRect(const Recti &rect, Sizei screen, Sizei image) {
     return result;
 }
 
-void VrSystem::spreadHud(std::vector<XrCompositionLayerQuad> *layers) {
+bool VrSystem::spreadHud(std::vector<XrCompositionLayerQuad> *layers) {
     const GameConfig::Vr &config = engine->config->vr;
     Sizei screen = render->GetRenderDimensions();
+    std::vector<XrRect2Di> cardRects;
+    if (!copyHudCards(screen, &cardRects))
+        return false;
 
-    // The viewport stays where it is on the UI quad, so that it picks the same way.
+    // The HUD hangs in the head origin space, which turns with the party but not with the head, so that the eyes move
+    // over it. It's only in VIEW space until the origin is captured.
+    _hudInRoom = _space != XR_NULL_HANDLE;
+    _hudHead = glm::vec3(0);
+    XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
+    if (_hudInRoom && XR_SUCCEEDED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &head)) &&
+        (head.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT))
+        _hudHead = toGlm(head.pose.position);
+
+    // The viewport hangs straight ahead at the floating screen's size and distance. Picking outside the cards goes
+    // through the floating screen that it's cut from.
+    float quadMetresPerPixel = config.UiWidth.value() / screen.w;
+    float uiDistance = config.UiDistance.value();
+    glm::vec2 offset((HUD_VIEWPORT.x + HUD_VIEWPORT.w / 2.0f - screen.w / 2.0f) * quadMetresPerPixel,
+                     (screen.h / 2.0f - HUD_VIEWPORT.y - HUD_VIEWPORT.h / 2.0f) * quadMetresPerPixel);
+    _hudScreen = {Recti(0, 0, screen.w, screen.h), {{0, 0, 0, 1}, {-offset.x, -offset.y, -uiDistance}}, quadMetresPerPixel};
+
     XrCompositionLayerQuad &viewport = layers->front();
-    float quadMetresPerPixel = viewport.size.width / screen.w;
-    glm::quat quadFacing(viewport.pose.orientation.w, viewport.pose.orientation.x, viewport.pose.orientation.y, viewport.pose.orientation.z);
-    glm::vec3 offset((HUD_VIEWPORT.x + HUD_VIEWPORT.w / 2.0f - screen.w / 2.0f) * quadMetresPerPixel,
-                     (screen.h / 2.0f - HUD_VIEWPORT.y - HUD_VIEWPORT.h / 2.0f) * quadMetresPerPixel, 0);
-    glm::vec3 centre = glm::vec3(viewport.pose.position.x, viewport.pose.position.y, viewport.pose.position.z) + quadFacing * offset;
-    viewport.pose.position = {centre.x, centre.y, centre.z};
+    viewport.space = _hudInRoom ? _space : _viewSpace;
+    viewport.pose = {{0, 0, 0, 1}, {0, 0, -uiDistance}}; // Looking along -z.
     viewport.size = {HUD_VIEWPORT.w * quadMetresPerPixel, HUD_VIEWPORT.h * quadMetresPerPixel};
     viewport.subImage.imageRect = imageRect(HUD_VIEWPORT, screen, _ui.size);
     XrCompositionLayerQuad quad = viewport;
+    quad.subImage.swapchain = _hud.swapchain;
 
     float distance = config.HudDistance.value();
     float spread = config.HudSpread.value();
-    _hudMetresPerPixel = config.UiWidth.value() / screen.w * distance / config.UiDistance.value() * config.HudScale.value();
-    std::array<float, 5> placement = {distance, config.HudScale.value(), spread, config.UiWidth.value(), config.UiDistance.value()};
+    float metresPerPixel = quadMetresPerPixel * distance / uiDistance * config.HudScale.value();
+    std::array<float, 6> placement = {distance, config.HudScale.value(), spread, config.UiWidth.value(), uiDistance, _hudInRoom ? 1.0f : 0.0f};
     bool log = _hudPlacement != placement;
     _hudPlacement = placement;
 
-    _hudPoses.clear();
-    for (const HudElement &element : HUD_ELEMENTS) {
-        float yaw = element.yawDegrees * spread * static_cast<float>(M_PI) / 180;
-        float pitch = element.pitchDegrees * spread * static_cast<float>(M_PI) / 180;
-        glm::quat facing = glm::angleAxis(-yaw, glm::vec3(0, 1, 0)) * glm::angleAxis(pitch, glm::vec3(1, 0, 0));
-        glm::vec3 position = facing * glm::vec3(0, 0, -distance); // VIEW space looks along -z.
-        const XrPosef &pose = _hudPoses.emplace_back(XrPosef{{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}});
+    _hudCards.clear();
+    for (size_t i = 0; i < HUD_CARDS.size(); i++) {
+        const HudCard &card = HUD_CARDS[i];
+        glm::vec2 size = glm::vec2(card.rect.w + 2 * HUD_BORDER, card.rect.h + 2 * HUD_BORDER) * metresPerPixel;
+        glm::quat facing;
+        glm::vec3 position;
+        if (card.attachedTo < 0) {
+            // Level, only tilted to face the head origin.
+            float yaw = glm::radians(card.yawDegrees * spread);
+            float pitch = glm::radians(card.pitchDegrees * spread);
+            facing = glm::angleAxis(-yaw, glm::vec3(0, 1, 0)) * glm::angleAxis(pitch, glm::vec3(1, 0, 0));
+            position = facing * glm::vec3(0, 0, -distance);
+        } else {
+            const HudCard &base = HUD_CARDS[card.attachedTo];
+            const XrPosef &basePose = _hudCards[card.attachedTo].pose;
+            glm::vec2 baseSize = glm::vec2(base.rect.w + 2 * HUD_BORDER, base.rect.h + 2 * HUD_BORDER) * metresPerPixel;
+            glm::vec2 shift = card.side == HUD_SIDE_ABOVE ? glm::vec2(0, (baseSize.y + size.y) / 2) :
+                                                             glm::vec2((baseSize.x + size.x) / 2, (size.y - baseSize.y) / 2);
+            facing = toGlm(basePose.orientation);
+            position = toGlm(basePose.position) + facing * glm::vec3(shift, 0);
+        }
+        XrPosef pose = {{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}};
+        _hudCards.push_back({card.rect, pose, metresPerPixel});
 
         XrCompositionLayerQuad &layer = layers->emplace_back(quad);
-        layer.space = _viewSpace;
         layer.pose = pose;
-        layer.size = {element.rect.w * _hudMetresPerPixel, element.rect.h * _hudMetresPerPixel};
-        layer.subImage.imageRect = imageRect(element.rect, screen, _ui.size);
+        layer.size = {size.x, size.y};
+        layer.subImage.imageRect = cardRects[i];
         if (log) {
-            MM_INFO("VR: HUD {} at ({:.3f}, {:.3f}, {:.3f}) m in VIEW space, {:.3f}x{:.3f} m, from image rectangle {}x{} at {}, {}.", element.name,
-                    position.x, position.y, position.z, layer.size.width, layer.size.height, layer.subImage.imageRect.extent.width,
-                    layer.subImage.imageRect.extent.height, layer.subImage.imageRect.offset.x, layer.subImage.imageRect.offset.y);
+            MM_INFO("VR: HUD {} at ({:.3f}, {:.3f}, {:.3f}) m in {}, {:.3f}x{:.3f} m, from image rectangle {}x{} at {}, {}.", card.name,
+                    position.x, position.y, position.z, _hudInRoom ? "the head origin space" : "VIEW space", size.x, size.y,
+                    cardRects[i].extent.width, cardRects[i].extent.height, cardRects[i].offset.x, cardRects[i].offset.y);
         }
     }
+    return true;
+}
+
+bool VrSystem::copyHudCards(Sizei screen, std::vector<XrRect2Di> *rects) {
+    int scale = std::max(1, render->uiTargetSize().w / screen.w); // UI target pixels per pixel of the game screen.
+    int border = HUD_BORDER * scale;
+    Sizei size(0, 0);
+    for (const HudCard &card : HUD_CARDS) {
+        size.w = std::max(size.w, card.rect.w * scale + 2 * (border + HUD_MARGIN));
+        size.h += card.rect.h * scale + 2 * (border + HUD_MARGIN);
+    }
+    if (_hud.size != size) {
+        destroySwapchain(&_hud);
+        if (!createSwapchain(&_hud, size)) {
+            destroySwapchain(&_hud);
+            return false;
+        }
+        MM_INFO("VR: HUD swapchain is {}x{} with {} images.", size.w, size.h, _hud.images.size());
+    }
+
+    uint32_t imageIndex = 0;
+    if (!acquireImage(&_hud, &imageIndex))
+        return false;
+
+    // The cards go one above the other, each framed by its border and the margin around it, so that filtering at the
+    // edges of a quad only reaches the dark line.
+    TextureRenderId texture(_hud.images[imageIndex]);
+    rects->clear();
+    int y = 0;
+    for (const HudCard &card : HUD_CARDS) {
+        Recti frame(HUD_MARGIN, y + HUD_MARGIN, card.rect.w * scale + 2 * border, card.rect.h * scale + 2 * border);
+        render->fillExternalRect(texture, size, Recti(0, y, frame.w + 2 * HUD_MARGIN, frame.h + 2 * HUD_MARGIN), HUD_BORDER_DARK);
+        render->fillExternalRect(texture, size, Recti(frame.x + scale, frame.y + scale, frame.w - 2 * scale, frame.h - 2 * scale), HUD_BORDER_LIGHT);
+        render->fillExternalRect(texture, size, Recti(frame.x + 2 * scale, frame.y + 2 * scale, frame.w - 4 * scale, frame.h - 4 * scale), HUD_BORDER_DARK);
+        render->copyUiLayerRect(texture, size, card.rect, Pointi(frame.x + border, frame.y + border));
+        rects->push_back({{frame.x, frame.y}, {frame.w, frame.h}});
+        y += frame.h + 2 * HUD_MARGIN;
+    }
+
+    XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    check(xrReleaseSwapchainImage(_hud.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
+    return true;
+}
+
+bool VrSystem::fadeWorld(float level, XrCompositionLayerQuad *layer) {
+    if (_fade.swapchain == XR_NULL_HANDLE && !createSwapchain(&_fade, FADE_SWAPCHAIN_SIZE)) {
+        destroySwapchain(&_fade);
+        return false;
+    }
+
+    uint32_t imageIndex = 0;
+    if (!acquireImage(&_fade, &imageIndex))
+        return false;
+    uint8_t alpha = static_cast<uint8_t>(std::lround(std::clamp(level, 0.0f, 1.0f) * 255));
+    render->fillExternalRect(TextureRenderId(_fade.images[imageIndex]), _fade.size, Recti(0, 0, _fade.size.w, _fade.size.h), Color(0, 0, 0, alpha));
+    XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    check(xrReleaseSwapchainImage(_fade.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
+
+    *layer = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+    layer->layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+    layer->eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+    layer->space = _viewSpace;
+    layer->pose = {{0, 0, 0, 1}, {0, 0, -1}};
+    layer->size = {FADE_QUAD_SIZE, FADE_QUAD_SIZE};
+    layer->subImage.swapchain = _fade.swapchain;
+    layer->subImage.imageRect.extent = {_fade.size.w, _fade.size.h};
+    return true;
 }
 
 void VrSystem::placeUi(XrCompositionLayerQuad *layer, float distance) {
@@ -1015,7 +1232,7 @@ bool VrSystem::captureOrigin(XrTime time) {
     if (_space != XR_NULL_HANDLE)
         xrDestroySpace(_space);
     _space = space;
-    _heldValid = false;
+    _worldReleased = false;
     _uiAim.reset();
     _uiPose.reset();
 
@@ -1046,28 +1263,10 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
     if (index == 0)
         render->setViewportMirror(texture, eye.size);
 
-    render->holdTexture(index, texture, eye.size);
-    _heldViews[index] = view;
-
     XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     check(xrReleaseSwapchainImage(eye.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
 
     fillProjectionView(index, view, eye);
-    return true;
-}
-
-bool VrSystem::restoreHeldWorld() {
-    for (size_t i = 0; i < _eyes.size(); i++) {
-        Swapchain &eye = _eyes[i];
-        uint32_t imageIndex = 0;
-        if (!acquireImage(&eye, &imageIndex))
-            return false;
-        render->restoreHeldTexture(static_cast<int>(i), TextureRenderId(eye.images[imageIndex]));
-        XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        check(xrReleaseSwapchainImage(eye.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
-
-        fillProjectionView(static_cast<int>(i), _heldViews[i], eye);
-    }
     return true;
 }
 
@@ -1090,6 +1289,8 @@ void VrSystem::shutdown() {
     for (Swapchain &eye : _eyes)
         destroySwapchain(&eye);
     destroySwapchain(&_ui);
+    destroySwapchain(&_hud);
+    destroySwapchain(&_fade);
     for (XrSpace space : {_space, _viewSpace, _localSpace})
         if (space != XR_NULL_HANDLE)
             xrDestroySpace(space);
@@ -1119,7 +1320,7 @@ void VrSystem::setPositionTracking(bool tracked) {
     if (_space != XR_NULL_HANDLE)
         xrDestroySpace(_space);
     _space = XR_NULL_HANDLE;
-    _heldValid = false;
+    _worldReleased = false;
 }
 
 glm::quat VrSystem::worldOrientation(const XrQuaternionf &orientation) const {
