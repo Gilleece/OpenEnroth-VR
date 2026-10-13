@@ -1,10 +1,14 @@
 #include "Engine/Graphics/Image.h"
 
+#include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cassert>
 #include <utility>
 #include <memory>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "Engine/Graphics/ImageLoader.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
@@ -40,6 +44,33 @@ std::unique_ptr<GraphicsImage> GraphicsImage::Create(int width, int height) {
 
 std::unique_ptr<GraphicsImage> GraphicsImage::Create(Sizei size) {
     return Create(size.w, size.h);
+}
+
+static constexpr unsigned MAX_REPLACEMENT_THREADS = 8;
+
+void GraphicsImage::loadReplacements(std::span<GraphicsImage *const> images) {
+    auto load = [](GraphicsImage *image) {
+        if (!image->_textureRgba) {
+            image->_textureRgba = image->_loader->loadTextureRgba();
+            assert(!*image->_textureRgba || isPowerOfTwoMultiple(image->_textureRgba->size(), image->size()));
+        }
+        if (*image->_textureRgba && !image->_materialRgba)
+            image->_materialRgba = image->_loader->loadMaterialRgba(image->_textureRgba->size());
+    };
+
+    std::atomic<size_t> next = 0;
+    auto work = [&] {
+        for (size_t i = next++; i < images.size(); i = next++)
+            load(images[i]);
+    };
+
+    size_t threadCount = std::min<size_t>({images.size(), std::max(1u, std::thread::hardware_concurrency()), MAX_REPLACEMENT_THREADS});
+    std::vector<std::thread> threads;
+    for (size_t i = 1; i < threadCount; i++)
+        threads.emplace_back(work);
+    work();
+    for (std::thread &thread : threads)
+        thread.join();
 }
 
 std::unique_ptr<GraphicsImage> GraphicsImage::Create(std::unique_ptr<ImageLoader> loader) {

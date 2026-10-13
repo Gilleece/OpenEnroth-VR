@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mutex>
 #include <string_view>
 
 #include "Engine/Data/TexturePackManifest.h"
@@ -95,5 +96,6 @@ class TexturePack {
 
  private:
     const FileSystem *_fs = nullptr;
+    mutable std::mutex _fsMutex; // The image functions may be called from several threads at once.
     TexturePackManifest _manifest;
 };

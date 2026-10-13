@@ -265,6 +265,23 @@ static void uploadArrayLayer(GraphicsImage *texture, int layer, int width, int h
 }
 
 /**
+ * Loads the texture pack replacements of the bitmaps that texture arrays are built from all at once, on several
+ * threads. Does nothing without a texture pack.
+ *
+ * @param textures                      Texture array map, by bitmap name.
+ */
+static void loadPackReplacements(const std::map<std::string, int> &textures) {
+    if (!engine->resources()->hasTexturePack())
+        return;
+
+    std::vector<GraphicsImage *> images;
+    for (const auto &[name, comb] : textures)
+        if (!name.starts_with("generated")) // Generated tiles aren't in the pack.
+            images.push_back(assets->getBitmap(name));
+    GraphicsImage::loadReplacements(images);
+}
+
+/**
  * Creates the material array that goes next to a texture array. Each layer holds the material of the texture in the
  * same layer of the texture array, or zeros if that texture has no material.
  *
@@ -2163,6 +2180,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
         _terrainBuffer.update(_terrainVertices);
 
         // texture set up - load in all previously found
+        loadPackReplacements(terraintexmap);
         for (int unit = 0; unit < 8; unit++) {
             assert(numterraintexloaded[unit] <= 256);
             // skip if textures are empty
@@ -3685,6 +3703,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
         // texture set up
 
         // loop over all units
+        loadPackReplacements(outbuildtexmap);
         for (int unit = 0; unit < 16; unit++) {
             assert(numoutbuildtexloaded[unit] <= 256);
             // skip if textures are empty
@@ -4123,6 +4142,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
             // texture set up
 
             // loop over all units
+            loadPackReplacements(bsptexmap);
             for (int unit = 0; unit < 16; unit++) {
                 assert(bsptexloaded[unit] <= 256);
                 // skip if textures are empty

@@ -4,6 +4,7 @@
 #include <array>
 #include <string>
 #include <exception>
+#include <mutex>
 #include <unordered_map>
 #include <utility>
 
@@ -28,6 +29,34 @@ static std::unordered_map<std::string, Entry> lowercaseKeys(std::unordered_map<s
     return result;
 }
 
+/**
+ * The pack's file system, with every call behind the pack's mutex. A lowercase file system updates its cache even in
+ * const calls.
+ */
+class PackFiles {
+ public:
+    PackFiles(const FileSystem *fs, std::mutex *mutex) : _fs(fs), _mutex(mutex) {}
+
+    [[nodiscard]] bool exists(std::string_view path) const {
+        std::lock_guard lock(*_mutex);
+        return _fs->exists(path);
+    }
+
+    [[nodiscard]] Blob read(std::string_view path) const {
+        std::lock_guard lock(*_mutex);
+        return _fs->read(path);
+    }
+
+    [[nodiscard]] std::string displayPath(std::string_view path) const {
+        std::lock_guard lock(*_mutex);
+        return _fs->displayPath(path);
+    }
+
+ private:
+    const FileSystem *_fs = nullptr;
+    std::mutex *_mutex = nullptr;
+};
+
 static bool isPackScale(Sizei size, Sizei lodSize) {
     for (int scale = 1; scale <= MAX_TEXTURE_PACK_SCALE; scale *= 2)
         if (size == Sizei(lodSize.w * scale, lodSize.h * scale))
@@ -35,31 +64,31 @@ static bool isPackScale(Sizei size, Sizei lodSize) {
     return false;
 }
 
-static bool matchesLodEntry(const FileSystem *fs, std::string_view path, std::string_view crc, const Blob &lodEntry) {
+static bool matchesLodEntry(const PackFiles &fs, std::string_view path, std::string_view crc, const Blob &lodEntry) {
     std::string lodCrc = fmt::format("{:08x}", zlib::crc32(lodEntry));
     if (ascii::toLower(crc) == lodCrc)
         return true;
 
     MM_WARNING("Texture pack image '{}' was made from a different LOD entry. The manifest says CRC-32 {}, the LOD entry has {}. Using the original.",
-               fs->displayPath(path), crc, lodCrc);
+               fs.displayPath(path), crc, lodCrc);
     return false;
 }
 
-static RgbaImage decodeImage(const FileSystem *fs, std::string_view path) {
-    if (!fs->exists(path)) {
-        MM_WARNING("Texture pack image '{}' is listed in the manifest but doesn't exist. Using the original.", fs->displayPath(path));
+static RgbaImage decodeImage(const PackFiles &fs, std::string_view path) {
+    if (!fs.exists(path)) {
+        MM_WARNING("Texture pack image '{}' is listed in the manifest but doesn't exist. Using the original.", fs.displayPath(path));
         return {};
     }
 
     try {
-        return png::decode(fs->read(path));
+        return png::decode(fs.read(path));
     } catch (const std::exception &e) {
-        MM_WARNING("Could not decode texture pack image '{}': {}. Using the original.", fs->displayPath(path), e.what());
+        MM_WARNING("Could not decode texture pack image '{}': {}. Using the original.", fs.displayPath(path), e.what());
         return {};
     }
 }
 
-static RgbaImage loadImage(const FileSystem *fs, std::string_view path, std::string_view crc, const Blob &lodEntry, Sizei lodSize) {
+static RgbaImage loadImage(const PackFiles &fs, std::string_view path, std::string_view crc, const Blob &lodEntry, Sizei lodSize) {
     if (!matchesLodEntry(fs, path, crc, lodEntry))
         return {};
 
@@ -69,7 +98,7 @@ static RgbaImage loadImage(const FileSystem *fs, std::string_view path, std::str
 
     if (!isPackScale(result.size(), lodSize)) {
         MM_WARNING("Texture pack image '{}' is {}x{}, but must be {}x{} times 1, 2 or 4. Using the original.",
-                   fs->displayPath(path), result.width(), result.height(), lodSize.w, lodSize.h);
+                   fs.displayPath(path), result.width(), result.height(), lodSize.w, lodSize.h);
         return {};
     }
 
@@ -110,7 +139,7 @@ RgbaImage TexturePack::image(TexturePackSection section, std::string_view name, 
         return {};
 
     std::string path = fmt::format("{}/{}.png", section == TEXTURE_PACK_BITMAPS ? "bitmaps" : "icons", lowercaseName);
-    return loadImage(_fs, path, pos->second.crc32, lodEntry, lodSize);
+    return loadImage(PackFiles(_fs, &_fsMutex), path, pos->second.crc32, lodEntry, lodSize);
 }
 
 RgbaImage TexturePack::materialImage(std::string_view name, const Blob &lodEntry, Sizei colorSize) const {
@@ -119,19 +148,20 @@ RgbaImage TexturePack::materialImage(std::string_view name, const Blob &lodEntry
     if (pos == _manifest.bitmaps.end() || pos->second.maps.empty() || !lodEntry)
         return {};
 
+    PackFiles files(_fs, &_fsMutex);
     std::array<RgbaImage, 2> maps; // Normal, roughness.
     for (TexturePackMap map : pos->second.maps) {
         std::string path = fmt::format("{}/bitmaps/{}.png", map == TEXTURE_PACK_MAP_NORMAL ? "normal" : "roughness", lowercaseName);
-        if (!matchesLodEntry(_fs, path, pos->second.crc32, lodEntry))
+        if (!matchesLodEntry(files, path, pos->second.crc32, lodEntry))
             return {};
 
-        RgbaImage image = decodeImage(_fs, path);
+        RgbaImage image = decodeImage(files, path);
         if (!image)
             return {};
 
         if (image.size() != colorSize) {
             MM_WARNING("Texture pack map '{}' is {}x{}, but must be {}x{} like its color image. Using no maps.",
-                       _fs->displayPath(path), image.width(), image.height(), colorSize.w, colorSize.h);
+                       files.displayPath(path), image.width(), image.height(), colorSize.w, colorSize.h);
             return {};
         }
 
@@ -169,5 +199,5 @@ RgbaImage TexturePack::spriteImage(std::string_view name, int paletteId, const B
 
     std::string lowercaseName = ascii::toLower(name);
     std::string path = fmt::format("sprites/{}/{}.png", lowercaseName, paletteId);
-    return loadImage(_fs, path, _manifest.sprites.find(lowercaseName)->second.crc32, lodEntry, lodSize);
+    return loadImage(PackFiles(_fs, &_fsMutex), path, _manifest.sprites.find(lowercaseName)->second.crc32, lodEntry, lodSize);
 }
