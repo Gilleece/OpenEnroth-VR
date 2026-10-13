@@ -1,5 +1,6 @@
 #include "MapBook.h"
 
+#include <algorithm>
 #include <bit>
 #include <memory>
 #include <string>
@@ -213,7 +214,11 @@ void DrawBook_Map_sub(int tl_x, int tl_y, int br_x, int br_y) {
             }
         }
 
-        minimaptemp = GraphicsImage::Create(std::move(minimapImage));
+        if (!minimaptemp) {
+            minimaptemp = GraphicsImage::Create(std::move(minimapImage));
+        } else if (!std::ranges::equal(minimaptemp->rgba().pixels(), minimapImage.pixels())) {
+            minimaptemp->update(std::move(minimapImage));
+        }
         render->DrawQuad2D(minimaptemp.get(), {tl_x, tl_y});
     } else {  // indoors
         if (!pIndoor->mapOutlines.empty()) {
