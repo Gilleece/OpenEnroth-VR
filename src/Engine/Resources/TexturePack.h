@@ -29,7 +29,8 @@ using enum TexturePackSection;
  *
  * A pack is a folder with a `manifest.json` and `bitmaps`, `icons` and `sprites` subfolders. Each bitmap or icon
  * replacement is a PNG named after the LOD entry it replaces, e.g. `bitmaps/d8s2wl.png` or `icons/foo.pcx.png`. Sprites
- * are stored with their palette applied, one PNG per palette, e.g. `sprites/m452wa0/453.png`.
+ * are stored with their palette applied, one PNG per palette, e.g. `sprites/m452wa0/453.png`, and can have a shape
+ * image shared by all palettes, e.g. `shape/sprites/m452wa0.png`.
  */
 class TexturePack {
  public:
@@ -93,6 +94,22 @@ class TexturePack {
      *                                  empty image under the same conditions as `image()`.
      */
     [[nodiscard]] RgbaImage spriteImage(std::string_view name, int paletteId, const Blob &lodEntry, Sizei lodSize) const;
+
+    /**
+     * @param name                      `sprites.lod` entry name, case-insensitive.
+     * @return                          Thickness of the sprite's shape in game units, or 0 if the pack has no shape
+     *                                  for it.
+     */
+    [[nodiscard]] float spriteShapeThickness(std::string_view name) const;
+
+    /**
+     * @param name                      `sprites.lod` entry name, case-insensitive.
+     * @param lodEntry                  The LOD entry the shape belongs to, as stored in the LOD.
+     * @param lodSize                   Size of the LOD sprite.
+     * @return                          The sprite's shape image, see `TexturePackShape`, sized `lodSize` times 1, 2
+     *                                  or 4, or an empty image under the same conditions as `image()`.
+     */
+    [[nodiscard]] RgbaImage spriteShapeImage(std::string_view name, const Blob &lodEntry, Sizei lodSize) const;
 
  private:
     const FileSystem *_fs = nullptr;

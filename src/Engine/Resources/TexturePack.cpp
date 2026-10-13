@@ -193,6 +193,20 @@ bool TexturePack::hasSpriteImage(std::string_view name, int paletteId) const {
     return pos != _manifest.sprites.end() && std::ranges::contains(pos->second.palettes, paletteId);
 }
 
+float TexturePack::spriteShapeThickness(std::string_view name) const {
+    auto pos = _manifest.sprites.find(ascii::toLower(name));
+    return pos == _manifest.sprites.end() ? 0.0f : pos->second.shape.thickness;
+}
+
+RgbaImage TexturePack::spriteShapeImage(std::string_view name, const Blob &lodEntry, Sizei lodSize) const {
+    if (spriteShapeThickness(name) <= 0 || !lodEntry)
+        return {};
+
+    std::string lowercaseName = ascii::toLower(name);
+    std::string path = fmt::format("shape/sprites/{}.png", lowercaseName);
+    return loadImage(PackFiles(_fs, &_fsMutex), path, _manifest.sprites.find(lowercaseName)->second.crc32, lodEntry, lodSize);
+}
+
 RgbaImage TexturePack::spriteImage(std::string_view name, int paletteId, const Blob &lodEntry, Sizei lodSize) const {
     if (!hasSpriteImage(name, paletteId) || !lodEntry)
         return {};

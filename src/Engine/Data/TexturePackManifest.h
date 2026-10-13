@@ -39,11 +39,21 @@ struct TexturePackEntry {
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackEntry)
 
 /**
+ * Shape image of a sprite, `shape/sprites/<name>.png`. RG is the surface normal's x (right) and y (up) as
+ * `n * 0.5 + 0.5`, B is the depth, 255 nearest the viewer and 127.5 on the sprite's plane, A is the coverage.
+ */
+struct TexturePackShape {
+    float thickness = 0; // Game units from B = 0 to B = 255, 0 if the sprite has no shape.
+};
+MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackShape)
+
+/**
  * One sprite in a texture pack, as the manifest lists it. A sprite has one image per palette it's drawn with.
  */
 struct TexturePackSpriteEntry {
     std::string crc32; // CRC-32 of the `sprites.lod` entry the images replace, as 8 hex digits.
     std::vector<int> palettes; // Ids of the palettes the pack has an image for.
+    TexturePackShape shape; // Shared by all palettes.
 };
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackSpriteEntry)
 

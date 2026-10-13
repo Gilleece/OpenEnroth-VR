@@ -207,3 +207,27 @@ UNIT_TEST(TexturePack, MaterialBadMapName) {
     writeManifest(&fs, R"("wall": {"crc32": "00000000", "maps": ["height"]})");
     EXPECT_ANY_THROW(TexturePack{&fs});
 }
+
+UNIT_TEST(TexturePack, SpriteShape) {
+    // A sprite's shape image is listed by its thickness, shared by all palettes, and checked like the sprite images.
+    MemoryFileSystem fs("pack");
+    Blob lodEntry = Blob::fromString("lod sprite");
+    RgbaImage shape = makeImage({8, 6});
+    fs.write("manifest.json", Blob::fromString(fmt::format(
+        R"({{"format": 1, "sprites": {{"Gobla0": {{"crc32": "{}", "palettes": [2], "shape": {{"thickness": 40.0}}}}, "goblb0": {{"crc32": "{}", "palettes": [2]}}}}}})",
+        crcString(lodEntry), crcString(lodEntry))));
+    fs.write("shape/sprites/gobla0.png", png::encode(shape));
+    fs.write("shape/sprites/goblb0.png", png::encode(shape));
+
+    TexturePack pack(&fs);
+    EXPECT_EQ(pack.spriteShapeThickness("GOBLA0"), 40.0f);
+    EXPECT_EQ(pack.spriteShapeThickness("goblb0"), 0.0f);
+    EXPECT_EQ(pack.spriteShapeThickness("unlisted"), 0.0f);
+
+    RgbaImage result = pack.spriteShapeImage("gobla0", lodEntry, {4, 3});
+    ASSERT_EQ(result.size(), shape.size());
+    EXPECT_TRUE(std::ranges::equal(result.pixels(), shape.pixels()));
+    EXPECT_FALSE(pack.spriteShapeImage("goblb0", lodEntry, {4, 3})); // No thickness, no shape.
+    EXPECT_FALSE(pack.spriteShapeImage("gobla0", Blob::fromString("other lod sprite"), {4, 3})); // Made from another sprite.
+    EXPECT_FALSE(pack.spriteShapeImage("gobla0", lodEntry, {3, 3})); // Not a pack scale of the sprite.
+}

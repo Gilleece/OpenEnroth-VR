@@ -345,6 +345,18 @@ RgbaImage ResourceManager::packSprite(std::string_view filename, int paletteId) 
     return result;
 }
 
+float ResourceManager::packSpriteShapeThickness(std::string_view filename) const {
+    return _texturePack ? _texturePack->spriteShapeThickness(filename) : 0.0f;
+}
+
+RgbaImage ResourceManager::packSpriteShape(std::string_view filename) {
+    std::string name = ascii::toLower(filename);
+    if (!_texturePack || !_spritesLodReader.exists(name))
+        return {};
+
+    return _texturePack->spriteShapeImage(name, _spritesLodReader.read(name), spriteSize(name));
+}
+
 void ResourceManager::desaturate(std::span<Color> colors) const {
     if (fuzzyEquals(_saturation, 1.0f) && fuzzyEquals(_lightness, 1.0f))
         return;
