@@ -1,5 +1,6 @@
 """The pack step: the upscaled images and a manifest.json in the layout the engine loads."""
 
+import fnmatch
 import io
 import os
 import shutil
@@ -17,6 +18,7 @@ from texpipe.regen_icons import generated_icon
 from texpipe.workdir import (
     SECTIONS,
     WorkImage,
+    images_dir,
     load_image_infos,
     load_upscaled_info,
     read_json,
@@ -66,9 +68,10 @@ def run_pack(
     upscaled past the config's `[pack] max_scale` are scaled down to it, and their maps made again at that size.
     The baked lighting a `bake` run left in the pack stays, unless the config's `[pack] gi` is off, which removes it.
     Every PNG written is compressed harder, as `optimize_pngs` does with `[pack] workers` processes, unless
-    `[pack] optimize_png` is off.
+    `[pack] optimize_png` is off. The entries a `[[pack.nearest]]` rule matches go in as the stock image scaled with
+    nearest neighbour instead.
     Returns the number of entries per section, of bitmaps with maps, of sprite images, of generated sprites, of sprite
-    shapes and of baked maps, and the MiB the harder compression saved.
+    shapes, of baked maps and of nearest scaled entries, and the MiB the harder compression saved.
     """
     config = config or {}
     max_scale = config.get("pack", {}).get("max_scale", 4)
@@ -76,7 +79,19 @@ def run_pack(
     map_options = MapOptions.from_config(config)
     entries: dict[str, dict[str, dict]] = {section: {} for section in SECTIONS}
     generated: set[str] = set()
+    nearest_rules = config.get("pack", {}).get("nearest", [])
+    nearest = 0
     for image in load_image_infos(work, only):
+        scale = nearest_scale(nearest_rules, image.section, image.name)
+        if scale:
+            target = out / image.section / f"{image.name}.png"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(images_dir(work, image.section) / f"{image.name}.png") as stock:
+                stock.resize((image.width * scale, image.height * scale), Image.Resampling.NEAREST).save(target)
+            written.append(target)
+            entries[image.section][image.name] = {"crc32": image.crc32}
+            nearest += 1
+            continue
         upscaled = load_upscaled_info(work, image)
         if upscaled is None:
             continue
@@ -132,6 +147,7 @@ def run_pack(
     counts["generated"] = len(generated)
     counts["shapes"] = sum(1 for entry in entries["sprites"].values() if "shape" in entry)
     counts["gi"] = len(manifest.get("gi", {}))
+    counts["nearest"] = nearest
     counts["optimized MiB"] = round(saved / 2**20, 1)
     return counts
 
@@ -211,6 +227,23 @@ def write_archive_parts(pack: Path, archive: Path, limit: int) -> list[tuple[Pat
                 _write_entry(output, f"{pack.name}/{PARTS_LISTING}", listing.encode(), False)
         result.append((path, path.stat().st_size))
     return result
+
+
+NEAREST_SECTIONS = ("bitmaps", "icons")  # Sprites have palettes and shapes that a stock copy doesn't make.
+
+
+def nearest_scale(rules: list[dict], section: str, name: str) -> int | None:
+    """The scale of the first of `rules`, each {"section", "match": [globs], "scale"}, matching the entry, or None."""
+    for rule in rules:
+        if rule["section"] not in NEAREST_SECTIONS:
+            raise ValueError(
+                f"[[pack.nearest]] takes the sections {', '.join(NEAREST_SECTIONS)}, not {rule['section']}"
+            )
+        if rule["scale"] not in (1, 2, 4):
+            raise ValueError(f"[[pack.nearest]] scale must be 1, 2 or 4, got {rule['scale']}")
+        if rule["section"] == section and any(fnmatch.fnmatchcase(name, glob) for glob in rule["match"]):
+            return rule["scale"]
+    return None
 
 
 def _carry_gi(out: Path, manifest: dict, ship: bool) -> None:

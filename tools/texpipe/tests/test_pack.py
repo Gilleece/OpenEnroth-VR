@@ -5,7 +5,7 @@ import pytest
 from PIL import Image, PngImagePlugin
 
 from texpipe.maps import MAPS, map_path
-from texpipe.pack import build_manifest, optimize_png, run_pack
+from texpipe.pack import build_manifest, nearest_scale, optimize_png, run_pack
 from texpipe.workdir import UpscaledImage, WorkImage, images_dir, save_image_info, save_upscaled_info, upscaled_dir
 
 
@@ -59,6 +59,7 @@ def test_pack_writes_images_manifest_and_readme(tmp_path):
         "generated": 0,
         "shapes": 0,
         "gi": 0,
+        "nearest": 0,
         "optimized MiB": 0.0,
     }
     manifest = json.loads((out / "manifest.json").read_text())
@@ -202,3 +203,30 @@ def test_pack_rejects_fewer_than_one_worker(tmp_path):
     add_image(tmp_path / "work", "bitmaps", "wall", (4, 2), 2)
     with pytest.raises(ValueError, match="workers must be at least 1"):
         run_pack(tmp_path / "work", tmp_path / "pack", "raw", None, config={"pack": {"workers": 0}})
+
+
+def test_nearest_rule_packs_the_stock_image_scaled_with_nearest_neighbour(tmp_path):
+    # Super-resolution smears the portraits' eyes, the owner wants the stock pixels scaled up instead.
+    work, out = tmp_path / "work", tmp_path / "pack"
+    add_image(work, "icons", "pc01-01", (3, 2), 2)
+    add_image(work, "icons", "frame.pcx", (3, 3), 2)
+    stock = Image.new("RGBA", (3, 2), (10, 20, 30, 255))
+    stock.putpixel((1, 0), (200, 100, 50, 0))
+    stock.save(images_dir(work, "icons") / "pc01-01.png")
+    config = {
+        "pack": {"max_scale": 2, "nearest": [{"section": "icons", "match": ["pc[0-9][0-9]-[0-9][0-9]"], "scale": 4}]}
+    }
+    counts = run_pack(work, out, "raw", None, config=config)
+    assert (counts["icons"], counts["nearest"]) == (2, 1)
+    packed = Image.open(out / "icons" / "pc01-01.png")
+    assert packed.tobytes() == stock.resize((12, 8), Image.Resampling.NEAREST).tobytes()
+    assert Image.open(out / "icons" / "frame.pcx.png").size == (6, 6)
+    assert json.loads((out / "manifest.json").read_text())["icons"]["pc01-01"] == {"crc32": "deadbeef"}
+
+
+def test_nearest_rule_rejects_sprites_and_odd_scales():
+    with pytest.raises(ValueError, match="sections"):
+        nearest_scale([{"section": "sprites", "match": ["*"], "scale": 4}], "sprites", "gob")
+    with pytest.raises(ValueError, match="scale"):
+        nearest_scale([{"section": "icons", "match": ["*"], "scale": 3}], "icons", "pc01-01")
+    assert nearest_scale([{"section": "icons", "match": ["pc*"], "scale": 4}], "icons", "frame.pcx") is None
