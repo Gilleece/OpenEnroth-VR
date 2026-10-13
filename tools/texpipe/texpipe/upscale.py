@@ -59,17 +59,29 @@ def is_done(work: Path, image: WorkImage, choice: Choice) -> bool:
     return is_up_to_date([job.target], [job.source])
 
 
+def needs_brightness(work: Path, image: WorkImage, choice: Choice, config: dict) -> bool:
+    """True if the config wants the brightness of this image preserved, and its upscale was made without that."""
+    preserve = config.get(choice.backend, {}).get("preserve_brightness", [])
+    return image.section in preserve and load_upscaled_info(work, image).brightness is None
+
+
 def plan(work: Path, config: dict, only: list[str] | None, backend: str | None, scale: int | None, force: bool = False):
-    """Groups the images to upscale by the backend and scale they get. Returns the groups and how many were done."""
+    """Groups the images to upscale by the backend and scale they get.
+
+    Returns the groups, the done images that only miss the brightness correction, and how many were done.
+    """
     groups: dict[Choice, list[WorkImage]] = defaultdict(list)
+    brightness_only: list[tuple[WorkImage, Choice]] = []
     done = 0
     for image in load_image_infos(work, only):
         choice = choose(config, image.section, image.name, image.width, backend, scale)
-        if not force and is_done(work, image, choice):
-            done += 1
-        else:
+        if force or not is_done(work, image, choice):
             groups[choice].append(image)
-    return groups, done
+        elif needs_brightness(work, image, choice, config):
+            brightness_only.append((image, choice))
+        else:
+            done += 1
+    return groups, brightness_only, done
 
 
 def run_upscale(
@@ -82,8 +94,12 @@ def run_upscale(
     force: bool = False,
 ) -> dict[str, int]:
     """Upscales what is not done yet and returns how many images each backend and scale handled."""
-    groups, done = plan(work, config, only, backend, scale, force)
-    counts = {"up to date": done}
+    groups, brightness_only, done = plan(work, config, only, backend, scale, force)
+    counts = {"up to date": done, "brightness only": len(brightness_only)}
+    for image, choice in brightness_only:
+        max_factor = config.get(choice.backend, {}).get("max_brightness_factor", 3.0)
+        factors = preserve_brightness(make_job(work, image, choice.scale), max_factor)
+        save_upscaled_info(work, image, UpscaledImage(choice.backend, choice.scale, factors))
     for choice, images in groups.items():
         backend_object = make_backend(choice.backend, config, binary)
         options = config.get(choice.backend, {})
