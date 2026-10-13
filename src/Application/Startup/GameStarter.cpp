@@ -104,6 +104,8 @@ void GameStarter::initialize() {
         _loadedVrEnabled = _config->vr.Enabled.value();
         _config->vr.Enabled.setValue(true);
     }
+    if (_options.enhanced)
+        _config->graphics.Enhanced.setValue(true);
     _config->updateEnhancedGraphics();
 
     // Finish logger init now that we have user fs and know the desired log level.

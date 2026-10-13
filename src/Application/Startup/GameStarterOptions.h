@@ -14,6 +14,7 @@ struct GameStarterOptions {
                                 // from/to disk. This also means that default config will be used.
     bool headless = false; // Run in headless mode.
     bool vr = false; // Turn on VR rendering, overriding the config.
+    bool enhanced = false; // Turn on the enhanced renderer, overriding the config.
     bool tracingRng = false; // Use tracing random engine?
     bool quickStart = false; // Skip whatever slow initialization that we have, including additional asset generation.
 };

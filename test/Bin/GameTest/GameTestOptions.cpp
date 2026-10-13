@@ -4,6 +4,7 @@
 #include <string>
 
 #include "Library/Cli/CliApp.h"
+#include "Library/Environment/Interface/Environment.h"
 
 GameTestOptions GameTestOptions::parse(int argc, char **argv) {
     GameTestOptions result;
@@ -47,6 +48,19 @@ GameTestOptions GameTestOptions::parse(int argc, char **argv) {
     if (!result.listRequested && !result.helpPrinted && !testPath)
         throw CLI::RequiredError(testPathOption->get_name());
     result.testPath = Path(testPath.value_or(""));
+
+#ifdef OE_BUILD_VR
+    // Run_VrSmoke runs the VrSmoke suite twice, flat and then in a headset session on the runtime OPENENROTH_VR_SMOKE names.
+    std::unique_ptr<Environment> environment = Environment::createStandardEnvironment();
+    std::string runtime = environment->getenv("OPENENROTH_VR_SMOKE");
+    std::string pass = environment->getenv("OPENENROTH_VR_SMOKE_PASS");
+    if (!runtime.empty() && !pass.empty()) {
+        result.enhanced = true;
+        result.vr = pass == "vr";
+        if (result.vr)
+            environment->setenv("XR_RUNTIME_JSON", runtime);
+    }
+#endif
 
     return result;
 }
