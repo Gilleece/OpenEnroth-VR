@@ -1128,7 +1128,7 @@ OpenGLRenderer::SkyState OpenGLRenderer::_skyState() {
     float fade = 0;
     result.sunDirection = sunDirection(pParty->GetPlayingTime(), &fade);
 
-    Color fogColor = GetLevelFogColor();
+    Color fogColor = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR ? GetLevelFogColor() : Color();
     bool clear = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && !pWeather->bNight && fogColor == Color();
     result.sunVisibility = clear ? std::clamp(result.sunDirection.z / 0.05f, 0.0f, 1.0f) : 0.0f; // Sets over its last 3 degrees.
 
