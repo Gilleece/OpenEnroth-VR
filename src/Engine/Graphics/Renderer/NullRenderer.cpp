@@ -63,6 +63,8 @@ bool NullRenderer::worldSpaceBillboards() {
     return false;
 }
 
+void NullRenderer::drawSunShadows(std::span<const int> casterModels) {}
+
 void NullRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) {}
 
 void NullRenderer::DrawProjectile(float srcX, float srcY, float a3, float a4,

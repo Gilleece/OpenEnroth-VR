@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "Engine/Graphics/LightsStack.h"
 
 /**
@@ -16,6 +18,12 @@ class WorldFrame {
      * nothing when no level is loaded.
      */
     void prepare();
+
+    /**
+     * Draws the sun's shadow maps for the prepared level. Call once per frame after `prepare` and before the draws,
+     * all views of the frame share the shadow maps.
+     */
+    void drawShadows();
 
     /**
      * Draws the prepared level, its bloodsplat decals, the billboards and the special effects from the view passed to
@@ -41,11 +49,13 @@ class WorldFrame {
  private:
     void prepareOutdoor();
     void prepareIndoor();
+    void prepareSunShadowCasters();
     void drawLevel();
     void drawOutdoor();
     void drawIndoor();
 
  private:
     LightsSnapshot _staticGeometryLights;
+    std::vector<int> _sunShadowModels; // Building models that can cast sun shadows, culled by distance only.
     bool _prepared = false;
 };

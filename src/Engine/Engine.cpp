@@ -156,6 +156,7 @@ void Engine::drawWorld() {
             if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)
                 render->uFogColor = GetLevelFogColor();
             _worldFrame->prepare();
+            _worldFrame->drawShadows();
         }
         if (!_worldFrameViews || !_worldFrameViews->drawViews(*_worldFrame)) {
             _worldFrame->draw();

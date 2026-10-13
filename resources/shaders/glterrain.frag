@@ -27,6 +27,10 @@ uniform sampler2DArray textureArray0;
 uniform sampler2DArray textureArray1;
 uniform FogParam fog;
 
+#ifdef SUN_SHADOWS
+#include "shadow.glsl"
+#endif
+
 #ifdef MATERIAL_MAPS
 uniform sampler2DArray materialArray;
 #include "material.glsl"
@@ -67,7 +71,11 @@ void main() {
 #endif
 
     // apply sun
+#ifdef SUN_SHADOWS
+    vec3 result = CalcSunLightShadowed(sun, fragnorm, fragviewdir, SunShadow(vsPos, fragnorm));
+#else
     vec3 result = CalcSunLight(sun, fragnorm, fragviewdir, vec3(1));
+#endif
     result = clamp(result, 0.0, 0.85);
 
     // stack torchlight if any

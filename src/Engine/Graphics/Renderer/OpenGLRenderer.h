@@ -56,6 +56,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
+    virtual void drawSunShadows(std::span<const int> casterModels) override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;
@@ -242,6 +243,19 @@ class OpenGLRenderer : public BaseRenderer {
     void _ensureFullscreenTriangle();
 
     /**
+     * Creates the sun shadow map and the depth-only vertex buffers of the loaded outdoor level, if they don't exist yet.
+     */
+    void _ensureSunShadowResources();
+
+    /**
+     * Binds the sun shadow map and sets the uniforms `shadow.glsl` reads. Does nothing for programs compiled without
+     * `SUN_SHADOWS`.
+     *
+     * @param shader                    Program in use.
+     */
+    void _submitSunShadow(const OpenGLShader &shader);
+
+    /**
      * @return                          Internal format for the colour texture arrays of the world, sRGB with the
      *                                  linear pipeline so that sampling them decodes to linear.
      */
@@ -278,6 +292,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader bloomdownshader;
     OpenGLShader bloomupshader;
     OpenGLShader fxaashader;
+    OpenGLShader shadowshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -325,6 +340,18 @@ class OpenGLRenderer : public BaseRenderer {
     // sky shader
     OpenGLVertexBuffer<SkyVertex> _skyBuffer;
     OpenGLVertexBuffer<CompositeVertex> _compositeBuffer;
+
+    // sun shadows
+    static constexpr int SUN_SHADOW_CASCADES = 4;
+    GLuint _sunShadowMap = 0; // Depth texture array, a layer per cascade.
+    int _sunShadowMapSize = 0;
+    std::array<GLuint, SUN_SHADOW_CASCADES> _sunShadowFramebuffers = {};
+    OpenGLVertexBuffer<ShadowVertex> _sunShadowTerrainBuffer;
+    OpenGLVertexBuffer<ShadowVertex> _sunShadowBuildingBuffer;
+    std::vector<std::pair<int, int>> _sunShadowModelRanges; // First vertex and vertex count of each building model.
+    std::array<glm::mat4, SUN_SHADOW_CASCADES> _sunShadowMatrices = {};
+    std::array<float, SUN_SHADOW_CASCADES> _sunShadowTexels = {};
+    float _sunShadowFade = 0;
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
     OpenGLRenderTarget _antialiasingTarget; // Tonemapped world at the size it's composited at, the input to FXAA.
     std::vector<SkyVertex> _skyVertices;
@@ -368,6 +395,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _mirrorPresentPending = false; // The UI layer leaves the mirror for `flushAndScale`.
     bool _uiLayer = false;
     bool _linearPipeline = false; // Decided once at startup, the world shaders are compiled for it.
+    bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.
     bool _externalFramePacing = false;
 };
 
