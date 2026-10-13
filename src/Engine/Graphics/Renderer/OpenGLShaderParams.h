@@ -111,6 +111,11 @@ struct ShadowVertex {
     Vec3f pos;
 };
 
+struct TorchShadowVertex {
+    Vec3f pos;
+    Vec3f normal;
+};
+
 struct ShadowSpriteVertex {
     Vec3f pos;
     Vec2f texuv;

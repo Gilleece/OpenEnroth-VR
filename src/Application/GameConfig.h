@@ -533,6 +533,10 @@ class GameConfig : public Config {
         Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
         ConfigEntry<AntialiasingMode> Antialiasing = {this, "antialiasing", ANTIALIASING_OFF,
                                                       "Antialiasing of the 3D world, 'off' or 'fxaa'. Only applies with linear_pipeline."};
+        Bool TorchShadows = {this, "torch_shadows", false,
+                             "Let the nearest wall torches and other lights indoors cast shadows. Takes effect on restart."};
+        Int TorchShadowCount = {this, "torch_shadow_count", 4, &ValidateTorchShadowCount,
+                                "How many of the nearest indoor lights cast shadows, 1 to 8. Takes effect on restart."};
         Bool SunShadows = {this, "sun_shadows", false,
                            "Let terrain, buildings, trees and monsters cast shadows from the sun outdoors. Takes effect on restart."};
         Int ShadowDistance = {this, "shadow_distance", 8192, &ValidateShadowDistance,
@@ -603,6 +607,9 @@ class GameConfig : public Config {
         }
         static int ValidateShadowDistance(int distance) {
             return std::clamp(distance, 1024, 16192);
+        }
+        static int ValidateTorchShadowCount(int count) {
+            return std::clamp(count, 1, 8);
         }
         static float ValidateShadowStrength(float strength) {
             return std::clamp(strength, 0.0f, 1.0f);

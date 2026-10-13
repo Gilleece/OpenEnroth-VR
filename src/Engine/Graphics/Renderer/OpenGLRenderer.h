@@ -59,6 +59,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual bool worldSpaceBillboards() override;
     virtual void applyPipelineSettings() override;
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
+    virtual void drawTorchShadows() override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;
@@ -292,6 +293,16 @@ class OpenGLRenderer : public BaseRenderer {
     void _ensureWaterNormals();
 
     /**
+     * Binds the torch shadow maps and sets the uniforms `torchshadow.glsl` reads. Does nothing for programs compiled
+     * without `TORCH_SHADOWS`.
+     *
+     * @param shader                    Program in use.
+     * @param layers                    Shadow map layer of each light in the program's light list, -1 for lights
+     *                                  without one.
+     */
+    void _submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers);
+
+    /**
      * @return                          Internal format for the colour texture arrays of the world, sRGB with the
      *                                  linear pipeline so that sampling them decodes to linear.
      */
@@ -330,6 +341,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader fxaashader;
     OpenGLShader shadowshader;
     OpenGLShader shadowspriteshader;
+    OpenGLShader torchshadowshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -397,6 +409,15 @@ class OpenGLRenderer : public BaseRenderer {
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
     GraphicsImage *_skyAverageTexture = nullptr;
     Colorf _skyAverage; // Average colour of `_skyAverageTexture`.
+
+    // torch shadows
+    GLuint _torchShadowMaps = 0; // Depth cube map array, a cube per light.
+    int _torchShadowCount = 0; // Cubes in `_torchShadowMaps`.
+    std::vector<GLuint> _torchShadowFramebuffers; // One per cube face.
+    OpenGLVertexBuffer<TorchShadowVertex> _torchShadowBuffer;
+    std::vector<TorchShadowVertex> _torchShadowVertices;
+    std::vector<int> _torchShadowLights; // Indices into the stationary light stack, the cube of each is its position here.
+
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
     OpenGLRenderTarget _antialiasingTarget; // Tonemapped world at the size it's composited at, the input to FXAA.
     std::vector<SkyVertex> _skyVertices;
@@ -443,6 +464,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _uiLayer = false;
     bool _linearPipeline = false; // Decided once at startup, the world shaders are compiled for it.
     bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.
+    bool _torchShadows = false; // Same for the indoor shaders.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;
 };
