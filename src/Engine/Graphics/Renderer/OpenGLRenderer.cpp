@@ -89,7 +89,7 @@ static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
 static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
-static constexpr float SUN_SHADOW_ANGLE_STEP = 0.25f; // Degrees the shadows' sun moves at a time, about every three seconds in daytime.
+static constexpr float SUN_SHADOW_STEP_HEIGHT = 500.0f; // Height of an object whose shadow the sun's steps move by one texel at a time.
 static constexpr float CONTACT_SHADOW_STRENGTH = 0.7f; // Darkening of the linear colour at the middle of the ellipse in full daylight.
 static constexpr float CONTACT_SHADOW_SUNLIT_SCALE = 0.6f; // Part of the strength left when the sun casts shadows.
 static constexpr float CONTACT_SHADOW_MIN_SIZE = 24.0f; // World units across the ellipse's long axis.
@@ -852,6 +852,44 @@ static Vec3f sunDirection(Time time, float *fade) {
 }
 
 /**
+ * @param cascade                       Index of a cascade.
+ * @param cascades                      Number of cascades.
+ * @param nearClip                      Distance along the view where the first cascade starts.
+ * @param farClip                       Distance along the view where the last cascade ends.
+ * @return                              Distance along the view where `cascade` ends.
+ */
+static float sunShadowSplit(int cascade, int cascades, float nearClip, float farClip) {
+    float part = (cascade + 1.0f) / cascades;
+    float logarithmic = nearClip * std::pow(farClip / nearClip, part);
+    float uniform = nearClip + (farClip - nearClip) * part;
+    return SUN_SHADOW_SPLIT_LAMBDA * logarithmic + (1 - SUN_SHADOW_SPLIT_LAMBDA) * uniform;
+}
+
+/**
+ * @param view                          View the sun shadow cascades cover.
+ * @param splitNear                     Distance along the view where a cascade starts.
+ * @param splitFar                      Distance along the view where it ends.
+ * @param[out] centre                   Centre of a sphere around the slice of the view between the two.
+ * @return                              Radius of the sphere, which doesn't change as the view turns.
+ */
+static float sunShadowSphere(const CameraView &view, float splitNear, float splitFar, glm::vec3 *centre) {
+    glm::mat4 viewToWorld = glm::inverse(view.viewMatrix);
+    std::array<glm::vec3, 8> corners;
+    *centre = glm::vec3(0);
+    for (int i = 0; i < 8; i++) {
+        float depth = (i & 4) ? splitFar : splitNear;
+        float x = ((i & 1) ? view.projection.tanRight : view.projection.tanLeft) * depth;
+        float y = ((i & 2) ? view.projection.tanUp : view.projection.tanDown) * depth;
+        corners[i] = glm::vec3(viewToWorld * glm::vec4(x, y, depth, 1));
+        *centre += corners[i] / 8.0f;
+    }
+    float radius = 0;
+    for (const glm::vec3 &corner : corners)
+        radius = std::max(radius, glm::length(corner - *centre));
+    return std::ceil(radius / 16.0f) * 16.0f;
+}
+
+/**
  * @return                              Brightness of a sprite in sun shadow relative to one in the sun. Terrain and
  *                                      buildings in shadow keep the sun's ambient light, while in the sun they reach
  *                                      the 0.85 the shaders clamp the sun to, so sprites take their ratio.
@@ -1294,10 +1332,16 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
 
     _ensureSunShadowResources();
 
-    // The shadow maps move with the sun in steps, every texel of a turning map lands somewhere else each frame.
-    float step = glm::radians(SUN_SHADOW_ANGLE_STEP);
-    float angle = std::round(std::atan2(sun.z, sun.x) / step) * step;
-    sun = Vec3f(std::cos(angle), 0, std::sin(angle));
+    CameraView view = CameraView::fromCamera3D(*pCamera3D, worldTargetViewport());
+    float nearClip = view.projection.nearClip;
+    float farClip = std::min(static_cast<float>(config->graphics.ShadowDistance.value()), view.projection.farClip);
+
+    // The shadow maps follow the sun in steps, because every texel of a map that turns lands somewhere else each frame.
+    glm::vec3 nearestCentre;
+    float nearestTexel = 2 * sunShadowSphere(view, nearClip, sunShadowSplit(0, SUN_SHADOW_CASCADES, nearClip, farClip), &nearestCentre) / _sunShadowMapSize;
+    float shadowLength = std::round(SUN_SHADOW_STEP_HEIGHT * sun.x / sun.z / nearestTexel) * nearestTexel;
+    sun = Vec3f(shadowLength, 0, SUN_SHADOW_STEP_HEIGHT);
+    sun /= sun.length();
     _sunShadowDirection = sun;
 
     // The sprite quads stand upright and turn to face the sun, the same quads go into every cascade.
@@ -1337,10 +1381,6 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
     if (!_sunShadowSpriteVertices.empty())
         _sunShadowSpriteBuffer.update(_sunShadowSpriteVertices);
 
-    CameraView view = CameraView::fromCamera3D(*pCamera3D, worldTargetViewport());
-    glm::mat4 viewToWorld = glm::inverse(view.viewMatrix);
-    float nearClip = view.projection.nearClip;
-    float farClip = std::min(static_cast<float>(config->graphics.ShadowDistance.value()), view.projection.farClip);
     glm::mat4 lightRotation = glm::lookAtRH(glm::vec3(0), -glm::vec3(sun.x, sun.y, sun.z), glm::vec3(0, 1, 0)); // The sun never leaves the X-Z plane.
     glm::mat4 textureSpace = glm::translate(glm::mat4(1), glm::vec3(0.5f)) * glm::scale(glm::mat4(1), glm::vec3(0.5f));
 
@@ -1367,25 +1407,9 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
 
     float splitNear = nearClip;
     for (int cascade = 0; cascade < SUN_SHADOW_CASCADES; cascade++) {
-        float part = (cascade + 1.0f) / SUN_SHADOW_CASCADES;
-        float logarithmic = nearClip * std::pow(farClip / nearClip, part);
-        float uniform = nearClip + (farClip - nearClip) * part;
-        float splitFar = SUN_SHADOW_SPLIT_LAMBDA * logarithmic + (1 - SUN_SHADOW_SPLIT_LAMBDA) * uniform;
-
-        // The slice of the view between the splits, in a sphere that doesn't change size as the view turns.
-        std::array<glm::vec3, 8> corners;
-        glm::vec3 centre(0);
-        for (int i = 0; i < 8; i++) {
-            float depth = (i & 4) ? splitFar : splitNear;
-            float x = ((i & 1) ? view.projection.tanRight : view.projection.tanLeft) * depth;
-            float y = ((i & 2) ? view.projection.tanUp : view.projection.tanDown) * depth;
-            corners[i] = glm::vec3(viewToWorld * glm::vec4(x, y, depth, 1));
-            centre += corners[i] / 8.0f;
-        }
-        float radius = 0;
-        for (const glm::vec3 &corner : corners)
-            radius = std::max(radius, glm::length(corner - centre));
-        radius = std::ceil(radius / 16.0f) * 16.0f;
+        float splitFar = sunShadowSplit(cascade, SUN_SHADOW_CASCADES, nearClip, farClip);
+        glm::vec3 centre;
+        float radius = sunShadowSphere(view, splitNear, splitFar, &centre);
         float texel = 2 * radius / _sunShadowMapSize;
 
         // Snapping the centre to whole texels keeps the shadow edges still as the camera moves.
