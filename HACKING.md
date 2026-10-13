@@ -149,6 +149,46 @@ Our basic guidelines for code organization are:
 * Include a header from another folder by its full path from `src`, as in `#include "Engine/Graphics/Indoor.h"`. Only headers in the same folder are included by bare name, and `..` never appears in an include path. Folder-relative paths hide dependency edges from every tool that reads the include graph, so a package can look decoupled while it isn't.
 
 
+## Rendering and VR
+
+The 3D world is drawn through a small set of pieces that also let it go to a VR headset. This section is a map of them for anyone changing the renderer.
+
+#### Camera views
+
+`CameraView` in `Engine/Graphics/CameraView.h` holds everything a 3D pass needs to know about the camera it draws from: the eye position, the view and projection matrices, the frustum planes and the viewport in the render target. `CameraView::fromCamera3D` builds one from `pCamera3D`, which follows the party, and asserts that the camera sits at the party's eye. `CameraView::fromPose` builds one from any position and orientation with an asymmetric frustum, which is how a headset eye is described. `Renderer::BeginScene3D` takes a `CameraView`, and every draw in the pass uses its matrices.
+
+#### World frames
+
+`WorldFrame` in `Engine/Graphics/WorldFrame.h` splits a frame of the 3D world into `prepare`, `draw` and `finish`, and `Engine::drawWorld` runs them. `prepare` does all the work that changes engine state. It builds the light stacks, the billboard lists, the particles and the bloodsplat decals for the frame, from whatever `pCamera3D` looks at. `draw` only reads that state, so it can run more than once per frame, once per headset eye for example. Code that advances an animation, adds a light, rolls a random number or edits a list must not run in `draw`. `finish` advances the special effects and runs once, after the last draw.
+
+Outdoors the sky, the terrain and the buildings are lit with the previous frame's lights. The original game drew them before it rebuilt the light stacks for the frame, and `prepare` keeps that look by taking a `LightsSnapshot` of the stacks before it rebuilds them and lighting the static geometry with it. Indoors the faces see the current frame's lights.
+
+#### Render targets
+
+`OpenGLRenderTarget` is a framebuffer with a colour texture and an optional depth texture. The two the rest of the renderer is built around are the UI target and the world target. The UI target holds the whole game screen when the window is scaled, and is blitted into the window when the frame is presented. The world target is used when `graphics.world_target_width` and `graphics.world_target_height` are set. The 3D world is then drawn into it at that size, and `Renderer::compositeWorldTarget` draws it into the game viewport of the UI target before the UI goes on top. With both sizes at 0 the world is drawn straight into the viewport as the original game does. With `graphics.linear_pipeline` set the world target holds linear colour at 16 bits per channel, and `OpenGLRenderer::drawComposite` tonemaps it, with bloom and FXAA when they're enabled, into the viewport.
+
+#### World space billboards and the sky
+
+Sprites, particles, sphere effects, projectile beams and the sky used to be projected to the screen on the CPU and drawn through an orthographic matrix, which only works for the one camera that projected them. With `graphics.world_space_billboards` set they're drawn through the real view and projection matrices instead. `BaseRenderer` keeps a `WorldBillboard` next to each screen space billboard at the same index, so both go through the same sort. `Renderer::buildWorldBillboardQuads` turns them into quads facing one view with its roll taken out, once per frame, so that every pass of the frame draws the same geometry. The sky has a shader of its own, `glskyshader`, which intersects each pixel's view ray with the sky plane, outdoors on a quad covering the view and indoors on the sky faces themselves.
+
+#### Drawing from other views
+
+`WorldFrameViews` in `Engine/Graphics/WorldFrameViews.h` is the hook for drawing the world from views other than the party camera. `VrSystem` is its only implementation. `Engine::drawWorld` first asks it to aim `pCamera3D` at the views, so that `prepare` culls for what they see, then hands it the prepared frame to draw, and points `pCamera3D` back at the party once the frame is done. Between frames the party camera is the gameplay camera, and the head camera only culls and draws. Picking asks the hook too. In VR the mouse picks along a ray through the cursor's point on the UI quad and the keyboard picks along the head's forward ray, both through `Vis::PickRay`, which tests the world space billboard quads.
+
+A view that isn't the party camera draws into a colour texture it owns through `Renderer::setExternalWorldTarget`, and external world targets always take the world space billboard path. `Renderer::setUiLayer` makes the UI a layer of its own for an external compositor. The UI is then drawn over transparent black with the game viewport left empty, `Renderer::copyUiLayer` copies it out, and the window gets the view set by `Renderer::setViewportMirror` under the UI.
+
+#### VR
+
+VR is only built with the `OE_BUILD_VR` CMake option, on Windows, and goes through OpenXR with the OpenGL extension. All OpenXR calls are in `src/Engine/Vr/VrSystem.cpp`. It runs when `vr.enabled` is set, or for one run when the game is started with `--vr`. If no headset is found the game logs why and carries on flat. With VR on, the game keeps going when its desktop window loses focus, and every 5 seconds the log gives the number of frames sent to the headset.
+
+The headset view starts at the head's position and facing when the session begins, at the party's eye level. The `vr.recenter` key, F8 by default, makes the head's current pose the new start. `vr.head_offset_radius` limits how far in metres the eyes can move away from it, so that leaning can't put them through a wall. `vr.near_clip` is the near clip distance in the headset, in game units at 100 to the metre. The UI hangs in front of the head as a flat screen `vr.ui_width` metres wide and `vr.ui_distance` metres away. `vr.snap_turn` turns the party by `vr.snap_turn_degrees` per press of a turn key instead of smoothly, and `vr.minimal_hud` leaves out the frames around the game viewport.
+
+Things known to be left for later:
+* Spell targeting that picks the closest actor uses the headset's culling view, which is wider than the flat view. Whether that feels right needs a session in the headset.
+* Snow is drawn in the UI pass, so in the headset it falls on the flat UI screen rather than in the world.
+* With `vr.minimal_hud` the buttons that the right frame paints can't be seen but still take clicks.
+
+
 ## Testing
 
 We strive for a good test coverage of the project, and while we're not there yet, the current policy is to add tests for all the bugs we fix, as long as the fix is testable. E.g. graphical glitches are generally very hard to test, but we have the infrastructure to test game logic and small isolated classes.
