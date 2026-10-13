@@ -3,7 +3,7 @@
 #define GI_MAX_LAYERS 8
 
 uniform highp sampler3D giProbes; // Coefficients of red, then green, then blue, each block giDims.z texels deep.
-uniform highp sampler2D giTerrainHeights; // Terrain height under each probe column, outdoors.
+uniform highp sampler2D giTerrainHeights; // Terrain height under each probe column outdoors in r, 1 in g where it's water.
 uniform vec3 giOrigin; // World position of the first probe.
 uniform vec3 giSpacing; // World units between probes, z is unused outdoors.
 uniform ivec3 giDims; // Probes along x, y and z.
@@ -17,8 +17,11 @@ vec3 GlobalIllumination(vec3 pos, vec3 normal) {
     vec2 cell = (pos.xy - giOrigin.xy) / giSpacing.xy;
     vec2 uv = (cell + 0.5) / vec2(giDims.xy);
     float layer = 0.0;
+    float water = 0.0;
     if (giTerrainLayers != 0) {
-        float height = pos.z - texture(giTerrainHeights, uv).r;
+        vec2 column = texture(giTerrainHeights, uv).rg;
+        float height = pos.z - column.r;
+        water = column.g;
         for (int i = 1; i < GI_MAX_LAYERS; i++)
             if (i < giDims.z && height > giLayerHeights[i - 1])
                 layer = float(i - 1) + clamp((height - giLayerHeights[i - 1]) / (giLayerHeights[i] - giLayerHeights[i - 1]), 0.0, 1.0);
@@ -35,5 +38,6 @@ vec3 GlobalIllumination(vec3 pos, vec3 normal) {
                            dot(texture(giProbes, vec3(uv, w + 2.0 / 3.0)), basis));
 
     vec3 ratio = clamp(max(irradiance, vec3(0.0)) / max(giAverage, vec3(0.0001)), 0.5, 2.0);
+    ratio = mix(ratio, vec3(1.0), water); // Over water the probes see the dark blue sea, which the average leaves out.
     return mix(vec3(1.0), ratio, smoothstep(vec3(0.001), vec3(0.004), giAverage)); // A channel that is dark all over the map has nothing to compare against.
 }
