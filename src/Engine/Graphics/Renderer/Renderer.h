@@ -193,6 +193,14 @@ class Renderer {
     virtual const WorldBillboard *builtWorldBillboard(int index) = 0;
 
     /**
+     * Turns the sprites among this frame's built world space billboards to show the side of their frame that faces
+     * an eye, for views that see them from beside the camera the frame was prepared with.
+     *
+     * @param eye                       Position of the eye in world space.
+     */
+    virtual void turnWorldSpritesTo(const Vec3f &eye) = 0;
+
+    /**
      * Makes the UI a layer of its own for an external compositor, like a VR runtime. The UI is then drawn into the UI
      * target over transparent black, with nothing in the game viewport, and the window gets the viewport mirror under
      * it when the frame is presented.
@@ -255,7 +263,21 @@ class Renderer {
      */
     virtual void buildBloodsplatDecals() = 0;
 
-    virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) = 0;
+    /**
+     * Adds a sprite to this frame's billboards if the camera sees it.
+     *
+     * @param frame                     Frame to draw one side of.
+     * @param octant                    Index of the side in `frame->sprites` that faces the camera.
+     * @param yaw                       Facing of the object, which picks the side for other views.
+     * @param pos                       Bottom centre of the sprite in world space.
+     * @param scale                     World units per sprite pixel.
+     * @param flags                     How to draw the sprite.
+     * @param id                        Object the sprite shows.
+     * @param sector                    Indoor sector of the object.
+     * @return                          Whether the sprite was added.
+     */
+    virtual bool AddBillboardIfVisible(const SpriteFrame *frame, int octant, int yaw, const Vec3f &pos, const Vec2f &scale, BillboardFlags flags,
+                                       Pid id, int sector = 0) = 0;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,

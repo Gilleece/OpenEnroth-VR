@@ -76,16 +76,101 @@ static std::pair<Vec3f, Vec3f> billboardAxes(const CameraView &view) {
     return {Vec3f(right.x, right.y, right.z), Vec3f(up.x, up.y, up.z)};
 }
 
+/**
+ * @param view                          View to face.
+ * @return                              Level axis across `view`, for sprites that turn about the vertical to face it.
+ */
+static Vec3f spriteRight(const CameraView &view) {
+    const glm::mat4 &matrix = view.viewMatrix;
+    glm::vec3 viewRight(matrix[0][0], matrix[1][0], matrix[2][0]);
+    glm::vec3 viewBack(matrix[0][2], matrix[1][2], matrix[2][2]);
+
+    glm::vec3 right = glm::cross(glm::vec3(0, 0, 1), glm::vec3(viewBack.x, viewBack.y, 0));
+    if (glm::length(right) < 0.001f)
+        right = glm::vec3(viewRight.x, viewRight.y, 0); // Looking straight up or down.
+    right = glm::normalize(right);
+    return Vec3f(right.x, right.y, right.z);
+}
+
+static void buildCorners(WorldBillboard *billboard, const Vec3f &right, const Vec3f &up) {
+    for (int j = 0; j < billboard->numVertices; j++)
+        billboard->corners[j] = billboard->pos + billboard->offsets[j] + right * billboard->facing[j].x + up * billboard->facing[j].y;
+}
+
+/**
+ * Shows one side of a sprite's frame on its world space billboard, anchored at the bottom centre.
+ *
+ * @param billboard                     Billboard of a sprite, with its `scale` set.
+ * @param sprite                        Side to show.
+ * @param mirrored                      Whether to mirror the side horizontally.
+ */
+static void showSpriteSide(WorldBillboard *billboard, const Sprite *sprite, bool mirrored) {
+    float halfWidth = sprite->uWidth / 2 * billboard->scale.x;
+    float height = sprite->uHeight * billboard->scale.y;
+    if (mirrored)
+        halfWidth = -halfWidth;
+    billboard->texture = sprite->texture;
+    billboard->facing = {{{-halfWidth, height}, {-halfWidth, 0}, {halfWidth, 0}, {halfWidth, height}}};
+}
+
+/**
+ * @param yaw                           Facing of the object.
+ * @param pos                           Position of the object.
+ * @param eye                           Position it's seen from.
+ * @return                              Index of the side of the object's sprite frame that faces `eye`.
+ */
+static int spriteOctant(int yaw, const Vec3f &pos, const Vec3f &eye) {
+    int angle = TrigLUT.atan2(pos.x - eye.x, pos.y - eye.y);
+    return ((TrigLUT.uIntegerPi + (TrigLUT.uIntegerPi >> 3) + yaw - angle) >> 8) & 7;
+}
+
+void BaseRenderer::buildWorldBillboardQuad(WorldBillboard *billboard) {
+    if (billboard->frame && !billboard->centered) { // Sprites centred on a point, like spell effects, float.
+        buildCorners(billboard, _worldSpriteRight, Vec3f(0, 0, 1));
+    } else {
+        buildCorners(billboard, _worldBillboardAxes.first, _worldBillboardAxes.second);
+    }
+}
+
 void BaseRenderer::buildWorldBillboardQuads(const CameraView &view) {
-    auto [right, up] = billboardAxes(view);
+    _worldBillboardAxes = billboardAxes(view);
+    _worldSpriteRight = spriteRight(view);
     for (unsigned i = 0; i < uNumBillboardsToDraw; i++) {
         WorldBillboard &billboard = _worldBillboards[i];
-        for (int j = 0; j < billboard.numVertices; j++)
-            billboard.corners[j] = billboard.pos + billboard.offsets[j] + right * billboard.facing[j].x + up * billboard.facing[j].y;
+        buildWorldBillboardQuad(&billboard);
         billboard.distance = (billboard.pos - view.position).length();
     }
     _worldBillboardEye = view.position;
     _worldBillboardQuadsBuilt = true;
+}
+
+void BaseRenderer::turnWorldSpritesTo(const Vec3f &eye) {
+    assert(_worldBillboardQuadsBuilt);
+
+    std::vector<GraphicsImage *> replacements;
+    for (unsigned i = 0; i < uNumBillboardsToDraw; i++) {
+        WorldBillboard &billboard = _worldBillboards[i];
+        if (!billboard.frame)
+            continue;
+
+        int octant = spriteOctant(billboard.yaw, billboard.pos, eye);
+        if (octant == billboard.octant)
+            continue;
+        const Sprite *from = billboard.frame->sprites[billboard.octant];
+        const Sprite *to = billboard.frame->sprites[octant];
+        if (!to || !to->texture || to->texture->width() == 0 || to->texture->height() == 0)
+            continue;
+
+        if (billboard.centered)
+            billboard.pos.z += billboard.frame->scale * (from->uHeight - to->uHeight) / 2;
+        billboard.octant = octant;
+        showSpriteSide(&billboard, to, billboardFlagsForSprite(billboard.frame->flags, octant) & BILLBOARD_MIRRORED);
+        buildWorldBillboardQuad(&billboard);
+        if (GraphicsImage *variant = assets->getSpriteVariant(to->texture, billboard.paletteId))
+            replacements.push_back(variant);
+    }
+    if (engine->resources()->hasTexturePack())
+        GraphicsImage::loadReplacements(replacements);
 }
 
 const WorldBillboard *BaseRenderer::builtWorldBillboard(int index) {
@@ -183,7 +268,8 @@ void BaseRenderer::DrawSpriteObjects() {
                                              object->uSectorID, lightradius, color, _4E94D3_light_type);
             }
 
-            if (render->AddBillboardIfVisible(frame->sprites[octant], frame->paletteId, posMod, { frame->scale, frame->scale }, setflags, Pid(OBJECT_Sprite, i), object->uSectorID)) {
+            if (render->AddBillboardIfVisible(frame, octant, object->uFacing, posMod, { frame->scale, frame->scale }, setflags, Pid(OBJECT_Sprite, i), object->uSectorID)) {
+                pBillboardRenderList[::uNumBillboardsToDraw - 1].centered = frame->flags & SPRITE_FRAME_CENTER;
                 ++uNumSpritesDrawnThisFrame;
                 object->uAttributes |= SPRITE_VISIBLE;
             }
@@ -281,7 +367,7 @@ void BaseRenderer::PrepareDecorationsRenderList_ODM() {
                     }
 
 
-                    if (render->AddBillboardIfVisible(frame->sprites[(int64_t)v37], frame->paletteId, pLevelDecorations[i].vPosition, { frame->scale, frame->scale },
+                    if (render->AddBillboardIfVisible(frame, v37, pLevelDecorations[i]._yawAngle, pLevelDecorations[i].vPosition, { frame->scale, frame->scale },
                         v38, Pid(OBJECT_Decoration, i))) {
                         ++uNumDecorationsDrawnThisFrame;
                     }
@@ -421,22 +507,24 @@ void BaseRenderer::TransformBillboard(const RenderBillboard *pBillboard, int par
     // Anchored at the bottom centre like the screen space quad above, with the same corners and texture coordinates.
     WorldBillboard &world = _worldBillboards[billboard_index];
     world = WorldBillboard();
-    world.texture = billboard->texture;
     world.paletteId = billboard->paletteId;
     world.opacity = billboard->opacity;
     world.pos = pBillboard->worldPos;
-    float halfWidth = pSprite->uWidth / 2 * pBillboard->scale.x;
-    float height = pSprite->uHeight * pBillboard->scale.y;
-    if (pBillboard->flags & BILLBOARD_MIRRORED)
-        halfWidth = -halfWidth;
-    world.facing = {{{-halfWidth, height}, {-halfWidth, 0}, {halfWidth, 0}, {halfWidth, height}}};
+    world.frame = pBillboard->frame;
+    world.octant = pBillboard->octant;
+    world.yaw = pBillboard->yaw;
+    world.centered = pBillboard->centered;
+    world.scale = pBillboard->scale;
+    showSpriteSide(&world, pSprite, pBillboard->flags & BILLBOARD_MIRRORED);
     for (int i = 0; i < 4; i++) {
         world.texcoords[i] = billboard->pQuads[i].texcoord;
         world.colors[i] = diffuse;
     }
 }
 
-bool BaseRenderer::AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector) {
+bool BaseRenderer::AddBillboardIfVisible(const SpriteFrame *frame, int octant, int yaw, const Vec3f &pos, const Vec2f &scale, BillboardFlags flags,
+                                         Pid id, int sector) {
+    Sprite *spr = frame->sprites[octant];
     // TODO(pskelton): replace asserts with warning and return false
     assert(::uNumBillboardsToDraw < 500 - 1);
     assert(spr != nullptr);
@@ -454,13 +542,17 @@ bool BaseRenderer::AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& 
             RenderBillboard& bill = pBillboardRenderList[::uNumBillboardsToDraw++];
 
             bill.hwsprite = spr;
+            bill.frame = frame;
+            bill.octant = octant;
+            bill.yaw = yaw;
+            bill.centered = false;
             bill.worldPos = pos;
             bill.screenPos = projected;
             bill.view_space_z = viewspace.x;
             bill.view_space_L2 = viewspace.length();
             bill.screenspace_projection_factor = billScale;
             bill.scale = scale;
-            bill.uPaletteId = palette;
+            bill.uPaletteId = frame->paletteId;
             bill.flags = flags;
             bill.uIndoorSectorID = sector;
             bill.object_pid = id;
