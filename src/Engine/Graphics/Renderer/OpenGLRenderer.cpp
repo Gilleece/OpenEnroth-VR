@@ -784,7 +784,18 @@ void OpenGLRenderer::drawTorchShadows() {
     int count = std::min(static_cast<int>(candidates.size()), _torchShadowCount);
     std::partial_sort(candidates.begin(), candidates.begin() + count, candidates.end());
 
-    // Walls, floors and ceilings of the sectors each light reaches, gathered every frame because doors move.
+    std::vector<std::pair<Vec3f, int>> drawnLights;
+    for (int c = 0; c < count; c++) {
+        const StationaryLight &light = pStationaryLightsStack->pLights[candidates[c].second];
+        _torchShadowLights.push_back(candidates[c].second);
+        drawnLights.emplace_back(light.vPosition, light.uRadius);
+    }
+    if (drawnLights == _torchShadowDrawnLights && pIndoor->geometryVersion == _torchShadowDrawnVersion)
+        return; // The cubes already hold these lights and the walls haven't changed since.
+    _torchShadowDrawnLights = std::move(drawnLights);
+    _torchShadowDrawnVersion = pIndoor->geometryVersion;
+
+    // Walls, floors and ceilings of the sectors each light reaches.
     std::vector<std::pair<int, int>> ranges;
     _torchShadowVertices.clear();
     for (int c = 0; c < count; c++) {
@@ -805,7 +816,6 @@ void OpenGLRenderer::drawTorchShadows() {
             }
         }
         ranges.emplace_back(first, static_cast<int>(_torchShadowVertices.size()) - first);
-        _torchShadowLights.push_back(candidates[c].second);
     }
     if (_torchShadowVertices.empty())
         return;
@@ -4832,6 +4842,7 @@ void OpenGLRenderer::ReleaseBSP() {
     std::map<std::string, int> bsptexmap;*/
 
     bsptexmap.clear();
+    _torchShadowDrawnLights.clear();
 
     for (int i = 0; i < 16; i++) {
         glDeleteTextures(1, &bsptextures[i]);

@@ -241,6 +241,7 @@ struct IndoorLocation {
     std::string filename;
     unsigned int bLoaded = 0;
     std::vector<Vec3f> vertices;
+    int geometryVersion = 0; // Changes whenever a door moves `vertices` or a script changes face attributes.
     std::vector<BLVFace> faces;
     std::vector<BLVSector> sectors;
     std::vector<BLVLight> lights;
