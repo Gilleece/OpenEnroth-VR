@@ -143,3 +143,26 @@ def test_soften_of_a_tile_blurs_across_its_edges():
         image.putpixel((7, y), (255, 255, 255))
     softened = imageops.soften(image, 1.0, 1.0, tileable=True)
     assert softened.getpixel((0, 4))[0] > 0
+
+
+def test_matching_edges_tells_a_transition_tile_from_a_tile():
+    tile = Image.new("RGB", (8, 8), (100, 100, 100))
+    for x in range(8):
+        tile.putpixel((x, 3), (110, 110, 110))
+    assert imageops.matching_edges(tile, 1.5) == (True, True)
+    transition = tile.copy()
+    for y in range(8):
+        transition.putpixel((7, y), (250, 250, 250))  # Snow on the east edge only.
+    assert imageops.matching_edges(transition, 1.5) == (False, True)
+
+
+@pytest.mark.parametrize("wraps", [(True, True), (True, False), (False, True), (False, False)])
+def test_tile_pad_wraps_or_copies_each_axis(wraps):
+    image = make_image(4, 3)
+    padded = imageops.tile_pad(image, 2, *wraps)
+    assert padded.size == (8, 7)
+    assert imageops.crop_border(padded, 2).tobytes() == image.tobytes()
+    left = padded.getpixel((1, 3))
+    assert left == (image.getpixel((3, 1)) if wraps[0] else image.getpixel((0, 1)))
+    top = padded.getpixel((3, 1))
+    assert top == (image.getpixel((1, 2)) if wraps[1] else image.getpixel((1, 0)))

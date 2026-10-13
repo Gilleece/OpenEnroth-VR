@@ -37,6 +37,7 @@ class UpscaledImage:
     seam_blend: int = 0
     soften: float = 0.0
     wrap_border: int | None = None  # Source pixels of wrapped padding the backend used, None if it used none.
+    wraps: list[bool] | None = None  # Whether that padding wrapped along x and y, or copied the edges.
 
 
 def images_dir(work: Path, section: str) -> Path:

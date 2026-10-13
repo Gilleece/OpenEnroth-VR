@@ -48,10 +48,11 @@ def _clamp_to_l(args, value):
     return args["convert"](args["max"](args["min"](value + 0.5, 255), 0), "L")
 
 
-def normal_map(color: Image.Image, options: MapOptions) -> Image.Image:
-    """Builds the normal map of `color`, treating its luminance as height. Edges wrap around, as the bitmap tiles."""
+def normal_map(color: Image.Image, options: MapOptions, wraps: tuple[bool, bool] = (True, True)) -> Image.Image:
+    """Builds the normal map of `color`, treating its luminance as height. Edges wrap around along the axes in `wraps`,
+    as the bitmap tiles, and are copied along the others."""
     border = options.wrap_border
-    height = imageops.wrap_pad(color.convert("L"), border)
+    height = imageops.tile_pad(color.convert("L"), border, *wraps)
     if options.blur:
         height = height.filter(ImageFilter.GaussianBlur(options.blur))
     dx = _sobel(height, [-1, 0, 1, -2, 0, 2, -1, 0, 1])  # Brighter to the right is above 128.
@@ -80,10 +81,10 @@ def normal_map(color: Image.Image, options: MapOptions) -> Image.Image:
     return Image.merge("RGB", (red, green, blue))
 
 
-def roughness_map(color: Image.Image, options: MapOptions) -> Image.Image:
+def roughness_map(color: Image.Image, options: MapOptions, wraps: tuple[bool, bool] = (True, True)) -> Image.Image:
     """Builds the roughness map of `color`: busier areas than the image's average are rougher, calmer ones smoother."""
     border = max(options.wrap_border, options.roughness_radius * 2)
-    luminance = imageops.wrap_pad(color.convert("L"), border)
+    luminance = imageops.tile_pad(color.convert("L"), border, *wraps)
     local_mean = luminance.filter(ImageFilter.BoxBlur(options.roughness_radius))
     busyness = ImageChops.difference(luminance, local_mean).filter(ImageFilter.BoxBlur(options.roughness_radius))
     busyness = imageops.crop_border(busyness, border)
@@ -107,7 +108,9 @@ def save_map(image: Image.Image, path: Path) -> None:
 def make_maps(work: Path, image: WorkImage, options: MapOptions) -> None:
     with Image.open(upscaled_dir(work, image.section) / f"{image.name}.png") as color:
         color = color.convert("RGB")
-    normal, roughness = normal_map(color, options), roughness_map(color, options)
+    info = load_upscaled_info(work, image)
+    wraps = tuple(info.wraps) if info is not None and info.wraps is not None else (True, True)  # As the upscale padded.
+    normal, roughness = normal_map(color, options, wraps), roughness_map(color, options, wraps)
     assert normal.size == roughness.size == color.size, f"{image.name}: maps must be {color.size}"
     save_map(normal, map_path(work, "normal", image.name))
     save_map(roughness, map_path(work, "roughness", image.name))
