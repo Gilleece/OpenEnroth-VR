@@ -503,6 +503,9 @@ class GameConfig : public Config {
         Int RenderFilter = {this, "render_filter", 2, &ValidateRenderFilter,
                             "Filtering method when scaling rendered framebuffer to window dimensions if they differ."
                             " 0 - disabled (render dimensions will always match window dimensions), 1 - linear filter, 2 - nearest filter"};
+        Int UiScale = {this, "ui_scale", 1, &ValidateUiScale,
+                       "Pixels per UI coordinate in the rendered UI, 1, 2 or 4. Above 1 the UI is drawn at that many times the"
+                       " render width and height, so that texture pack icons show more of their detail. Takes effect on restart."};
 
         Int WorldTargetWidth = {this, "world_target_width", 0, &ValidateWorldTargetDimension,
                                 "Width of the separate render target the 3D world is drawn into. 0 draws the world straight into the"
@@ -588,6 +591,9 @@ class GameConfig : public Config {
         }
         static int ValidateRenderFilter(int filter) {
             return std::clamp(filter, 0, 2);
+        }
+        static int ValidateUiScale(int scale) {
+            return scale >= 4 ? 4 : scale >= 2 ? 2 : 1;
         }
         static int ValidateWorldTargetDimension(int dimension) {
             return std::max(dimension, 0);

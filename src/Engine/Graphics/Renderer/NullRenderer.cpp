@@ -48,6 +48,10 @@ TextureRenderId NullRenderer::uiTargetTexture() {
     return TextureRenderId();
 }
 
+Sizei NullRenderer::uiTargetSize() {
+    return outputRender;
+}
+
 void NullRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::setExternalFramePacing(bool external) {}

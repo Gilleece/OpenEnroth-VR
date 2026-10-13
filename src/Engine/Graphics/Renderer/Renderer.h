@@ -96,6 +96,12 @@ class Renderer {
     virtual TextureRenderId uiTargetTexture() = 0;
 
     /**
+     * @return                          Size of the UI target in pixels, the render dimensions times
+     *                                  `graphics.ui_scale`.
+     */
+    virtual Sizei uiTargetSize() = 0;
+
+    /**
      * Makes the following 3D passes draw into a colour texture owned by the caller instead of the world target.
      *
      * @param colorTexture              Texture to draw into, or an empty id to go back to the world target.

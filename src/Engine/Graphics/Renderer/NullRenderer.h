@@ -26,6 +26,7 @@ class NullRenderer : public BaseRenderer {
     virtual Recti worldTargetViewport() override;
     virtual void compositeWorldTarget() override;
     virtual TextureRenderId uiTargetTexture() override;
+    virtual Sizei uiTargetSize() override;
     virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;

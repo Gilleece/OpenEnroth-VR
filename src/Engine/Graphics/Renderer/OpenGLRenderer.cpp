@@ -326,11 +326,12 @@ OpenGLRenderer::~OpenGLRenderer() {
 }
 
 RgbaImage OpenGLRenderer::ReadScreenPixels() {
-    RgbaImage result = RgbaImage::uninitialized(outputRender.w, outputRender.h);
+    Sizei size = uiTargetSize();
+    RgbaImage result = RgbaImage::uninitialized(size.w, size.h);
     if (_usesUiTarget()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
     }
-    glReadPixels(0, 0, outputRender.w, outputRender.h, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels().data());
+    glReadPixels(0, 0, size.w, size.h, GL_RGBA, GL_UNSIGNED_BYTE, result.pixels().data());
     if (_usesUiTarget()) {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     }
@@ -442,7 +443,7 @@ void OpenGLRenderer::EndScene3D() {
     } else if (_linearPipeline) {
         _bindUiTarget(); // The 2D quads are display colours, the 2D pass draws them over the tonemapped world.
         glEnable(GL_SCISSOR_TEST);
-        glViewport(0, 0, outputRender.w, outputRender.h);
+        _setUiViewport();
         return;
     }
 
@@ -454,7 +455,7 @@ void OpenGLRenderer::EndScene3D() {
 
     _bindUiTarget();
     glEnable(GL_SCISSOR_TEST);
-    glViewport(0, 0, outputRender.w, outputRender.h);
+    _setUiViewport();
 }
 
 Recti OpenGLRenderer::worldTargetViewport() {
@@ -481,13 +482,13 @@ void OpenGLRenderer::compositeWorldTarget() {
     }
 
     GLenum filter = config->graphics.WorldTargetFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
-    int bottom = outputRender.h - (pViewport.y + pViewport.h);
+    Recti viewport = _uiPixels(pViewport);
     if (_linearPipeline && source == &_worldTarget) {
-        drawComposite(*source, Recti(pViewport.x, bottom, pViewport.w, pViewport.h), filter);
+        drawComposite(*source, viewport, filter);
     } else {
         glBindFramebuffer(GL_READ_FRAMEBUFFER, source->framebuffer());
         glBlitFramebuffer(0, 0, source->size().w, source->size().h,
-                          pViewport.x, bottom, pViewport.x + pViewport.w, bottom + pViewport.h, GL_COLOR_BUFFER_BIT, filter);
+                          viewport.x, viewport.y, viewport.x + viewport.w, viewport.y + viewport.h, GL_COLOR_BUFFER_BIT, filter);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     }
     glEnable(GL_SCISSOR_TEST);
@@ -659,6 +660,10 @@ TextureRenderId OpenGLRenderer::uiTargetTexture() {
     return TextureRenderId(_uiTarget.colorTexture());
 }
 
+Sizei OpenGLRenderer::uiTargetSize() {
+    return Sizei(outputRender.w * _uiScale, outputRender.h * _uiScale);
+}
+
 void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {
     _externalOutput = colorTexture ? _externalTarget(colorTexture, size) : nullptr;
     _externalWorldTarget = _externalOutput;
@@ -671,8 +676,9 @@ void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei 
 
 void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
     OpenGLRenderTarget *source = _externalTarget(colorTexture, size);
-    if (_mirrorTarget.size() != pViewport.size())
-        _mirrorTarget.reset(pViewport.size(), RENDER_TARGET_FORMAT_RGBA8, false);
+    Sizei mirrorSize = _uiPixels(pViewport).size();
+    if (_mirrorTarget.size() != mirrorSize)
+        _mirrorTarget.reset(mirrorSize, RENDER_TARGET_FORMAT_RGBA8, false);
 
     Recti crop(Pointi(0, 0), size);
     if (size.w * pViewport.h > size.h * pViewport.w) {
@@ -686,7 +692,7 @@ void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size)
     glDisable(GL_SCISSOR_TEST);
     _mirrorTarget.bind();
     glBindFramebuffer(GL_READ_FRAMEBUFFER, source->framebuffer());
-    glBlitFramebuffer(crop.x, crop.y, crop.x + crop.w, crop.y + crop.h, 0, 0, pViewport.w, pViewport.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBlitFramebuffer(crop.x, crop.y, crop.x + crop.w, crop.y + crop.h, 0, 0, mirrorSize.w, mirrorSize.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     _bindUiTarget();
     glEnable(GL_SCISSOR_TEST);
@@ -1077,10 +1083,11 @@ void OpenGLRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {
     assert(_uiLayer);
 
     OpenGLRenderTarget *target = _externalTarget(colorTexture, size);
+    Sizei uiSize = uiTargetSize();
     glDisable(GL_SCISSOR_TEST);
     target->bind();
     glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
-    glBlitFramebuffer(0, 0, outputRender.w, outputRender.h, 0, 0, size.w, size.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBlitFramebuffer(0, 0, uiSize.w, uiSize.h, 0, 0, size.w, size.h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     _bindUiTarget();
     glEnable(GL_SCISSOR_TEST);
@@ -1572,7 +1579,7 @@ RgbaImage OpenGLRenderer::MakeViewportScreenshot(const int width, const int heig
     if (uCurrentlyLoadedLevelType != LEVEL_NULL) {
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
-                pPixels[y][x] = sPixels[outputRender.h - (y + 1) * interval_y - pViewport.y][x * interval_x + pViewport.x];
+                pPixels[y][x] = sPixels[_uiScale * (outputRender.h - (y + 1) * interval_y - pViewport.y)][_uiScale * (x * interval_x + pViewport.x)];
             }
         }
     }
@@ -1728,7 +1735,7 @@ void OpenGLRenderer::_set_3d_modelview_matrix() {
 // TODO(pskelton): to camera?
 void OpenGLRenderer::_set_ortho_projection(bool gameviewport) {
     if (!gameviewport) {  // project over entire window
-        glViewport(0, 0, outputRender.w, outputRender.h);
+        _setUiViewport();
         projmat = glm::ortho(float(0), float(outputRender.w), float(outputRender.h), float(0), float(-1), float(1));
     } else {  // project to game viewport
         _setWorldViewport();
@@ -1743,10 +1750,19 @@ void OpenGLRenderer::_set_ortho_modelview() {
 }
 
 void OpenGLRenderer::_setWorldViewport() {
-    OpenGLRenderTarget *target = _currentWorldTarget();
-    int targetHeight = target ? target->size().h : outputRender.h;
     const Recti &rect = _view.viewport;
-    glViewport(rect.x, targetHeight - (rect.y + rect.h - 1) - 1, rect.w, rect.h);
+    OpenGLRenderTarget *target = _currentWorldTarget();
+    Recti pixels = target ? Recti(rect.x, target->size().h - (rect.y + rect.h), rect.w, rect.h) : _uiPixels(rect);
+    glViewport(pixels.x, pixels.y, pixels.w, pixels.h);
+}
+
+void OpenGLRenderer::_setUiViewport() {
+    Sizei size = uiTargetSize();
+    glViewport(0, 0, size.w, size.h);
+}
+
+Recti OpenGLRenderer::_uiPixels(const Recti &rect) const {
+    return Recti(rect.x * _uiScale, (outputRender.h - (rect.y + rect.h)) * _uiScale, rect.w * _uiScale, rect.h * _uiScale);
 }
 
 OpenGLRenderTarget *OpenGLRenderer::_currentWorldTarget() {
@@ -1775,7 +1791,7 @@ void OpenGLRenderer::_bindUiTarget() {
 }
 
 bool OpenGLRenderer::_usesUiTarget() const {
-    return outputRender != outputPresent || _uiLayer;
+    return outputRender != outputPresent || _uiLayer || _uiScale != 1;
 }
 
 void OpenGLRenderer::_setUiBlendFunc() {
@@ -1796,7 +1812,7 @@ RgbaImage OpenGLRenderer::makeWorldTargetScreenshot(int width, int height) {
         drawComposite(_worldTarget, Recti(Pointi(0, 0), size), GL_NEAREST);
         _bindUiTarget();
         glEnable(GL_SCISSOR_TEST);
-        glViewport(0, 0, outputRender.w, outputRender.h);
+        _setUiViewport();
         framebuffer = tonemapped.framebuffer();
     }
 
@@ -2995,7 +3011,8 @@ void OpenGLRenderer::SetBillboardBlendOptions(RenderBillboardD3D::OpacityType a1
 
 void OpenGLRenderer::SetUIClipRect(const Recti &rect) {
     this->clipRect = rect;
-    glScissor(rect.x, outputRender.h - rect.y - rect.h, rect.w, rect.h);  // invert glscissor co-ords 0,0 is BL
+    Recti pixels = _uiPixels(rect);
+    glScissor(pixels.x, pixels.y, pixels.w, pixels.h);
 }
 
 void OpenGLRenderer::ResetUIClipRect() {
@@ -3261,8 +3278,9 @@ void OpenGLRenderer::flushAndScale() {
         }
 
         GLenum filter = config->graphics.RenderFilter.value() == 1 ? GL_LINEAR : GL_NEAREST;
+        Sizei uiSize = uiTargetSize();
         glBindFramebuffer(GL_READ_FRAMEBUFFER, _uiTarget.framebuffer());
-        glBlitFramebuffer(0, 0, outputRender.w, outputRender.h, rect.x, rect.y, rect.w + rect.x, rect.h + rect.y, GL_COLOR_BUFFER_BIT, filter);
+        glBlitFramebuffer(0, 0, uiSize.w, uiSize.h, rect.x, rect.y, rect.w + rect.x, rect.h + rect.y, GL_COLOR_BUFFER_BIT, filter);
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     }
 }
@@ -3299,7 +3317,7 @@ void OpenGLRenderer::_presentUiLayer(const Recti &rect) {
 void OpenGLRenderer::swapBuffers() {
     if (_usesUiTarget()) {
         glEnable(GL_SCISSOR_TEST);
-        glViewport(0, 0, outputRender.w, outputRender.h);
+        _setUiViewport();
     }
 
     openGLContext->swapBuffers();
@@ -4430,8 +4448,10 @@ void OpenGLRenderer::_initWaterTiles() {
 bool OpenGLRenderer::Reinitialize(bool firstInit) {
     BaseRenderer::Reinitialize(firstInit);
 
-    if (firstInit)
+    if (firstInit) {
         _readPipelineSettings();
+        _uiScale = config->graphics.UiScale.value();
+    }
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);       // Black Background
     glClearDepthf(1.0f);
@@ -4444,13 +4464,13 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
-    _uiTarget.reset(outputRender, RENDER_TARGET_FORMAT_RGBA8, true);
+    _uiTarget.reset(uiTargetSize(), RENDER_TARGET_FORMAT_RGBA8, true);
 
     int worldTargetWidth = config->graphics.WorldTargetWidth.value();
     int worldTargetHeight = config->graphics.WorldTargetHeight.value();
     if (_linearPipeline && (worldTargetWidth == 0 || worldTargetHeight == 0)) {
-        worldTargetWidth = pViewport.w;
-        worldTargetHeight = pViewport.h;
+        worldTargetWidth = pViewport.w * _uiScale;
+        worldTargetHeight = pViewport.h * _uiScale;
         if (config->graphics.Enhanced.value()) { // The viewport's size in window pixels, which outputRender can be smaller than.
             worldTargetWidth = pViewport.w * outputPresent.w / outputRender.w;
             worldTargetHeight = pViewport.h * outputPresent.h / outputRender.h;
@@ -4464,11 +4484,9 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         _worldTarget.reset();
     }
 
-    glViewport(0, 0, outputRender.w, outputRender.h);
-    glScissor(0, 0, outputRender.w, outputRender.h);
+    _setUiViewport();
+    ResetUIClipRect();
     glEnable(GL_SCISSOR_TEST);
-
-    this->clipRect = Recti(Pointi(0, 0), outputRender);
 
     // PostInitialization();
 

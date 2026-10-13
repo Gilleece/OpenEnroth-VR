@@ -52,6 +52,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual Recti worldTargetViewport() override;
     virtual void compositeWorldTarget() override;
     virtual TextureRenderId uiTargetTexture() override;
+    virtual Sizei uiTargetSize() override;
     virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;
@@ -185,6 +186,15 @@ class OpenGLRenderer : public BaseRenderer {
     void _set_ortho_projection(bool gameviewport = false);
     void _set_ortho_modelview();
     void _setWorldViewport();
+    void _setUiViewport();
+
+    /**
+     * @param rect                      Rectangle in UI coordinates, with y down.
+     * @return                          The same rectangle in pixels of the UI target, with y up the way viewports and
+     *                                  scissor rectangles take it.
+     */
+    Recti _uiPixels(const Recti &rect) const;
+
     OpenGLRenderTarget *_currentWorldTarget();
     OpenGLRenderTarget *_externalTarget(TextureRenderId colorTexture, Sizei size);
     void _bindUiTarget();
@@ -433,6 +443,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _uiLayer = false;
     bool _linearPipeline = false; // Decided once at startup, the world shaders are compiled for it.
     bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.
+    int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;
 };
 

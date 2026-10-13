@@ -635,7 +635,7 @@ bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
     if (!render->uiLayer())
         return false;
 
-    Sizei size = render->GetRenderDimensions();
+    Sizei size = render->uiTargetSize();
     if (_ui.size != size) {
         destroySwapchain(&_ui);
         if (!createSwapchain(&_ui, size))
