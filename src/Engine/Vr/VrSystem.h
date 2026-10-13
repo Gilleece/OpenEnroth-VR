@@ -2,7 +2,9 @@
 
 #include <array>
 #include <chrono>
+#include <compare>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -55,6 +57,51 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     virtual bool forwardRay(Vec3f *origin, Vec3f *direction) override;
     virtual bool listenerPose(Vec3f *position, Vec3f *forward, Vec3f *up) override;
     virtual void recenter() override;
+
+    /**
+     * What a frame handed to the runtime carried.
+     */
+    struct FrameKind {
+        bool world = false; // The eyes' projection layer, drawn this frame or held from an earlier one.
+        bool spreadHud = false; // The spread HUD instead of the single UI quad.
+        uint32_t layers = 0;
+
+        auto operator<=>(const FrameKind &) const = default;
+    };
+
+    /**
+     * Frames handed to the runtime since the last `resetFrameStats`, for tests.
+     */
+    struct FrameStats {
+        std::map<FrameKind, int64_t> kinds; // Frames the runtime wanted drawn, by what they carried.
+        int64_t frames = 0; // All frames ended, drawn or not.
+        std::chrono::steady_clock::time_point firstFrameTime;
+        std::chrono::steady_clock::time_point lastFrameTime;
+    };
+
+    [[nodiscard]] const FrameStats &frameStats() const {
+        return _frameStats;
+    }
+
+    void resetFrameStats() {
+        _frameStats = FrameStats();
+    }
+
+    /**
+     * @return                          Whether the session is focused, so that the headset shows the game and its
+     *                                  input goes to it.
+     */
+    [[nodiscard]] bool focused() const {
+        return _focused;
+    }
+
+    /**
+     * Turns the head by a fixed angle on top of its tracked pose, for tests that can't move a headset.
+     *
+     * @param yawDegrees                Turn to the left.
+     * @param pitchDegrees              Tilt up.
+     */
+    void setHeadTurn(float yawDegrees, float pitchDegrees);
 
  private:
     friend class PlatformIntrospection; // Give access to private bases.
@@ -252,6 +299,8 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     Vec3f _lastPickOrigin; // Mid-eye position of the last frame drawn.
     glm::quat _lastPickOrientation = glm::quat(1, 0, 0, 0); // VIEW space orientation of the last frame drawn.
     int64_t _frameIndex = 0;
+    FrameStats _frameStats;
+    glm::quat _headTurn = glm::quat(1, 0, 0, 0); // Set by `setHeadTurn`, in the game's view axes.
     int64_t _worldFrameCount = 0;
     std::chrono::steady_clock::time_point _summaryTime; // Of the last frame summary in the log.
     int64_t _summaryFrameIndex = 0;

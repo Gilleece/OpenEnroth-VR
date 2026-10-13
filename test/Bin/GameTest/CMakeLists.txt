@@ -44,3 +44,18 @@ add_custom_target(Run_GameTest_Headless_Parallel
         DEPENDS OpenEnroth_GameTest
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         USES_TERMINAL)
+
+if(OE_BUILD_VR)
+    target_sources(OpenEnroth_GameTest PRIVATE VrSmokeTest.cpp)
+
+    # Runs the VrSmoke suite flat and then in a headset session on the OpenXR runtime that OPENENROTH_VR_SMOKE names.
+    set(VR_SMOKE_BASELINE ${CMAKE_CURRENT_BINARY_DIR}/vr_smoke_flat_warnings.txt)
+    add_custom_target(Run_VrSmoke
+            ${CMAKE_COMMAND} -E env OPENENROTH_VR_SMOKE_PASS=flat OPENENROTH_VR_SMOKE_BASELINE=${VR_SMOKE_BASELINE}
+                $<TARGET_FILE:OpenEnroth_GameTest> --test-path ${OE_TESTDATA_PATH} --gtest_filter=VrSmoke.*
+            COMMAND ${CMAKE_COMMAND} -E env OPENENROTH_VR_SMOKE_PASS=vr OPENENROTH_VR_SMOKE_BASELINE=${VR_SMOKE_BASELINE}
+                $<TARGET_FILE:OpenEnroth_GameTest> --test-path ${OE_TESTDATA_PATH} --gtest_filter=VrSmoke.*
+            DEPENDS OpenEnroth_GameTest
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            USES_TERMINAL)
+endif()

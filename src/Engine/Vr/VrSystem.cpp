@@ -712,6 +712,13 @@ void VrSystem::endFrame() {
     endInfo.layers = layers.empty() ? nullptr : layers.data();
     check(xrEndFrame(_session, &endInfo), "xrEndFrame");
 
+    auto endTime = std::chrono::steady_clock::now();
+    if (_frameStats.frames++ == 0)
+        _frameStats.firstFrameTime = endTime;
+    _frameStats.lastFrameTime = endTime;
+    if (_frameState.shouldRender)
+        _frameStats.kinds[FrameKind{_layerReady, _hudSpread, endInfo.layerCount}]++;
+
     if (worldDrawn)
         _worldFrameCount++;
     if (_frameIndex < LOGGED_FRAME_COUNT || (_layerReady && _worldFrameCount <= LOGGED_FRAME_COUNT))
@@ -1076,11 +1083,16 @@ void VrSystem::shutdown() {
     _instance = XR_NULL_HANDLE;
 }
 
+void VrSystem::setHeadTurn(float yawDegrees, float pitchDegrees) {
+    // The game's view axes have +y to the left and +z up, so tilting up turns about -y.
+    _headTurn = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0, 0, 1)) * glm::angleAxis(glm::radians(-pitchDegrees), glm::vec3(0, 1, 0));
+}
+
 glm::quat VrSystem::worldOrientation(const XrQuaternionf &orientation) const {
     glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
 
     // OpenXR looks along -z with +x to the right and +y up, the game looks along +x with +y to the left and +z up.
-    return partyYaw * glm::quat(orientation.w, -orientation.z, -orientation.x, orientation.y);
+    return partyYaw * _headTurn * glm::quat(orientation.w, -orientation.z, -orientation.x, orientation.y);
 }
 
 CameraView VrSystem::eyeView(const XrView &view, Sizei size) const {
