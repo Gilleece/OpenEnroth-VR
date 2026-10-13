@@ -32,10 +32,17 @@ MM_DEFINE_JSON_STRUCT_SERIALIZATION_FUNCTIONS(TexturePackSpriteEntry, (
     (shape, "shape")
 ))
 
+MM_DEFINE_JSON_STRUCT_SERIALIZATION_FUNCTIONS(TexturePackGiEntry, (
+    (crc32, "crc32"),
+    (file, "file"),
+    (probes, "probes")
+))
+
 MM_DEFINE_JSON_STRUCT_SERIALIZATION_FUNCTIONS(TexturePackManifest, (
     (format, "format"),
     (colors, "colors"),
     (bitmaps, "bitmaps"),
     (icons, "icons"),
-    (sprites, "sprites")
+    (sprites, "sprites"),
+    (gi, "gi")
 ))

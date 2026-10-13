@@ -1,9 +1,11 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <string_view>
 
 #include "Engine/Data/TexturePackManifest.h"
+#include "Engine/Resources/GiProbes.h"
 
 #include "Library/Geometry/Size.h"
 #include "Library/Image/Image.h"
@@ -110,6 +112,15 @@ class TexturePack {
      *                                  or 4, or an empty image under the same conditions as `image()`.
      */
     [[nodiscard]] RgbaImage spriteShapeImage(std::string_view name, const Blob &lodEntry, Sizei lodSize) const;
+
+    /**
+     * @param mapFile                   `games.lod` map file name, case-insensitive, e.g. `d18.blv`.
+     * @param lodEntry                  The map's entry in `games.lod`, as stored in the LOD.
+     * @return                          The map's baked indirect light, or `std::nullopt` if the pack has none for it.
+     *                                  Probes baked from a different map entry, or a missing or malformed probe file,
+     *                                  are logged and not returned.
+     */
+    [[nodiscard]] std::optional<GiProbes> giProbes(std::string_view mapFile, const Blob &lodEntry) const;
 
  private:
     const FileSystem *_fs = nullptr;

@@ -119,6 +119,7 @@ TexturePack::TexturePack(const FileSystem *fs) : _fs(fs) {
     _manifest.bitmaps = lowercaseKeys(std::move(_manifest.bitmaps));
     _manifest.icons = lowercaseKeys(std::move(_manifest.icons));
     _manifest.sprites = lowercaseKeys(std::move(_manifest.sprites));
+    _manifest.gi = lowercaseKeys(std::move(_manifest.gi));
 }
 
 TexturePack::~TexturePack() = default;
@@ -191,6 +192,28 @@ int TexturePack::spriteImageCount() const {
 bool TexturePack::hasSpriteImage(std::string_view name, int paletteId) const {
     auto pos = _manifest.sprites.find(ascii::toLower(name));
     return pos != _manifest.sprites.end() && std::ranges::contains(pos->second.palettes, paletteId);
+}
+
+std::optional<GiProbes> TexturePack::giProbes(std::string_view mapFile, const Blob &lodEntry) const {
+    auto pos = _manifest.gi.find(ascii::toLower(mapFile));
+    if (pos == _manifest.gi.end() || !lodEntry)
+        return std::nullopt;
+
+    PackFiles fs(_fs, &_fsMutex);
+    const TexturePackGiEntry &entry = pos->second;
+    if (!matchesLodEntry(fs, entry.file, entry.crc32, lodEntry))
+        return std::nullopt;
+    if (!fs.exists(entry.file)) {
+        MM_WARNING("Texture pack probe file '{}' is listed in the manifest but doesn't exist. Using no baked light.", fs.displayPath(entry.file));
+        return std::nullopt;
+    }
+
+    try {
+        return readGiProbes(fs.read(entry.file));
+    } catch (const std::exception &e) {
+        MM_WARNING("Could not read texture pack probe file '{}': {}. Using no baked light.", fs.displayPath(entry.file), e.what());
+        return std::nullopt;
+    }
 }
 
 float TexturePack::spriteShapeThickness(std::string_view name) const {
