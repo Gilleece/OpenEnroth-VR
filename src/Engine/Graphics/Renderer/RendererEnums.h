@@ -70,6 +70,7 @@ enum class RenderTargetFormat {
     RENDER_TARGET_FORMAT_RGBA16F,
     RENDER_TARGET_FORMAT_R11G11B10F, // Half the size of RGBA16F, for colour without alpha.
     RENDER_TARGET_FORMAT_RG16F,
-    RENDER_TARGET_FORMAT_R16F
+    RENDER_TARGET_FORMAT_R16F,
+    RENDER_TARGET_FORMAT_R32F
 };
 using enum RenderTargetFormat;

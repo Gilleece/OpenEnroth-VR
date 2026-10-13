@@ -61,6 +61,10 @@ class OpenGLRenderTarget {
         return _depthTexture != 0;
     }
 
+    [[nodiscard]] GLuint depthTexture() const {
+        return _depthTexture;
+    }
+
     [[nodiscard]] Sizei size() const {
         return _size;
     }

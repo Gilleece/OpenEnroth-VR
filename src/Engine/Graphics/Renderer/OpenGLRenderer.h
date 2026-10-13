@@ -428,6 +428,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader contactshadowshader;
     OpenGLShader aodepthshader;
     OpenGLShader aoshader;
+    OpenGLShader depthhalfshader;
     OpenGLShader aoblurshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
@@ -503,6 +504,8 @@ class OpenGLRenderer : public BaseRenderer {
 
     // soft particles
     GLuint _sceneDepth = 0; // Copy of the world's depth buffer, taken before the billboards.
+    OpenGLRenderTarget _sceneDepthHalf; // The world's depth at half resolution, taken instead from a world target.
+    GLuint _sceneDepthTexture = 0; // Whichever of the two the billboards sample.
     GLuint _sceneDepthFramebuffer = 0;
     Sizei _sceneDepthSize;
     Recti _sceneDepthViewport; // World viewport `_sceneDepth` was copied from.
