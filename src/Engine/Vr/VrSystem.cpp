@@ -774,7 +774,8 @@ bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     layer.size = {width, width * _ui.size.h / _ui.size.w};
     placeUi(&layer, distance);
 
-    bool wanted = engine->config->vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD && current_screen_type == SCREEN_GAME;
+    // The HUD only spreads around the world, which the main menu, also the game screen, doesn't have.
+    bool wanted = engine->config->vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD && current_screen_type == SCREEN_GAME && _layerReady;
     bool spread = wanted && _maxLayerCount >= HUD_LAYER_COUNT;
     if (spread != _hudSpread || wanted != _hudWanted) {
         if (wanted && !spread) {
