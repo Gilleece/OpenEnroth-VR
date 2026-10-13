@@ -12,7 +12,7 @@ from texpipe.config import SCALES, load_config
 from texpipe.depth import run_depth
 from texpipe.extract import run_extract
 from texpipe.maps import run_maps
-from texpipe.pack import COLORS, run_pack, write_archive
+from texpipe.pack import COLORS, run_pack, write_archive, write_archive_parts
 from texpipe.regen import RegenOptions, regen_report, rescore, run_regen
 from texpipe.regen_icons import icon_options, run_icons
 from texpipe.upscale import BACKENDS, run_upscale
@@ -53,6 +53,13 @@ def build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--colors", choices=COLORS, default="raw", help="How the engine treats the pack's colors.")
     pack.add_argument("--regen-from", help="Take sprites and icons from this model's regen outputs that passed.")
     pack.add_argument("--archive", type=Path, help="Also zip the written pack into this file, ready to share.")
+    pack.add_argument(
+        "--archive-split",
+        type=float,
+        metavar="GIB",
+        help="Write the archive as numbered parts of at most this many GiB each, for sites with an upload limit.",
+    )
+    pack.add_argument("--config", type=Path, help="Config file, defaults to the bundled default_config.toml.")
 
     verify = commands.add_parser("verify", help="Check a texture pack against the installed game, as the engine would.")
     verify.add_argument("--pack", type=Path, required=True, help="Pack folder, the one with manifest.json in it.")
@@ -150,9 +157,15 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "regen-report":
         print(json.dumps(regen_report(args.work, args.palettes, args.model, args.only, args.sheet), indent=2))
     else:
-        counts = run_pack(args.work, args.out, args.colors, args.only, args.regen_from)
+        if args.archive_split and not args.archive:
+            raise SystemExit("--archive-split needs --archive, the name the parts are numbered after.")
+        counts = run_pack(args.work, args.out, args.colors, args.only, args.regen_from, load_config(args.config))
         print(f"Packed {counts}.")
-        if args.archive:
+        if args.archive_split:
+            for part, size in write_archive_parts(args.out, args.archive, int(args.archive_split * 2**30)):
+                print(f"Archived to {part}, {size / 2**20:.1f} MiB.")
+            print(f"Pack counts {counts}.")
+        elif args.archive:
             size = write_archive(args.out, args.archive)
             print(f"Archived to {args.archive}, {size / 2**20:.1f} MiB, {counts}.")
     print(f"Took {time.monotonic() - start:.1f} s.")

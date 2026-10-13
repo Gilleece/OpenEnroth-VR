@@ -1,0 +1,124 @@
+# The lite profile: everything as in default_config.toml, but bitmaps at 2x instead of 4x, so that the pack fits a
+# smaller download. Pass it with --config to upscale and pack.
+# Which backend and scale the upscale step uses for which images. The first [[rule]] whose section, entry name glob
+# and max_width in source pixels (optional) all match decides, anything else falls back to [default]. --backend and
+# --scale on the command line override all of this.
+
+[default]
+backend = "realesrgan"
+scale = 2  # The lite profile: the model's 4x output scaled down to 2x with Lanczos.
+
+# Super-resolution smears tiny glyphs like the minimap direction arrows, so those are only scaled.
+[[rule]]
+section = "icons"
+match = "mapdir[1-8]"
+backend = "nearest"
+scale = 2
+
+[[rule]]
+section = "icons"
+max_width = 11
+backend = "nearest"
+scale = 2
+
+# The UI is drawn at a fixed size on screen, 2x already covers 1280x960 and the frame stays sharp.
+[[rule]]
+section = "icons"
+match = "*"
+backend = "realesrgan"
+scale = 2
+
+# Sprites have no wrapped border and get the same narrow image padding as icons.
+[[rule]]
+section = "sprites"
+match = "*"
+backend = "realesrgan"
+scale = 2
+
+# The indoor water tile doesn't tile cleanly, its opposite edges differ. Upscaled, the jump becomes a crisp line that
+# repeats across the pool, so the edges are eased into each other first.
+[[rule]]
+section = "bitmaps"
+match = "wtrtyl"
+backend = "realesrgan"
+scale = 4
+seam_blend = 2
+
+# The sea's wave crests come out as crisp white streaks that stay bright at night. A little blur takes the edge off.
+[[rule]]
+section = "bitmaps"
+match = "hdwtr00[0-7]"
+backend = "realesrgan"
+scale = 4
+soften = 0.5
+
+[realesrgan]
+model = "realesrgan-x4plus"
+model_scale = 4
+wrap_border = 64  # Narrower than the model reads, the two sides of a tile's seam come out slightly different.
+# A tile edge pair that differs more than this many times the step between neighbouring rows inside the tile, like the
+# snow and dirt sides of a transition tile, gets copied padding instead of wrapped padding.
+wrap_tolerance = 1.5
+tile_size = 512  # Pixels the binary upscales at once. Wrapped 256 pixel bitmaps fit, a split would add seams of its own.
+preserve_brightness = ["bitmaps", "sprites"]  # Sections whose upscaled images are rescaled to the mean brightness of the source.
+max_brightness_factor = 3.0  # Cap per channel, so a channel the model left nearly black does not turn into speckles.
+
+[maps]
+strength = 2.0  # How steep the normal map makes luminance edges. These are stone and wood walls, keep it low.
+blur = 1.0  # Gaussian blur radius on the height, in pixels of the upscaled image.
+roughness_baseline = 90  # Reproduces the stock specular.
+roughness_range = 40  # Most the roughness strays from the baseline, for the busiest and the calmest areas.
+wrap_border = 8
+
+# The regen pass. Every output must pass all three gates, or the upscaled image is used instead.
+[regen]
+model = "google/gemini-3.1-flash-lite-image"
+seed = 7
+temperature = 0.2
+workers = 4
+cost_per_image = 0.034  # Measured on the pilot, only used for the dry run's projection.
+include = ["*"]
+exclude = [
+    # Spell effects and spell projectiles: fireballs, sparks, bursts and particle clouds. They are glows and smears
+    # with no surface detail to recover, and they animate fast enough that per-frame changes would flicker.
+    "sp[0-9]*",
+    "spell*",
+    # Arrows in flight and water splashes, a few pixels on screen.
+    "arrow*",
+    "splash*",
+    # Torch flames on walls, animated fire like the spell effects.
+    "torch*",
+]
+
+[regen.thresholds]
+min_iou = 0.88  # Silhouette of what the model drew against the stock alpha.
+max_color_delta = 10.0  # Largest per-channel difference of the mean color over the sprite, out of 255.
+max_distance = 0.06  # Mean luminance difference after a 2 px blur over the sprite, 0..1.
+
+# The regen pass over icons: character portraits, NPC portraits and the UI frame. Few images, painted rather than
+# pre-rendered, so the prompt allows a little more change. The silhouette gate only applies to transparent icons.
+[regen.icons]
+temperature = 0.4
+include = ["pc*", "npc*", "ib-*"]
+exclude = []
+
+[regen.icons.thresholds]
+min_iou = 0.88
+max_color_delta = 10.0
+max_distance = 0.08
+
+# Sprite shape images from a monocular depth model, see the README. Sprites the [regen] exclude globs match stay flat.
+[depth]
+model = "depth-anything/Depth-Anything-V2-Small-hf"
+background = [128, 128, 128]  # What the model sees behind the sprite.
+percentiles = [0.02, 0.98]  # Of the opaque depths of an animation group, mapped to farthest and nearest.
+thickness_ratio = 0.6  # Front to back depth as a share of the group's median opaque width.
+min_thickness = 8.0  # Game units.
+max_thickness = 256.0
+blur = 1.0  # Gaussian sigma over the depth before the Sobel, in pack pixels.
+erode = 2  # Pack pixels of the silhouette that take their depth from further in, the model blurs them.
+
+# Packing. Images upscaled past max_scale go into the pack scaled down to it with Lanczos, and their maps are made again
+# at that size. lite_config.toml sets 2, for a pack about half the size of the full one.
+[pack]
+max_scale = 2

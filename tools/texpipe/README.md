@@ -109,7 +109,19 @@ python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x
 
 With `--archive <file.zip>`, pack also zips the pack folder for sharing, under a folder of the pack's name with
 `README.txt` first, and prints the archive's size. The order and the timestamps are fixed, so the same pack makes the
-same archive. PNGs are stored as they are, they don't compress any further.
+same archive. PNGs are stored as they are, they don't compress any further. With `--archive-split <GiB>` as well, the
+archive comes as numbered parts, `<name>.part1.zip` and on, each at most that size. Every part is a complete zip of
+some of the pack's files under the same folder, so extracting all of them into one place gives the pack. `README.txt`
+opens the first part, and every part carries a `parts.txt` that lists them all.
+
+The lite profile, `texpipe/lite_config.toml`, makes a pack about half the size: bitmaps at 2x instead of 4x, the rest
+as in the full one. Packing with it scales the 4x bitmaps of a full work folder down with Lanczos and makes their
+maps again at 2x, so no image goes through the model again. An upscale run with it makes the bitmaps at 2x in the
+first place, the model's 4x output scaled down the same way.
+
+```
+python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/esrgan-lite --config texpipe/lite_config.toml --archive ../../mm7_hd/esrgan-lite.zip
+```
 
 **verify** checks a pack against the installed game the way the engine loads it, for packs that came from elsewhere:
 every manifest entry against the CRC-32 of its LOD entry, every listed file present, color images at the LOD image's
