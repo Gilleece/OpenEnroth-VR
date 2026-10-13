@@ -52,6 +52,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     virtual bool aimPickCamera() override;
     virtual bool pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) override;
     virtual bool forwardRay(Vec3f *origin, Vec3f *direction) override;
+    virtual void recenter() override;
 
  private:
     friend class PlatformIntrospection; // Give access to private bases.
@@ -166,6 +167,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     XrSpace _space = XR_NULL_HANDLE; // Head origin, null until it's captured.
     std::array<Swapchain, 2> _eyes;
     Swapchain _ui;
+    std::optional<Vec2f> _uiPlacement; // Width and distance of the UI quad last logged.
     int64_t _swapchainFormat = 0;
     bool _running = false;
     bool _focused = false;

@@ -251,6 +251,9 @@ void Menu::EventLoop() {
                 render->applyPipelineSettings();
                 gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
                 continue;
+            case UIMSG_ChangeVrSetting:
+                changeVrSetting(static_cast<VrSetting>(param));
+                continue;
 
             case UIMSG_ChangeMusicVolume: {
                 int new_level = engine->config->settings.MusicLevel.value();

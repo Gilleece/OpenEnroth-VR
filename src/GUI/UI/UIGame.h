@@ -37,6 +37,14 @@ class GUIWindow_GameKeyBindings : public GUIWindow {
 
 
 
+/**
+ * Toggles or cycles one entry of the VR block on the video options screen, or recenters the headset view. Takes
+ * effect at once.
+ *
+ * @param setting                       Entry to change.
+ */
+void changeVrSetting(VrSetting setting);
+
 class GUIWindow_GameVideoOptions : public GUIWindow {
  public:
     GUIWindow_GameVideoOptions();

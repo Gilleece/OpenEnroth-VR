@@ -330,8 +330,12 @@ void VrSystem::swapBuffers() {
 
 bool VrSystem::keyPressEvent(const PlatformKeyEvent *event) {
     if (!event->isAutoRepeat && keyboardActionMapping && keyboardActionMapping->isBound(INPUT_ACTION_VR_RECENTER, event->key))
-        _recenterRequested = true;
+        recenter();
     return false;
+}
+
+void VrSystem::recenter() {
+    _recenterRequested = true;
 }
 
 bool VrSystem::check(XrResult result, const char *call) const {
@@ -563,6 +567,7 @@ void VrSystem::setRunning(bool running) {
         render->setUiLayer(running);
     }
     _lastCullingCamera.reset();
+    _uiPlacement.reset();
 }
 
 void VrSystem::beginFrame() {
@@ -644,8 +649,7 @@ bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
         destroySwapchain(&_ui);
         if (!createSwapchain(&_ui, size))
             return false;
-        MM_INFO("VR: UI swapchain is {}x{} with {} images, shown {:.2f} m wide at {:.2f} m.", size.w, size.h, _ui.images.size(),
-                engine->config->vr.UiWidth.value(), engine->config->vr.UiDistance.value());
+        MM_INFO("VR: UI swapchain is {}x{} with {} images.", size.w, size.h, _ui.images.size());
     }
 
     uint32_t imageIndex = 0;
@@ -661,13 +665,18 @@ bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
     check(xrReleaseSwapchainImage(_ui.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
 
     float width = engine->config->vr.UiWidth.value();
+    float distance = engine->config->vr.UiDistance.value();
+    if (_uiPlacement != Vec2f(width, distance)) {
+        MM_INFO("VR: UI shown {:.2f} m wide at {:.2f} m.", width, distance);
+        _uiPlacement = Vec2f(width, distance);
+    }
     layer->layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT; // The UI target holds premultiplied colour.
     layer->space = _viewSpace;
     layer->eyeVisibility = XR_EYE_VISIBILITY_BOTH;
     layer->subImage.swapchain = _ui.swapchain;
     layer->subImage.imageRect.extent = {_ui.size.w, _ui.size.h};
     layer->pose.orientation.w = 1.0f;
-    layer->pose.position.z = -engine->config->vr.UiDistance.value(); // VIEW space looks along -z.
+    layer->pose.position.z = -distance; // VIEW space looks along -z.
     layer->size = {width, width * _ui.size.h / _ui.size.w};
     return true;
 }

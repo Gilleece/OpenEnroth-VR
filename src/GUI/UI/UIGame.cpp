@@ -23,6 +23,7 @@
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Viewport.h"
+#include "Engine/Graphics/WorldFrameViews.h"
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Image.h"
 #include "Engine/Localization.h"
@@ -56,6 +57,7 @@
 #include "Core/Serialization/PlatformKeySerialization.h"
 
 #include "Utility/Math/TrigLut.h"
+#include "Utility/Segment.h"
 
 #include "Library/Logger/Logger.h"
 
@@ -362,6 +364,77 @@ void GUIWindow_GameKeyBindings::Update() {
     }
 }
 
+static constexpr Recti VR_PANEL_RECT(244, 142, 212, 156); // Covers the gamma preview panel.
+static constexpr int VR_LINE_TOP = 164;
+static constexpr int VR_LINE_HEIGHT = 18;
+
+/**
+ * @param setting                       Entry of the VR block.
+ * @return                              Rectangle of its line on the video options screen, which is also its button.
+ */
+static Recti vrLineRect(VrSetting setting) {
+    return Recti(VR_PANEL_RECT.x + 2, VR_LINE_TOP + std::to_underlying(setting) * VR_LINE_HEIGHT, VR_PANEL_RECT.w - 4, VR_LINE_HEIGHT - 2);
+}
+
+/**
+ * @param value                         Current value.
+ * @param steps                         Values to cycle through, in increasing order.
+ * @return                              First step above `value`, or the first step if there is none.
+ */
+template<class T>
+static T nextStep(T value, std::initializer_list<T> steps) {
+    for (T step : steps)
+        if (step > value + static_cast<T>(0.001))
+            return step;
+    return *steps.begin();
+}
+
+void changeVrSetting(VrSetting setting) {
+    GameConfig::Vr &vr = engine->config->vr;
+    switch (setting) {
+    case VR_SETTING_SNAP_TURN:
+        vr.SnapTurn.toggle();
+        break;
+    case VR_SETTING_SNAP_TURN_DEGREES:
+        vr.SnapTurnDegrees.setValue(nextStep(vr.SnapTurnDegrees.value(), {15, 30, 45, 90}));
+        break;
+    case VR_SETTING_MINIMAL_HUD:
+        vr.MinimalHud.toggle();
+        break;
+    case VR_SETTING_UI_DISTANCE:
+        vr.UiDistance.setValue(nextStep(vr.UiDistance.value(), {0.8f, 1.0f, 1.2f, 1.5f, 2.0f}));
+        break;
+    case VR_SETTING_UI_WIDTH:
+        vr.UiWidth.setValue(nextStep(vr.UiWidth.value(), {0.6f, 0.8f, 1.0f, 1.2f, 1.5f}));
+        break;
+    case VR_SETTING_HEAD_OFFSET_RADIUS:
+        vr.HeadOffsetRadius.setValue(nextStep(vr.HeadOffsetRadius.value(), {0.1f, 0.3f, 0.5f, 1.0f}));
+        break;
+    case VR_SETTING_RECENTER:
+        if (engine->_worldFrameViews)
+            engine->_worldFrameViews->recenter();
+        break;
+    }
+}
+
+/**
+ * @param setting                       Entry of the VR block.
+ * @return                              Text of its line on the video options screen.
+ */
+static std::string vrSettingText(VrSetting setting) {
+    const GameConfig::Vr &vr = engine->config->vr;
+    switch (setting) {
+    case VR_SETTING_SNAP_TURN: return vr.SnapTurn.value() ? "Snap turn: on" : "Snap turn: off";
+    case VR_SETTING_SNAP_TURN_DEGREES: return fmt::format("Snap turn step: {} degrees", vr.SnapTurnDegrees.value());
+    case VR_SETTING_MINIMAL_HUD: return vr.MinimalHud.value() ? "Minimal HUD: on" : "Minimal HUD: off";
+    case VR_SETTING_UI_DISTANCE: return fmt::format("Screen distance: {:.1f} m", vr.UiDistance.value());
+    case VR_SETTING_UI_WIDTH: return fmt::format("Screen width: {:.1f} m", vr.UiWidth.value());
+    case VR_SETTING_HEAD_OFFSET_RADIUS: return fmt::format("Head offset radius: {:.1f} m", vr.HeadOffsetRadius.value());
+    case VR_SETTING_RECENTER: return "Recenter now";
+    }
+    return {};
+}
+
 GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
     : GUIWindow(WINDOW_VIDEO_OPTIONS, {0, 0}, render->GetRenderDimensions()) {
     // -------------------------------------
@@ -403,6 +476,13 @@ GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
     }
     CreateButton({22, 250}, {211, 16}, BUTTON_TYPE_NORMAL, 0, UIMSG_ToggleEnhancedGraphics, 0);
 
+    if (render->uiLayer()) {
+        for (VrSetting setting : Segment(VR_SETTING_FIRST, VR_SETTING_LAST)) {
+            Recti rect = vrLineRect(setting);
+            CreateButton(rect.topLeft(), rect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeVrSetting, std::to_underlying(setting));
+        }
+    }
+
     // update gamma preview
     gamma_preview_image = GraphicsImage::Create(render->MakeViewportScreenshot(155, 117));
 }
@@ -439,6 +519,16 @@ void GUIWindow_GameVideoOptions::Update() {
     bool enhanced = engine->config->graphics.Enhanced.value();
     DrawTitleText(assets->pFontSmallnum.get(), 0, 0, enhanced ? colorTable.White : colorTable.CarbonGray,
                   enhanced ? "Enhanced graphics: on" : "Enhanced graphics: off", 3, Recti(22, 252, 211, 14));
+
+    if (render->uiLayer()) {
+        render->FillRect(VR_PANEL_RECT, colorTable.Black);
+        DrawTitleText(assets->pFontSmallnum.get(), 0, 0, ui_gamemenu_video_gamma_title_color, "VR", 3,
+                      Recti(VR_PANEL_RECT.x, VR_PANEL_RECT.y + 4, VR_PANEL_RECT.w, 14));
+        for (VrSetting setting : Segment(VR_SETTING_FIRST, VR_SETTING_LAST)) {
+            Recti rect = vrLineRect(setting);
+            DrawTitleText(assets->pFontSmallnum.get(), 0, 0, colorTable.White, vrSettingText(setting), 3, Recti(rect.x, rect.y + 2, rect.w, rect.h));
+        }
+    }
 }
 
 OptionsMenuSkin options_menu_skin;  // 507C60

@@ -55,4 +55,9 @@ class WorldFrameViews {
      *                                  instead of through the party camera.
      */
     virtual bool forwardRay(Vec3f *origin, Vec3f *direction) = 0;
+
+    /**
+     * Makes the views' current pose their new starting pose, from the next frame on.
+     */
+    virtual void recenter() = 0;
 };

@@ -207,6 +207,7 @@ enum UIMessageType : uint32_t {
     UIMSG_ToggleTint = 424,
     UIMSG_ChangeGammaLevel = 425,
     UIMSG_ToggleEnhancedGraphics = 430,
+    UIMSG_ChangeVrSetting = 431,
 
     UIMSG_MMT_MainMenu_MM6 = 426,
     UIMSG_MMT_MainMenu_MM7 = 427,
@@ -223,6 +224,23 @@ enum UIMessageType : uint32_t {
 
     UIMSG_Invalid = 0xffffffff
 };
+
+/**
+ * Entries of the VR block on the video options screen, the param of `UIMSG_ChangeVrSetting`.
+ */
+enum class VrSetting {
+    VR_SETTING_SNAP_TURN,
+    VR_SETTING_SNAP_TURN_DEGREES,
+    VR_SETTING_MINIMAL_HUD,
+    VR_SETTING_UI_DISTANCE,
+    VR_SETTING_UI_WIDTH,
+    VR_SETTING_HEAD_OFFSET_RADIUS,
+    VR_SETTING_RECENTER,
+
+    VR_SETTING_FIRST = VR_SETTING_SNAP_TURN,
+    VR_SETTING_LAST = VR_SETTING_RECENTER
+};
+using enum VrSetting;
 
 enum class MenuType {
     MENU_MAIN = 0,
