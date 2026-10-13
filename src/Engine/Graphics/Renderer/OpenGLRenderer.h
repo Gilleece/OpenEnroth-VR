@@ -417,6 +417,8 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLVertexBuffer<TorchShadowVertex> _torchShadowBuffer;
     std::vector<TorchShadowVertex> _torchShadowVertices;
     std::vector<int> _torchShadowLights; // Indices into the stationary light stack, the cube of each is its position here.
+    std::vector<std::pair<Vec3f, int>> _torchShadowDrawnLights; // Position and radius of the lights the cubes hold.
+    int _torchShadowDrawnVersion = 0; // `IndoorLocation::geometryVersion` the cubes were drawn at.
 
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
     OpenGLRenderTarget _antialiasingTarget; // Tonemapped world at the size it's composited at, the input to FXAA.

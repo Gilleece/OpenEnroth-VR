@@ -666,6 +666,7 @@ void BLV_UpdateDoorGeometry(BLVDoor* door, int distance) {
     for (int j = 0; j < door->numVertices; ++j) {
         pIndoor->vertices[door->pVertexIDs[j]] = door->direction * distance + door->offsets[j];
     }
+    pIndoor->geometryVersion++;
 
     for (int j = 0; j < door->numFaces; ++j) {
         BLVFace* face = &pIndoor->faces[door->pFaceIDs[j]];

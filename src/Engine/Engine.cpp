@@ -1093,6 +1093,7 @@ void setFacesBit(int sCogNumber, FaceAttribute bit, int on) {
                         pIndoor->faces[i].attributes &= ~bit;
                 }
             }
+            pIndoor->geometryVersion++;
         } else {
             for (BLVFace &face : pOutdoor->faces) {
                 if (face.cogNumber == sCogNumber) {
