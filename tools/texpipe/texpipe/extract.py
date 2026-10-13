@@ -140,7 +140,12 @@ def extract_image(work: Path, section: str, name: str, raw: bytes, png_path: Pat
     result = image
     if decision.color is not None:
         result = imageops.color_key(image, decision.color)
-        result = imageops.bleed_transparent(result) if imageops.has_transparency(result) else image
+        if not imageops.has_transparency(result):
+            result = image
+        elif section == "bitmaps":
+            result = imageops.fill_transparent(result)  # Upscaled at 4x, the model reads far into the transparent area.
+        else:
+            result = imageops.bleed_transparent(result)
     info = WorkImage(
         name=name,
         section=section,

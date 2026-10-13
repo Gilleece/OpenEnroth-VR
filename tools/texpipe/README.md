@@ -46,10 +46,12 @@ python -m texpipe extract --data ../../mm7 --out ../../mm7_hd/work --lodtool <pa
 ```
 
 Palette index 0 is transparent, and like other transparent pixels it takes the average color of its opaque
-neighbours, so filtering does not darken the edges.
+neighbours, so filtering does not darken the edges. In bitmaps, like the shore tiles, the colors carry on ring by ring
+across the whole transparent area, because the 4x upscale reads far past the first ring.
 
 Extract and upscale skip what is already done. LodTool only runs again when a LOD file changed, and an image is only
-redone when its output is older than its inputs, or for upscale was made with another backend or scale. Pass
+redone when its output is older than its inputs, or for upscale was made with another backend, scale, rule option or
+wrapped border. Pass
 `--force` to redo everything. The realesrgan backend works in batches of 1000 images, so an interrupted run keeps the
 batches it finished.
 
@@ -61,11 +63,12 @@ batches it finished.
   `~/.cache/texpipe` on first use, or `TEXPIPE_CACHE` if set. Pass `--binary` to use one you already have. Alpha is
   upscaled separately from the color and put back afterwards. Bitmaps tile across walls and floors, so they are padded
   with a border wrapped around from the opposite edge before upscaling, and cropped back after, which keeps the seams
-  continuous. The model also drops the bright speckles of dithered textures, so for the sections listed in
-  `preserve_brightness`, bitmaps and sprites by default, each channel of the result is rescaled to the source's mean
-  over the pixels that are at least half opaque. `max_brightness_factor` caps the rescale, 3 by default, so that a
-  channel the model left nearly black does not turn into speckles. The factors go into the image's JSON file under
-  `upscaled/`.
+  continuous. The border, `wrap_border`, is 64 pixels, wide enough for both sides of a seam to come out alike, and
+  `tile_size` keeps the binary from splitting a padded bitmap into tiles of its own. The model also drops the bright
+  speckles of dithered textures, so for the sections listed in `preserve_brightness`, bitmaps and sprites by default,
+  each channel of the result is rescaled to the source's mean over the pixels that are at least half opaque.
+  `max_brightness_factor` caps the rescale, 3 by default, so that a channel the model left nearly black does not turn
+  into speckles. The factors go into the image's JSON file under `upscaled/`.
 
 ```
 python -m texpipe upscale --work ../../mm7_hd/work --backend nearest --scale 2
@@ -75,6 +78,11 @@ Without `--backend` and `--scale`, each image gets what `texpipe/default_config.
 width. The default upscales bitmaps 4x and icons and sprites 2x with `realesrgan`, and sends icons narrower than 12
 pixels and the minimap arrows to `nearest` at 2x, because the model smears tiny glyphs. Pass `--config` to use your own
 copy.
+
+A rule can also change an image around the upscale. `seam_blend` eases that many columns and rows on each side of a
+tile towards each other before upscaling, for tiles whose opposite edges don't match, like the indoor water `wtrtyl`.
+`soften` blends the upscaled image towards a copy blurred by two source pixels, from 0 for none to 1, for results that
+come out too crisp, like the wave crests of the sea `hdwtr000` to `hdwtr007`.
 
 **maps** makes a normal map and a roughness map for every upscaled bitmap, from its luminance. The normal map is a
 Sobel filter over the slightly blurred luminance, in tangent space with the OpenGL convention: red to the right, green

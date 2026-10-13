@@ -33,10 +33,28 @@ match = "*"
 backend = "realesrgan"
 scale = 2
 
+# The indoor water tile doesn't tile cleanly, its opposite edges differ. Upscaled, the jump becomes a crisp line that
+# repeats across the pool, so the edges are eased into each other first.
+[[rule]]
+section = "bitmaps"
+match = "wtrtyl"
+backend = "realesrgan"
+scale = 4
+seam_blend = 2
+
+# The sea's wave crests come out as crisp white streaks that stay bright at night. A little blur takes the edge off.
+[[rule]]
+section = "bitmaps"
+match = "hdwtr00[0-7]"
+backend = "realesrgan"
+scale = 4
+soften = 0.5
+
 [realesrgan]
 model = "realesrgan-x4plus"
 model_scale = 4
-wrap_border = 16
+wrap_border = 64  # Narrower than the model reads, the two sides of a tile's seam come out slightly different.
+tile_size = 512  # Pixels the binary upscales at once. Wrapped 256 pixel bitmaps fit, a split would add seams of its own.
 preserve_brightness = ["bitmaps", "sprites"]  # Sections whose upscaled images are rescaled to the mean brightness of the source.
 max_brightness_factor = 3.0  # Cap per channel, so a channel the model left nearly black does not turn into speckles.
 

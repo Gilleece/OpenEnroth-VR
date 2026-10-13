@@ -43,3 +43,26 @@ def test_brightness_is_added_to_a_done_image_without_upscaling_it_again(tmp_path
     [image] = load_image_infos(work)
     assert load_upscaled_info(work, image).brightness == [2.0, 2.0, 2.0]
     assert run_upscale(work, PRESERVING, None, None, None, None) == {"up to date": 1, "brightness only": 0}
+
+
+def test_a_changed_rule_option_is_redone(tmp_path):
+    work = make_work(tmp_path)
+    run_upscale(work, PLAIN, None, None, None, None)
+    softened = {"default": {"backend": "nearest", "scale": 2, "soften": 0.5}}
+    assert run_upscale(work, softened, None, None, None, None)["nearest 2x"] == 1
+    assert load_upscaled_info(work, load_image_infos(work, None)[0]).soften == 0.5
+
+
+def test_seam_blend_upscales_the_eased_tile(tmp_path):
+    work = tmp_path / "work"
+    save_image_info(work, WorkImage("tile", "bitmaps", 4, 1, "deadbeef", False))
+    tile = Image.new("RGB", (4, 1))
+    for x, value in enumerate([0, 0, 200, 200]):
+        tile.putpixel((x, 0), (value, value, value))
+    tile.save(images_dir(work, "bitmaps") / "tile.png")
+    config = {"default": {"backend": "nearest", "scale": 2, "seam_blend": 1}}
+    run_upscale(work, config, None, None, None, None)
+    with Image.open(upscaled_dir(work, "bitmaps") / "tile.png") as upscaled:
+        row = [upscaled.getpixel((x, 0))[0] for x in range(8)]
+    assert row[:2] == [50, 50] and row[6:] == [150, 150]  # Each edge moves halfway towards the other.
+    assert row[2:6] == [0, 0, 200, 200]  # The middle is left alone.
