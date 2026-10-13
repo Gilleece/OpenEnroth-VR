@@ -4,6 +4,9 @@
 #include "sky.glsl"
 #endif
 #include "fog.glsl"
+#ifdef LINEAR_PIPELINE
+#include "heightfog.glsl"
+#endif
 
 in vec3 worldPos;
 in vec4 colour;
@@ -49,6 +52,12 @@ void main() {
     sky += SunColour() * sunVisibility * (disc * 12.0 + pow(towardsSun, 600.0) * 0.8);
 #endif
 
+#ifdef LINEAR_PIPELINE
+    vec3 fogPos = eye + normalize(ray) * fogDistance;
+    float fograt = getHeightFogRatio(fog, fogDistance, fogPos);
+    FragColour = vec4(mix(sky, getHeightFogColour(fog, fogPos), fograt), 1.0);
+#else
     float fograt = getFogRatio(fog, fogDistance);
     FragColour = vec4(mix(sky, fog.color, fograt), 1.0);
+#endif
 }

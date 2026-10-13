@@ -43,6 +43,7 @@ set(RESOURCE_SOURCES
         scripts/utils.lua
         shaders/colour.glsl
         shaders/fog.glsl
+        shaders/heightfog.glsl
         shaders/glbillbshader.frag
         shaders/glbloom.frag
         shaders/glbloom.vert

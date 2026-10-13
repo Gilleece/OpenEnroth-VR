@@ -273,11 +273,21 @@ class OpenGLRenderer : public BaseRenderer {
     void _submitSunShadow(const OpenGLShader &shader);
 
     /**
+     * Sets the uniforms `heightfog.glsl` reads. Does nothing for programs compiled without `LINEAR_PIPELINE`.
+     *
+     * @param shader                    Program in use.
+     * @param worldPositions            Whether the program has world positions to fog. Without them it gets the stock
+     *                                  fog.
+     */
+    void _submitHeightFog(const OpenGLShader &shader, bool worldPositions);
+
+    /**
      * Sky and sun for the linear pipeline's sky and water, in linear colour.
      */
     struct SkyState {
         Vec3f sunDirection; // Towards the sun.
-        float sunVisibility = 0; // 0 at night, indoors and in foggy weather, 1 with the sun clear of the horizon.
+        float daylight = 0; // 0 at night and indoors, 1 with the sun clear of the horizon.
+        float sunVisibility = 0; // Same, but also 0 in foggy weather.
         Colorf zenith;
         Colorf horizon;
     };
