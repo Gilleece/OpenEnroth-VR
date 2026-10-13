@@ -17,19 +17,19 @@ vec4 SunShadowGatherWeights(vec2 weightsX, vec2 weightsY) {
     return vec4(weightsX.x * weightsY.y, weightsX.y * weightsY.y, weightsX.y * weightsY.x, weightsX.x * weightsY.x);
 }
 
-// Bilinear depth comparisons, 3x3 of them or one. textureGrad and textureGather keep the lookup valid in non-uniform
-// control flow. The 3x3 taps cover a 4x4 block of texels, weighted as the taps would weigh them.
+// Bilinear depth comparisons, 3x3 of them or one, from gathers, which keep the lookup valid in non-uniform control
+// flow. The 3x3 taps cover a 4x4 block of texels, weighted as the taps would weigh them.
 float SunShadowSample(int cascade, vec3 pos, vec3 normal) {
     vec3 offsetPos = pos + normal * sunShadowTexels[cascade] * 1.5;
     vec4 coord = sunShadowMatrices[cascade] * vec4(offsetPos, 1.0);
-    if (sunShadowFilter != 0)
-        return textureGrad(sunShadowMap, vec4(coord.xy, float(cascade), coord.z), vec2(0.0), vec2(0.0));
-
     vec2 size = vec2(textureSize(sunShadowMap, 0).xy);
     vec2 texel = vec2(1.0) / size;
     vec2 base = floor(coord.xy * size - 0.5); // Lower left of the 2x2 texels a bilinear tap reads.
     vec2 f = coord.xy * size - 0.5 - base;
     vec2 corner = (base + 1.0) * texel; // Gathering at the corner the four texels share picks them whatever the rounding.
+    if (sunShadowFilter != 0)
+        return dot(textureGather(sunShadowMap, vec3(corner, float(cascade)), coord.z), SunShadowGatherWeights(vec2(1.0 - f.x, f.x), vec2(1.0 - f.y, f.y)));
+
     vec2 lowX = vec2(1.0 - f.x, 1.0), highX = vec2(1.0, f.x);
     vec2 lowY = vec2(1.0 - f.y, 1.0), highY = vec2(1.0, f.y);
     float lit = dot(textureGather(sunShadowMap, vec3(corner + vec2(-1.0, -1.0) * texel, float(cascade)), coord.z), SunShadowGatherWeights(lowX, lowY)) +
