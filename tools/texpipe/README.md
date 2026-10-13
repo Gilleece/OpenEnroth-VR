@@ -104,7 +104,8 @@ python -m texpipe maps --work ../../mm7_hd/work
 lightness settings to the pack's bitmaps and sprites. Use `--colors final` only if you have graded the
 upscaled images yourself. Every PNG pack writes is saved again with Pillow's `optimize` on all cores, which is
 lossless and makes the pack a few percent smaller. A PNG is only replaced when the result decodes to the same pixels
-and is smaller. `optimize_png = false` in the config's `[pack]` section turns it off.
+and is smaller. `optimize_png = false` in the config's `[pack]` section turns it off, and `workers = <n>` there runs it
+in n processes instead of one per core, to leave cores free for other work.
 
 ```
 python -m texpipe pack --work ../../mm7_hd/work --out ../../mm7_hd/nearest2x

@@ -65,7 +65,8 @@ def run_pack(
     With `regen_from`, a model whose regen outputs exist, sprites and icons come from those outputs that passed. Images
     upscaled past the config's `[pack] max_scale` are scaled down to it, and their maps made again at that size.
     The baked lighting a `bake` run left in the pack stays, unless the config's `[pack] gi` is off, which removes it.
-    Every PNG written is compressed harder, as `optimize_pngs` does, unless `[pack] optimize_png` is off.
+    Every PNG written is compressed harder, as `optimize_pngs` does with `[pack] workers` processes, unless
+    `[pack] optimize_png` is off.
     Returns the number of entries per section, of bitmaps with maps, of sprite images, of generated sprites, of sprite
     shapes and of baked maps, and the MiB the harder compression saved.
     """
@@ -115,7 +116,8 @@ def run_pack(
             written += [out / kind / "bitmaps" / f"{image.name}.png" for kind in MAPS]
             entry["maps"] = list(MAPS)
         entries[image.section][image.name] = entry
-    saved = optimize_pngs(written) if config.get("pack", {}).get("optimize_png", True) else 0
+    pack_config = config.get("pack", {})
+    saved = optimize_pngs(written, pack_config.get("workers")) if pack_config.get("optimize_png", True) else 0
     manifest = build_manifest(entries, colors)
     _carry_gi(out, manifest, config.get("pack", {}).get("gi", True))
     write_json(out / "manifest.json", manifest)
@@ -296,11 +298,14 @@ def optimize_png(path: Path) -> int:
     return len(data) - len(optimized)
 
 
-def optimize_pngs(paths: list[Path]) -> int:
-    """Runs `optimize_png` over `paths` on every core. Returns the bytes saved."""
+def optimize_pngs(paths: list[Path], workers: int | None = None) -> int:
+    """Runs `optimize_png` over `paths` in `workers` processes, one per core by default. Returns the bytes saved."""
     if not paths:
         return 0
-    workers = os.cpu_count() or 1
+    if workers is None:
+        workers = os.cpu_count() or 1
+    if workers < 1:
+        raise ValueError(f"[pack] workers must be at least 1, got {workers}")
     with ProcessPoolExecutor(workers) as pool:
         return sum(pool.map(optimize_png, paths, chunksize=max(1, len(paths) // (workers * 16))))
 

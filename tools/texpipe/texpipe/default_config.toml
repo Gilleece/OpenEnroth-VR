@@ -122,3 +122,4 @@ erode = 2  # Pack pixels of the silhouette that take their depth from further in
 max_scale = 4
 gi = true  # Keep the baked lighting of a bake run in the pack.
 optimize_png = true  # Compress the PNGs harder, losslessly. Slower, and the pack is several percent smaller.
+# workers = 4  # Processes for that, one per core if unset. Fewer leave cores free for other work.

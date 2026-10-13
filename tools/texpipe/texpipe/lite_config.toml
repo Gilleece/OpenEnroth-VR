@@ -124,3 +124,4 @@ erode = 2  # Pack pixels of the silhouette that take their depth from further in
 max_scale = 2
 gi = true  # The baked lighting goes into the lite pack too.
 optimize_png = true  # Lossless, and with it the lite archive stays under 4 GiB with the baked lighting in.
+# workers = 4  # Processes for that, one per core if unset. Fewer leave cores free for other work.
