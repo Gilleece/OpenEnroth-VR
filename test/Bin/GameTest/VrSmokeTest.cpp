@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -12,6 +13,8 @@
 
 #include "Engine/Engine.h"
 #include "Engine/Party.h"
+#include "Engine/Graphics/RenderEntities.h"
+#include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Vr/VrSystem.h"
 
 #include "GUI/GUIWindow.h"
@@ -54,6 +57,17 @@ static int64_t countFrames(const VrSystem::FrameStats &stats, bool world, bool s
     for (const auto &[kind, count] : stats.kinds)
         if (kind.world == world && kind.spreadHud == spreadHud)
             result += count;
+    return result;
+}
+
+static std::map<uint16_t, Vec3f> uprightSpriteAxes() {
+    // The level axis that each upright sprite of the last frame stands across, by object.
+    std::map<uint16_t, Vec3f> result;
+    for (int i = 0; i < static_cast<int>(render->uNumBillboardsToDraw); i++) {
+        const WorldBillboard *billboard = render->builtWorldBillboard(i);
+        if (billboard && billboard->frame && !billboard->centered && billboard->id)
+            result[billboard->id.packed()] = billboard->right;
+    }
     return result;
 }
 
@@ -145,6 +159,25 @@ GAME_TEST(VrSmoke, Session) {
     if (vr)
         vr->setHeadTurn(0, 0);
     phase("looking up and down");
+
+    // Turning the head in place leaves the upright sprites standing as they were, each facing the head.
+    if (vr) {
+        game.tick(2);
+        std::map<uint16_t, Vec3f> ahead = uprightSpriteAxes();
+        vr->setHeadTurn(30, 0);
+        game.tick(2);
+        std::map<uint16_t, Vec3f> turned = uprightSpriteAxes();
+        vr->setHeadTurn(0, 0);
+        int compared = 0;
+        for (const auto &[id, axis] : turned) {
+            if (!ahead.contains(id))
+                continue;
+            EXPECT_GT(dot(axis, ahead.at(id)), 0.9999f) << "object " << id;
+            compared++;
+        }
+        EXPECT_GT(compared, 0);
+    }
+    phase("turning the head");
 
     // Without position tracking, the way a headset that only tracks orientation runs.
     if (vr)

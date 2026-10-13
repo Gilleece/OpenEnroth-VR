@@ -3539,7 +3539,7 @@ void OpenGLRenderer::drawWorldBillboards() {
     _set_3d_modelview_matrix();
 
     if (!_worldBillboardQuadsBuilt)
-        buildWorldBillboardQuads(_view);
+        buildWorldBillboardQuads(_view, SPRITE_FACING_VIEW_PLANE);
     bool additive = false;
     for (int i = 0; i < uNumBillboardsToDraw && !additive; i++)
         additive = _worldBillboards[i].opacity != RenderBillboardD3D::Transparent;
@@ -3572,7 +3572,7 @@ void OpenGLRenderer::drawWorldBillboards() {
             vertex.shadowed = billboardShadowAnchor(pBillboardRenderListD3D[index], &vertex.shadowAnchor);
             if (billboard.shape) {
                 vertex.texuv = billboard.texcoords[j]; // The parallax can move the lookup off the image.
-                vertex.shapeRight = _worldSpriteRight;
+                vertex.shapeRight = billboard.right;
                 vertex.shapeSize = Vec2f(billboard.sideExtent.x * 2, billboard.sideExtent.y);
                 vertex.shapeThickness = billboard.shapeThickness;
                 vertex.shapeTexid = static_cast<float>(billboard.shape->renderId().value());

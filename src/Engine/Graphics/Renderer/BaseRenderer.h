@@ -1,8 +1,10 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -23,9 +25,9 @@ class BaseRenderer : public Renderer {
 
     virtual void TransformBillboards() override;
     virtual void resetBillboardRenderList() override;
-    virtual void buildWorldBillboardQuads(const CameraView &view) override;
+    virtual void buildWorldBillboardQuads(const CameraView &view, SpriteFacing facing) override;
     virtual const WorldBillboard *builtWorldBillboard(int index) override;
-    virtual void turnWorldSpritesTo(const Vec3f &eye) override;
+    virtual void turnWorldSpritesTo(const Vec3f &eye, int view) override;
     virtual void sortBillboardRenderList() override;
     virtual void buildBloodsplatDecals() override;
     virtual bool AddBillboardIfVisible(const SpriteFrame *frame, int octant, int yaw, const Vec3f &pos, const Vec2f &scale, BillboardFlags flags,
@@ -67,7 +69,19 @@ class BaseRenderer : public Renderer {
     bool _worldBillboardQuadsBuilt = false; // This frame, by `buildWorldBillboardQuads`.
     Vec3f _worldBillboardEye; // Eye position of the view the quads were built for.
     std::pair<Vec3f, Vec3f> _worldBillboardAxes; // Right and up axes of the quads that face the view they were built for.
-    Vec3f _worldSpriteRight; // Level right axis of that view, which upright sprites stand across.
+    Vec3f _worldSpriteRight; // Level right axis of that view, which upright sprites stand across when they face its plane.
+    SpriteFacing _spriteFacing = SPRITE_FACING_VIEW_PLANE; // Of the quads built this frame.
+
+    /**
+     * Side of its sprite frame that an object last showed in one of the views, for keeping it near a boundary.
+     */
+    struct ShownSpriteSide {
+        int octant = 0;
+        int64_t frame = -1; // Value of `_spriteSideFrame` when it was shown.
+    };
+
+    std::unordered_map<uint32_t, ShownSpriteSide> _shownSpriteSides; // By object and view, see `turnWorldSpritesTo`.
+    int64_t _spriteSideFrame = 0; // Counts the frames whose quads were built.
 
  private:
     void updateRenderDimensions();
