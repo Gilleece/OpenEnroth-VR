@@ -136,6 +136,14 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     void setPositionTracking(bool tracked);
 
     /**
+     * Points the spread HUD's cursor at a position of the game screen that the HUD shows, for tests.
+     *
+     * @param uiPosition                Position in the game's 640x480 layout.
+     * @return                          Whether the HUD is spread and shows that position.
+     */
+    bool pointHudCursorAt(Pointi uiPosition);
+
+    /**
      * @param uiPosition                Position in the game's 640x480 layout.
      * @return                          Whether the spread HUD shows it, on the viewport or a card. The cursor is kept
      *                                  on those while the HUD is spread.
@@ -185,14 +193,21 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     virtual bool mouseMoveEvent(const PlatformMouseEvent *event) override;
 
     /**
-     * @param from                      Cursor position on the spread HUD before the mouse moved, if there was one.
-     * @param to                        Where the mouse moved it.
-     * @return                          `to` if the spread HUD shows it. Otherwise the first point past it in the
-     *                                  direction the mouse moved that the HUD shows, so that the cursor crosses the
-     *                                  gaps between the cards. With none before the edge of the screen, the point
-     *                                  nearest to `to` on the part the cursor was on, or on any part.
+     * @param yaw                       Radians to the right of straight ahead, from the head in the space the HUD
+     *                                  hangs in.
+     * @param pitch                     Radians up.
+     * @return                          Position on the game screen of the viewport or card that the spread HUD shows
+     *                                  in that direction, if any.
      */
-    Pointi hudCursor(std::optional<Pointi> from, Pointi to) const;
+    std::optional<Pointi> hudPositionAt(float yaw, float pitch) const;
+
+    /**
+     * Starts or stops the spread HUD's own cursor: the window's mouse goes into relative mode, and the cursor moves by
+     * angles over the parts of the HUD as they hang around the head, pinned to the game screen position under it.
+     *
+     * @param on                        Whether the spread HUD shows.
+     */
+    void steerHudCursor(bool on);
 
     /**
      * @param result                    Result of an OpenXR call.
@@ -394,7 +409,7 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     HudQuad _hudScreen; // Floating screen that the spread HUD's viewport was cut from in that frame.
     bool _hudInRoom = false; // Whether those are in the head origin space, rather than VIEW space.
     glm::vec3 _hudHead = glm::vec3(0); // Head position in the head origin space in that frame.
-    std::optional<Pointi> _hudCursor; // Last cursor position while the HUD is spread.
+    std::optional<glm::vec2> _hudCursor; // Yaw and pitch of the spread HUD's cursor in radians, while it steers it.
     std::optional<std::array<float, 6>> _hudPlacement; // Settings the spread HUD was last logged with.
     int64_t _swapchainFormat = 0;
     bool _running = false;

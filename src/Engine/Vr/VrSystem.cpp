@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -87,6 +88,9 @@ static constexpr std::array<HudCard, 5> HUD_CARDS = {{
 }};
 static constexpr Recti HUD_VIEWPORT(9, 9, 458, 342); // Inside the frame around the world view, a pixel in from its black edge.
 static constexpr int HUD_CARD_SCALE = 3; // Pixels of a card's image per pixel of the game screen.
+static constexpr float HUD_CURSOR_RAD_PER_COUNT = 0.04f * M_PI / 180; // Turn of the spread HUD's cursor per count of mouse motion.
+static constexpr float HUD_CURSOR_REACH_RAD = 60 * M_PI / 180; // How far the cursor looks across a gap for the next part.
+static constexpr float HUD_CURSOR_STEP_RAD = 0.25f * M_PI / 180;
 static constexpr uint32_t HUD_LAYER_COUNT = static_cast<uint32_t>(3 + HUD_CARDS.size()); // With the viewport, the world and its fade.
 
 using PfnWglSwapIntervalExt = BOOL (WINAPI *)(int interval);
@@ -200,15 +204,6 @@ static const Recti *hudPartAt(Pointi uiPosition) {
         if (card.rect.contains(uiPosition))
             return &card.rect;
     return nullptr;
-}
-
-/**
- * @param rect                          Rectangle.
- * @param point                         Point.
- * @return                              Point of the rectangle nearest to `point`.
- */
-static Pointi nearestIn(const Recti &rect, Pointi point) {
-    return Pointi(std::clamp(point.x, rect.x, rect.x + rect.w - 1), std::clamp(point.y, rect.y, rect.y + rect.h - 1));
 }
 
 /**
@@ -522,60 +517,115 @@ bool VrSystem::keyPressEvent(const PlatformKeyEvent *event) {
 }
 
 bool VrSystem::mouseMoveEvent(const PlatformMouseEvent *event) {
-    if (!_hudSpread || !mouse || !render || mouse->_mouseLook == Io::Mouse::MouseLookState::Enabled) {
-        _hudCursor.reset();
+    if (!_hudCursor || !mouse)
         return false;
+
+    // The cursor turns with the mouse over the parts of the HUD around the head. Across a gap it goes on in the same
+    // direction to the next part, and with none it slides along the edge of the part it's on.
+    glm::vec2 from = *_hudCursor;
+    glm::vec2 motion = glm::vec2(event->rel.x, -event->rel.y) * HUD_CURSOR_RAD_PER_COUNT;
+    if (motion == glm::vec2(0))
+        return false;
+    std::optional<glm::vec2> to;
+    for (glm::vec2 candidate : {from + motion, from + glm::vec2(motion.x, 0), from + glm::vec2(0, motion.y)}) {
+        if (hudPositionAt(candidate.x, candidate.y)) {
+            to = candidate;
+            break;
+        }
     }
-
-    // The spread HUD shows only parts of the game screen, the cursor is kept on them so that it can always be seen.
-    Pointi position = render->MapToRender(event->pos);
-    Pointi shown = hudCursor(_hudCursor, position);
-    _hudCursor = shown;
-    if (shown == position)
+    if (!to) {
+        glm::vec2 step = glm::normalize(motion) * HUD_CURSOR_STEP_RAD;
+        for (glm::vec2 candidate = from + motion; glm::length(candidate - from) < HUD_CURSOR_REACH_RAD; candidate += step) {
+            if (hudPositionAt(candidate.x, candidate.y)) {
+                to = candidate;
+                break;
+            }
+        }
+    }
+    if (!to)
         return false;
-
-    mouse->setPosition(shown);
-    mouse->warpMouse(shown);
-    return true;
+    _hudCursor = *to;
+    mouse->setPinnedPosition(hudPositionAt(to->x, to->y));
+    return false;
 }
-
 bool VrSystem::hudShows(Pointi uiPosition) const {
     return hudPartAt(uiPosition) != nullptr;
 }
 
-Pointi VrSystem::hudCursor(std::optional<Pointi> from, Pointi to) const {
-    if (hudShows(to))
-        return to;
-
-    // Across the gap in the direction the mouse moved, so that the cursor goes on to the next part.
-    Sizei screen = render->GetRenderDimensions();
-    Recti bounds(0, 0, screen.w, screen.h);
-    if (from && *from != to) {
-        float dx = static_cast<float>(to.x - from->x);
-        float dy = static_cast<float>(to.y - from->y);
-        float length = std::sqrt(dx * dx + dy * dy);
-        for (int i = 1; i <= screen.w + screen.h; i++) {
-            Pointi point(to.x + static_cast<int>(std::lround(dx * i / length)), to.y + static_cast<int>(std::lround(dy * i / length)));
-            if (!bounds.contains(point))
-                break;
-            if (hudShows(point))
-                return point;
+std::optional<Pointi> VrSystem::hudPositionAt(float yaw, float pitch) const {
+    glm::vec3 origin = _hudInRoom ? _hudHead : glm::vec3(0);
+    glm::vec3 direction = glm::angleAxis(-yaw, glm::vec3(0, 1, 0)) * glm::angleAxis(pitch, glm::vec3(1, 0, 0)) * glm::vec3(0, 0, -1);
+    HudQuad viewport = _hudScreen;
+    viewport.rect = HUD_VIEWPORT;
+    std::optional<Pointi> result;
+    float nearest = std::numeric_limits<float>::max();
+    auto test = [&](const HudQuad &quad) {
+        glm::quat facing = toGlm(quad.pose.orientation);
+        glm::vec3 centre = toGlm(quad.pose.position);
+        glm::vec3 normal = facing * glm::vec3(0, 0, 1);
+        float along = glm::dot(direction, normal);
+        if (std::abs(along) < 1e-6f)
+            return;
+        float distance = glm::dot(centre - origin, normal) / along;
+        if (distance <= 0 || distance >= nearest)
+            return;
+        glm::vec3 local = glm::inverse(facing) * (origin + direction * distance - centre);
+        Pointi position(static_cast<int>(std::floor(quad.frame.x + quad.frame.w / 2.0f + local.x / quad.metresPerPixel)),
+                        static_cast<int>(std::floor(quad.frame.y + quad.frame.h / 2.0f - local.y / quad.metresPerPixel)));
+        if (quad.rect.contains(position)) {
+            nearest = distance;
+            result = position;
         }
-    }
-
-    // Otherwise to the edge of the part it was on, or of the nearest part if it wasn't on one.
-    if (const Recti *part = from ? hudPartAt(*from) : nullptr)
-        return nearestIn(*part, to);
-    Pointi result = nearestIn(HUD_VIEWPORT, to);
-    auto distance = [&](Pointi point) { return (point.x - to.x) * (point.x - to.x) + (point.y - to.y) * (point.y - to.y); };
-    for (const HudCard &card : HUD_CARDS) {
-        Pointi point = nearestIn(card.rect, to);
-        if (distance(point) < distance(result))
-            result = point;
-    }
+    };
+    test(viewport);
+    for (const HudQuad &card : _hudCards)
+        test(card);
     return result;
 }
 
+bool VrSystem::pointHudCursorAt(Pointi uiPosition) {
+    if (!_hudCursor)
+        return false;
+    HudQuad viewport = _hudScreen;
+    viewport.rect = HUD_VIEWPORT;
+    std::vector<HudQuad> parts = _hudCards;
+    parts.push_back(viewport);
+    for (const HudQuad &quad : parts) {
+        if (!quad.rect.contains(uiPosition))
+            continue;
+        glm::vec3 local((uiPosition.x + 0.5f - quad.frame.x - quad.frame.w / 2.0f) * quad.metresPerPixel,
+                        (quad.frame.y + quad.frame.h / 2.0f - uiPosition.y - 0.5f) * quad.metresPerPixel, 0);
+        glm::vec3 point = toGlm(quad.pose.position) + toGlm(quad.pose.orientation) * local - (_hudInRoom ? _hudHead : glm::vec3(0));
+        glm::vec3 direction = glm::normalize(point);
+        _hudCursor = glm::vec2(std::atan2(direction.x, -direction.z), std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
+        mouse->setPinnedPosition(hudPositionAt(_hudCursor->x, _hudCursor->y));
+        return true;
+    }
+    return false;
+}
+
+void VrSystem::steerHudCursor(bool on) {
+    if (on == _hudCursor.has_value() || !mouse)
+        return;
+
+    if (on) {
+        // From where the cursor was, if the HUD shows it, otherwise from the middle of the viewport.
+        if (ProxyWindow::base())
+            ProxyWindow::setMouseRelative(true);
+        _hudCursor = glm::vec2(0);
+        if (!pointHudCursorAt(mouse->position()))
+            pointHudCursorAt(HUD_VIEWPORT.center());
+    } else {
+        // The system cursor comes back where the HUD's cursor was.
+        _hudCursor.reset();
+        Pointi position = mouse->position();
+        mouse->setPinnedPosition(std::nullopt);
+        if (ProxyWindow::base()) {
+            ProxyWindow::setMouseRelative(false);
+            mouse->warpMouse(position);
+        }
+    }
+}
 void VrSystem::recenter() {
     _recenterRequested = true;
 }
@@ -854,7 +904,7 @@ void VrSystem::setRunning(bool running) {
     _lastCullingCamera.reset();
     _uiPlacement.reset();
     _uiAim.reset();
-    _hudCursor.reset();
+    steerHudCursor(false);
     _worldReleased = false;
     _spriteHead.reset();
 }
@@ -1018,6 +1068,7 @@ bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     }
     _hudSpread = spread;
     _hudWanted = wanted;
+    steerHudCursor(spread);
     return true;
 }
 
