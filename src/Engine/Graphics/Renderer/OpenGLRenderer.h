@@ -58,7 +58,6 @@ class OpenGLRenderer : public BaseRenderer {
     virtual Sizei uiTargetSize() override;
     virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
-    virtual void drawVignette(TextureRenderId colorTexture, Sizei size, float strength, Vec2f center) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
     virtual bool spriteShapes() override;
@@ -421,7 +420,6 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader bloomdownshader;
     OpenGLShader bloomupshader;
     OpenGLShader fxaashader;
-    OpenGLShader vignetteshader;
     OpenGLShader shadowshader;
     OpenGLShader shadowspriteshader;
     OpenGLShader torchshadowshader;

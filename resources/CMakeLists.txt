@@ -82,8 +82,6 @@ set(RESOURCE_SOURCES
         shaders/gltextshader.vert
         shaders/gltwodshader.frag
         shaders/gltwodshader.vert
-        shaders/glvignette.frag
-        shaders/glvignette.vert
         shaders/lighting.glsl
         shaders/material.glsl
         shaders/precision.glsl

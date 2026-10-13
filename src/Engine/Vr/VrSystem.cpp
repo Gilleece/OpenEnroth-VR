@@ -50,10 +50,6 @@ static constexpr int64_t LOGGED_FRAME_COUNT = 5;
 static constexpr int HEAD_SPRITE_VIEW = 2; // View index for `Renderer::turnWorldSpritesTo` of the head, after the eyes.
 static constexpr std::chrono::seconds FRAME_SUMMARY_INTERVAL(5);
 static constexpr int64_t CULLING_LOG_INTERVAL = 90;
-static constexpr float VIGNETTE_FADE_IN_SECONDS = 0.1f;
-static constexpr float VIGNETTE_FADE_OUT_SECONDS = 0.3f;
-static constexpr float VIGNETTE_MIN_MOVE = 0.5f; // Game units per frame, below it the party counts as standing still.
-static constexpr std::chrono::milliseconds VIGNETTE_MOVE_HOLD(50); // How long the party counts as moving after it last moved.
 static constexpr float CULLING_MARGIN_RAD = 5 * M_PI / 180; // Slack for the culling yaw and pitch, rounded to the party's units.
 static constexpr float MAX_CULLING_HALF_FOV_RAD = 85 * M_PI / 180;
 
@@ -398,8 +394,6 @@ bool VrSystem::drawViews(WorldFrame &frame) {
         return false;
     const std::array<XrView, 2> &views = _views;
 
-    updateVignette();
-
     // Both eyes draw the same billboard quads, so that only the eye projections differ.
     XrView head = midView(views);
     render->buildWorldBillboardQuads(eyeView(head, _eyes[0].size), SPRITE_FACING_VIEW_POSITION);
@@ -719,8 +713,6 @@ void VrSystem::setRunning(bool running) {
     _lastCullingCamera.reset();
     _uiPlacement.reset();
     _uiAim.reset();
-    _vignettePose.reset();
-    _vignetteLevel = 0;
 }
 
 void VrSystem::beginFrame() {
@@ -1020,41 +1012,6 @@ bool VrSystem::captureOrigin(XrTime time) {
     return true;
 }
 
-void VrSystem::updateVignette() {
-    auto now = std::chrono::steady_clock::now();
-    float seconds = _vignettePose ? std::min(std::chrono::duration<float>(now - _vignetteTime).count(), 0.1f) : 0;
-    _vignetteTime = now;
-
-    PartyPose pose{pParty->pos, pParty->_viewYaw, pParty->_viewPitch, engine->_currentLoadedMapId};
-    bool changedLevel = _vignettePose && pose.map != _vignettePose->map;
-    if (_vignettePose && (changedLevel || (pose.position - _vignettePose->position).length() > VIGNETTE_MIN_MOVE ||
-                          pose.yaw != _vignettePose->yaw || pose.pitch != _vignettePose->pitch))
-        _vignetteMoveTime = now;
-    bool moving = now - _vignetteMoveTime < VIGNETTE_MOVE_HOLD; // The game can tick slower than the headset draws.
-    _vignettePose = pose;
-
-    float level = _vignetteLevel;
-    if (changedLevel) {
-        level = 1; // The view cuts to the new level at once.
-    } else if (moving) {
-        level = std::min(1.0f, level + seconds / VIGNETTE_FADE_IN_SECONDS);
-    } else {
-        level = std::max(0.0f, level - seconds / VIGNETTE_FADE_OUT_SECONDS);
-    }
-
-    float strength = engine->config->vr.VignetteStrength.value();
-    if (level > _vignetteLevel && _vignetteLevel == 0) {
-        MM_INFO("VR: frame {} vignette fading in towards strength {:.2f}.", _frameIndex, strength);
-    } else if (level == 1 && _vignetteLevel < 1) {
-        MM_INFO("VR: frame {} vignette at strength {:.2f}.", _frameIndex, strength);
-    } else if (level < _vignetteLevel && _vignetteLevel == 1) {
-        MM_INFO("VR: frame {} vignette fading out from strength {:.2f}.", _frameIndex, strength);
-    } else if (level == 0 && _vignetteLevel > 0) {
-        MM_INFO("VR: frame {} vignette off.", _frameIndex);
-    }
-    _vignetteLevel = level;
-}
-
 bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
     Swapchain &eye = _eyes[index];
 
@@ -1074,12 +1031,6 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
 
     render->holdTexture(index, texture, eye.size);
     _heldViews[index] = view;
-
-    float strength = engine->config->vr.Vignette.value() ? _vignetteLevel * engine->config->vr.VignetteStrength.value() : 0;
-    const XrFovf &fov = view.fov;
-    float left = std::tan(fov.angleLeft), right = std::tan(fov.angleRight), up = std::tan(fov.angleUp), down = std::tan(fov.angleDown);
-    Vec2f center(-(right + left) / (right - left), -(up + down) / (up - down)); // Where the eye looks straight ahead.
-    render->drawVignette(texture, eye.size, strength, center); // Drawn after the hold, so a held world isn't darkened.
 
     XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     check(xrReleaseSwapchainImage(eye.swapchain, &releaseInfo), "xrReleaseSwapchainImage");

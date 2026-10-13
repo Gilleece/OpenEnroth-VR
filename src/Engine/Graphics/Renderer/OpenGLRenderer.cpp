@@ -771,35 +771,6 @@ void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei 
     }
 }
 
-void OpenGLRenderer::drawVignette(TextureRenderId colorTexture, Sizei size, float strength, Vec2f center) {
-    if (strength <= 0)
-        return;
-
-    _externalTarget(colorTexture, size, true)->bind();
-    glViewport(0, 0, size.w, size.h);
-    _ensureFullscreenTriangle();
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_SCISSOR_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    vignetteshader.use();
-    VignetteUniforms uniforms;
-    uniforms.strength = strength;
-    uniforms.center = center;
-    uniforms.submit(vignetteshader);
-
-    _compositeBuffer.bind();
-    glDrawArrays(GL_TRIANGLES, 0, 3);
-    drawcalls++;
-    _compositeBuffer.unbind();
-    vignetteshader.unuse();
-
-    _bindUiTarget();
-    glEnable(GL_SCISSOR_TEST);
-    _setUiViewport();
-}
-
 void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
     OpenGLRenderTarget *source = _externalTarget(colorTexture, size, true);
     Sizei mirrorSize = _uiPixels(pViewport).size();
@@ -5609,7 +5580,6 @@ bool OpenGLRenderer::ReloadShaders() {
         {&bloomdownshader,        "glbloom",          "Bloom downsample",                 {}},
         {&bloomupshader,          "glbloom",          "Bloom upsample",                   bloomUpsampleDefines},
         {&fxaashader,             "glfxaa",           "FXAA",                             {}},
-        {&vignetteshader,         "glvignette",       "Vignette",                         {}},
         {&shadowshader,           "glshadow",         "Shadow map",                       {}},
         {&shadowspriteshader,     "glshadow",         "Sprite shadow map",                spriteShadowDefines},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           terrainMaterialDefines},

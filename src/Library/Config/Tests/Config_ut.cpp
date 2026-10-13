@@ -19,10 +19,15 @@ struct TestConfig : Config {
     } test{this};
 };
 
-// Null log sink that discards all messages.
+// Null log sink that discards all messages, counting the warnings and errors.
 class NullLogSink : public LogSink {
  public:
-    virtual void write(const LogCategory &, LogLevel, std::string_view) override {}
+    virtual void write(const LogCategory &, LogLevel level, std::string_view) override {
+        if (level >= LOG_WARNING)
+            warnings++;
+    }
+
+    int warnings = 0;
 };
 
 // Fixture that initializes the global logger singleton required by Config::load.
@@ -118,4 +123,15 @@ UNIT_TEST_FIXTURE(ConfigTest, OlderFileDefaultIsNotExplicit) {
     MemoryInputStream changedStream(changedIni.data(), changedIni.size());
     changed.load(&changedStream);
     EXPECT_TRUE(changed.test.value.isExplicit());
+}
+
+UNIT_TEST_FIXTURE(ConfigTest, UnknownEntryIsSkippedQuietly) {
+    // An entry the config doesn't have, like a removed setting left in an old ini, is skipped without a warning.
+    TestConfig config;
+
+    std::string_view ini = "[test]\nvalue = 7\nremoved_setting = true\n";
+    MemoryInputStream stream(ini.data(), ini.size());
+    EXPECT_NO_THROW(config.load(&stream));
+    EXPECT_EQ(config.test.value.value(), 7);
+    EXPECT_EQ(_sink.warnings, 0);
 }

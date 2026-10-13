@@ -848,13 +848,6 @@ class GameConfig : public Config {
             "Size of the eye images as a multiple of the size the headset recommends, from 0.5 to 1.5. Most of the cost "
             "of a frame grows with the number of pixels, which goes with the square of this."};
 
-        Bool Vignette = {this, "vignette", true,
-            "Darken the edges of the view while the party moves, turns or changes level, which makes artificial motion "
-            "easier on the stomach. Turning the head doesn't count."};
-
-        Float VignetteStrength = {this, "vignette_strength", 0.6f, &ValidateVignetteStrength,
-            "How dark the edges of the view get with vr.vignette, from 0 to 1."};
-
      private:
         static float ValidateUiDistance(float distance) {
             return std::clamp(distance, 0.3f, 10.0f);
@@ -873,9 +866,6 @@ class GameConfig : public Config {
         }
         static float ValidateRenderScale(float scale) {
             return std::clamp(scale, 0.5f, 1.5f);
-        }
-        static float ValidateVignetteStrength(float strength) {
-            return std::clamp(strength, 0.0f, 1.0f);
         }
         static float ValidateHudScale(float scale) {
             return std::clamp(scale, 0.5f, 2.0f);

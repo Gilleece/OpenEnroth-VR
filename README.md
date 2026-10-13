@@ -128,11 +128,11 @@ run, or set `enabled = true` in the `[vr]` section of `openenroth.ini` to keep i
 recenters the view on the head's current pose. The other `[vr]` entries set the distance and width of the floating
 game screen (`ui_distance`, `ui_width`) and whether it follows the head lazily (`ui_follow`), a HUD spread around the
 view instead of it (`hud_layout`, tuned by `hud_distance`, `hud_scale` and `hud_spread`), snap turning (`snap_turn`,
-`snap_turn_degrees`), a smaller HUD (`minimal_hud`), a comfort vignette while the party moves (`vignette`,
-`vignette_strength`), the size of the eye images (`render_scale`), the near clip distance (`near_clip`) and how far the
-head may lean (`head_offset_radius`). Most of them can also be changed on the video options screen during a session.
-`render_scale` is the one to lower when the GPU can't keep up with the headset. If no headset is found the game
-carries on flat. See the VR section of [HACKING.md](HACKING.md) for how it fits into the renderer.
+`snap_turn_degrees`), a smaller HUD (`minimal_hud`), the size of the eye images (`render_scale`), the near clip distance
+(`near_clip`) and how far the head may lean (`head_offset_radius`). Most of them can also be changed on the video
+options screen during a session. `render_scale` is the one to lower when the GPU can't keep up with the headset. If
+no headset is found the game carries on flat. See the VR section of [HACKING.md](HACKING.md) for how it fits into the
+renderer.
 
 
 # Development
