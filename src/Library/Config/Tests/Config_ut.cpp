@@ -49,3 +49,23 @@ UNIT_TEST_FIXTURE(ConfigTest, ValidValueIsLoaded) {
     EXPECT_NO_THROW(config.load(&stream));
     EXPECT_EQ(config.test.value.value(), 7);
 }
+
+UNIT_TEST_FIXTURE(ConfigTest, ByteOrderMark) {
+    // An ini that an editor saved with a UTF-8 byte order mark failed to load, the mark read as a field outside a section.
+    TestConfig config;
+
+    std::string_view ini = "\xEF\xBB\xBF[test]\nvalue = 7\n";
+    MemoryInputStream stream(ini.data(), ini.size());
+    EXPECT_NO_THROW(config.load(&stream));
+    EXPECT_EQ(config.test.value.value(), 7);
+}
+
+UNIT_TEST_FIXTURE(ConfigTest, FieldWithoutSection) {
+    // A field before any section is still an error, with a byte order mark or without one.
+    for (std::string_view ini : {std::string_view("value = 7\n[test]\n"), std::string_view("\xEF\xBB\xBFvalue = 7\n[test]\n")}) {
+        TestConfig config;
+        MemoryInputStream stream(ini.data(), ini.size());
+        EXPECT_THROW(config.load(&stream), std::exception);
+        EXPECT_EQ(config.test.value.value(), 42);
+    }
+}
