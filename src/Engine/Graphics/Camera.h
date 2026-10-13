@@ -49,6 +49,11 @@ struct Camera3D {
     void updateFromParty();
 
     /**
+     * @return                          The party's eye position, where `updateFromParty` puts the camera.
+     */
+    static glm::vec3 partyEyePosition();
+
+    /**
      * Points the camera along a pose of its own instead of the party's view, like the head of a VR headset, then
      * rebuilds the view matrix and frustum. `updateFromParty` goes back to the party's view.
      *

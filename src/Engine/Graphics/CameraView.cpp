@@ -1,11 +1,8 @@
 #include "CameraView.h"
 
-#include <cassert>
 #include <cmath>
 
 #include <glm/gtc/matrix_transform.hpp>
-
-#include "Engine/Party.h"
 
 static glm::vec4 frustumPlane(glm::vec3 inwardNormal, glm::vec3 eye) {
     glm::vec3 normal = glm::normalize(inwardNormal);
@@ -13,10 +10,6 @@ static glm::vec4 frustumPlane(glm::vec3 inwardNormal, glm::vec3 eye) {
 }
 
 CameraView CameraView::fromCamera3D(const Camera3D &camera, Recti viewport) {
-    assert(camera.vCameraPos == glm::vec3(pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0),
-                                          pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0),
-                                          pParty->pos.z + pParty->eyeLevel));
-
     CameraView result;
 
     float near_clip = camera.GetNearClip();

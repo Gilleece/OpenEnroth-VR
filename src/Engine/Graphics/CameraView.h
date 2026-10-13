@@ -29,8 +29,8 @@ struct ProjectionDesc {
  */
 struct CameraView {
     /**
-     * @param camera                    Camera to take the view from. Its eye position must match the party's, so call
-     *                                  `Camera3D::updateFromParty` first.
+     * @param camera                    Camera to take the view from, at the party's eye or at any pose set with
+     *                                  `Camera3D::updateFromPose`.
      * @param viewport                  Part of the render target to draw into.
      * @return                          View of `camera`.
      */

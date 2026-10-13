@@ -280,6 +280,7 @@ void prepareArenaFight(ArenaLevel level) {
     pParty->arenaLevel = level;
 
     // TODO(pskelton): This doesnt work properly and we dont want draw calls here
+    assert(pCamera3D->vCameraPos == Camera3D::partyEyePosition());
     render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, render->worldTargetViewport()));
     render->resetBillboardRenderList();
     engine->_worldFrame->prepare();
