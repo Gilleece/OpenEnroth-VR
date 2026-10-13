@@ -29,6 +29,12 @@ uniform float gamma;
 uniform float additivegain;
 #endif
 
+// Where an image is sampled at a quad coordinate: the stock billboards trim 1% off each edge of a sprite, so the quads
+// that cover more than the image map their 0 to 1 range onto the same inset.
+vec2 SpriteInset(vec2 uv) {
+    return mix(vec2(0.01), vec2(0.99), uv);
+}
+
 #ifdef SPRITE_CROSSFADE
 in vec2 crossfadeTexuv;
 in float crossfade;
@@ -38,7 +44,7 @@ uniform sampler2D texture1; // The neighbouring side, blended in by `crossfade`.
 
 // A side's colour, transparent outside its image, with its palette applied.
 vec4 SpriteSide(sampler2D image, vec2 uv, int palette) {
-    vec4 result = texture(image, clamp(uv, vec2(0.005), vec2(0.995)));
+    vec4 result = texture(image, SpriteInset(clamp(uv, vec2(0.0), vec2(1.0))));
     int index = int(result.r * 255.0);
     vec4 paletted = vec4(texelFetch(paltex2D, ivec2(index, palette), 0));
     if (palette > 0 && index > 0)
@@ -99,9 +105,9 @@ void main() {
                  vec2(dot(toOrigin, shapeRight), -toOrigin.z) / max(dot(toOrigin, spriteNormal), 0.0001);
     slope = clamp(slope, vec2(-1.0), vec2(1.0));
     vec2 parallax = shapeThickness > 0.0 ? slope * shapeThickness / shapeSize : vec2(0.0);
-    vec2 spriteuv = texuv + parallax * (texture(spriteShape, texuv).b - 0.5);
-    spriteuv = texuv + parallax * (texture(spriteShape, spriteuv).b - 0.5);
-    float spriteDepth = (texture(spriteShape, spriteuv).b - 0.5) * shapeThickness * clamp((1.0 - spriteuv.y) / SPRITE_FOOT_FADE, 0.0, 1.0);
+    vec2 spriteuv = texuv + parallax * (texture(spriteShape, SpriteInset(texuv)).b - 0.5);
+    spriteuv = texuv + parallax * (texture(spriteShape, SpriteInset(spriteuv)).b - 0.5);
+    float spriteDepth = (texture(spriteShape, SpriteInset(spriteuv)).b - 0.5) * shapeThickness * clamp((1.0 - spriteuv.y) / SPRITE_FOOT_FADE, 0.0, 1.0);
     vec4 spriteClip = projection * view * vec4(worldPos + spriteNormal * spriteDepth, 1.0);
     gl_FragDepth = shapeThickness > 0.0 ? spriteClip.z / spriteClip.w * 0.5 + 0.5 : gl_FragCoord.z;
 #endif
@@ -121,7 +127,7 @@ void main() {
     vec4 fragcol = vec4(sidesColour, coverage);
 #else
 #ifdef SPRITE_DEPTH
-    vec4 fragcol = texture(texture0, spriteuv);
+    vec4 fragcol = texture(texture0, SpriteInset(spriteuv));
     if (any(lessThan(spriteuv, vec2(0.0))) || any(greaterThan(spriteuv, vec2(1.0))))
         fragcol = vec4(0.0);
 #else
@@ -143,7 +149,7 @@ void main() {
     fragcol *= colour;
 #ifdef SPRITE_LIGHTING
     // The stock tint stays the light of a flat sprite, the shape's normals move that light around.
-    vec2 shapeNormal = texture(spriteShape, spriteuv).rg * 2.0 - 1.0;
+    vec2 shapeNormal = texture(spriteShape, SpriteInset(spriteuv)).rg * 2.0 - 1.0;
     vec3 surfaceNormal = normalize(shapeRight * sign(shapeSize.x) * shapeNormal.x + vec3(0.0, 0.0, 1.0) * shapeNormal.y +
                                    spriteNormal * sqrt(max(1.0 - dot(shapeNormal, shapeNormal), 0.0)));
     vec3 relight = SpriteLightSum(surfaceNormal, worldPos, toEye) / max(SpriteLightSum(spriteNormal, worldPos, toEye), vec3(0.05));
