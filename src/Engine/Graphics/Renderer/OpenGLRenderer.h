@@ -69,6 +69,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) override;
     virtual void holdTexture(int slot, TextureRenderId colorTexture, Sizei size) override;
     virtual void restoreHeldTexture(int slot, TextureRenderId colorTexture) override;
+    virtual void forgetExternalTextures(std::span<const TextureRenderId> colorTextures) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,
@@ -202,7 +203,15 @@ class OpenGLRenderer : public BaseRenderer {
     Recti _uiPixels(const Recti &rect) const;
 
     OpenGLRenderTarget *_currentWorldTarget();
-    OpenGLRenderTarget *_externalTarget(TextureRenderId colorTexture, Sizei size);
+
+    /**
+     * @param colorTexture              Colour texture owned by the caller.
+     * @param size                      Size of the texture.
+     * @param withDepth                 Whether to add a depth texture, when the target is made.
+     * @return                          Render target around the texture, made on first use and kept until
+     *                                  `forgetExternalTextures`.
+     */
+    OpenGLRenderTarget *_externalTarget(TextureRenderId colorTexture, Sizei size, bool withDepth);
 
     /**
      * Copies the colour of one render target into another of the same size, leaving the UI target bound.

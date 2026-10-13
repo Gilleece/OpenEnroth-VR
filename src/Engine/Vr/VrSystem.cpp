@@ -603,6 +603,8 @@ bool VrSystem::createSwapchain(Swapchain *target, Sizei size) {
 }
 
 void VrSystem::destroySwapchain(Swapchain *target) {
+    if (render)
+        render->forgetExternalTextures(std::vector<TextureRenderId>(target->images.begin(), target->images.end()));
     if (target->swapchain != XR_NULL_HANDLE)
         xrDestroySwapchain(target->swapchain);
     *target = Swapchain();

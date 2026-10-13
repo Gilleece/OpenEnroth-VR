@@ -43,6 +43,7 @@ class NullRenderer : public BaseRenderer {
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) override;
     virtual void holdTexture(int slot, TextureRenderId colorTexture, Sizei size) override;
     virtual void restoreHeldTexture(int slot, TextureRenderId colorTexture) override;
+    virtual void forgetExternalTextures(std::span<const TextureRenderId> colorTextures) override;
 
     virtual void DrawProjectile(float srcX, float srcY, float a3, float a4,
                                 float dstX, float dstY, float a7, float a8,
