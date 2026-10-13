@@ -56,7 +56,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
-    virtual void drawSunShadows(std::span<const int> casterModels) override;
+    virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
     virtual void drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) override;
     virtual void setUiLayer(bool enabled) override;
     virtual bool uiLayer() override;
@@ -293,6 +293,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader bloomupshader;
     OpenGLShader fxaashader;
     OpenGLShader shadowshader;
+    OpenGLShader shadowspriteshader;
     OpenGLShader terrainmaterialshader; // Variants of the world shaders that sample material maps.
     OpenGLShader outbuildmaterialshader;
     OpenGLShader bspmaterialshader;
@@ -348,6 +349,9 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<GLuint, SUN_SHADOW_CASCADES> _sunShadowFramebuffers = {};
     OpenGLVertexBuffer<ShadowVertex> _sunShadowTerrainBuffer;
     OpenGLVertexBuffer<ShadowVertex> _sunShadowBuildingBuffer;
+    OpenGLVertexBuffer<ShadowSpriteVertex> _sunShadowSpriteBuffer;
+    std::vector<ShadowSpriteVertex> _sunShadowSpriteVertices;
+    Vec3f _sunShadowDirection; // Towards the sun.
     std::vector<std::pair<int, int>> _sunShadowModelRanges; // First vertex and vertex count of each building model.
     std::array<glm::mat4, SUN_SHADOW_CASCADES> _sunShadowMatrices = {};
     std::array<float, SUN_SHADOW_CASCADES> _sunShadowTexels = {};

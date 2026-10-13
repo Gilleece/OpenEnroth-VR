@@ -111,6 +111,12 @@ struct ShadowVertex {
     Vec3f pos;
 };
 
+struct ShadowSpriteVertex {
+    Vec3f pos;
+    Vec2f texuv;
+    float paletteId = 0;
+};
+
 struct CompositeVertex {
     Vec2f pos;
 };
@@ -166,6 +172,8 @@ struct BillboardVertex {
     float texid = 0;
     float blend = 0;
     float paletteId = 0;
+    Vec3f shadowAnchor; // Where the billboard looks up the sun shadow, only read when `shadowed` is 1.
+    float shadowed = 0;
 };
 
 struct BillboardUniforms {

@@ -122,6 +122,16 @@ jobs:
                 ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
               done
             done
+            for shader in resources/shaders/glbillbshader.{vert,frag}; do
+              for defines in "SUN_SHADOWS" "SUN_SHADOWS LINEAR_PIPELINE"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
+            for shader in resources/shaders/glshadow.{vert,frag}; do
+              echo "Checking $shader with SHADOW_SPRITE against GLSL $glsl_version..."
+              ./scripts/check_shader.sh "$shader" "$glsl_version" SHADOW_SPRITE
+            done
             for shader in resources/shaders/{glterrain,gloutbuild,glbspshader,glbillbshader,gldecalshader,glforcepershader,glskyshader}.{vert,frag}; do
               echo "Checking $shader with LINEAR_PIPELINE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" LINEAR_PIPELINE

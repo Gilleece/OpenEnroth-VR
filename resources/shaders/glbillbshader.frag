@@ -8,6 +8,9 @@ in vec4 colour;
 in vec2 texuv;
 in float screenspace;
 flat in int paletteid;
+#ifdef SUN_SHADOWS
+in float sunlight;
+#endif
 
 out vec4 FragColour;
 
@@ -29,6 +32,9 @@ void main() {
             fragcol = vec4(newcol.r, newcol.g, newcol.b, 1.0);
 
     fragcol *= colour;
+#ifdef SUN_SHADOWS
+    fragcol.rgb *= sunlight;
+#endif
 #ifdef LINEAR_PIPELINE
     fragcol.rgb = srgbToLinear(fragcol.rgb);
 #endif

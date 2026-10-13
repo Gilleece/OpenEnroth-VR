@@ -124,8 +124,10 @@ class Renderer {
      *
      * @param casterModels              Indices into `OutdoorLocation::pBModels` of the building models that can cast
      *                                  shadows into the shadow distance.
+     * @param casterSprites             Trees, other decorations and monsters that cast shadows into the shadow
+     *                                  distance.
      */
-    virtual void drawSunShadows(std::span<const int> casterModels) = 0;
+    virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) = 0;
 
     /**
      * @return                          Whether the current 3D pass draws sprites, particles, projectiles and the sky in
