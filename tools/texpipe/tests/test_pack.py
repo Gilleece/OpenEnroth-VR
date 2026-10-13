@@ -167,3 +167,38 @@ def test_pack_optimizes_the_pngs_it_writes_unless_told_not_to(tmp_path):
         with Image.open(optimized) as image, Image.open(tmp_path / "plain" / relative) as plain:
             assert image.tobytes() == plain.tobytes()
     assert counts["optimized MiB"] == 0.0  # A few kilobytes.
+
+
+class InlinePool:
+    """Stands in for ProcessPoolExecutor, runs the calls in this process and keeps the worker count asked for."""
+
+    created: list[int] = []
+
+    def __init__(self, workers: int):
+        InlinePool.created.append(workers)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def map(self, function, items, chunksize=1):
+        return map(function, items)
+
+
+@pytest.mark.parametrize("pack_config, expected", [({}, 6), ({"workers": 2}, 2)])
+def test_pack_optimizes_with_the_configured_number_of_workers(tmp_path, monkeypatch, pack_config, expected):
+    # Without the setting, one process per core.
+    monkeypatch.setattr("texpipe.pack.ProcessPoolExecutor", InlinePool)
+    monkeypatch.setattr("texpipe.pack.os.cpu_count", lambda: 6)
+    InlinePool.created = []
+    add_image(tmp_path / "work", "bitmaps", "wall", (4, 2), 2)
+    run_pack(tmp_path / "work", tmp_path / "pack", "raw", None, config={"pack": pack_config})
+    assert InlinePool.created == [expected]
+
+
+def test_pack_rejects_fewer_than_one_worker(tmp_path):
+    add_image(tmp_path / "work", "bitmaps", "wall", (4, 2), 2)
+    with pytest.raises(ValueError, match="workers must be at least 1"):
+        run_pack(tmp_path / "work", tmp_path / "pack", "raw", None, config={"pack": {"workers": 0}})
