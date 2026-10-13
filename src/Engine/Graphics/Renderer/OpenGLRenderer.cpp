@@ -73,6 +73,7 @@ static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample un
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
 static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
 static constexpr GLint CROSSFADE_TEXTURE_UNIT = 5; // Second side of a billboard's sprite.
+static constexpr GLint SPRITE_SHAPE_TEXTURE_UNIT = 6;
 static constexpr GLint SCENE_DEPTH_TEXTURE_UNIT = 4; // The billboards sample units 0 and 1 only, and 8 in the vertex shader.
 static constexpr float SOFT_PARTICLE_DISTANCE = 64.0f; // World units in front of the level over which additive billboards fade out.
 static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
@@ -1475,12 +1476,17 @@ void OpenGLRenderer::_readPipelineSettings() {
     _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
     _terrainVariation = _linearPipeline && config->graphics.TerrainVariation.value();
     _spriteCrossfade = config->graphics.SpriteCrossfade.value();
+    _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
     _readPipelineSettings();
     ReloadShaders();
     Reinitialize(false);
+}
+
+bool OpenGLRenderer::spriteShapes() {
+    return _spriteDepth && worldSpaceBillboards();
 }
 
 bool OpenGLRenderer::worldSpaceBillboards() {
@@ -3299,11 +3305,8 @@ void OpenGLRenderer::drawWorldBillboards() {
     bool additive = false;
     for (int i = 0; i < uNumBillboardsToDraw && !additive; i++)
         additive = _worldBillboards[i].opacity != RenderBillboardD3D::Transparent;
-    if (_linearPipeline && additive)
-        _copySceneDepth();
 
-    for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
-        int index = pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D;
+    auto addBillboard = [&](int index) {
         const WorldBillboard &billboard = _worldBillboards[index];
 
         int paletteId = billboard.paletteId;
@@ -3329,6 +3332,13 @@ void OpenGLRenderer::drawWorldBillboards() {
             vertex.blend = static_cast<float>(billboard.opacity);
             vertex.paletteId = paletteId;
             vertex.shadowed = billboardShadowAnchor(pBillboardRenderListD3D[index], &vertex.shadowAnchor);
+            if (billboard.shape) {
+                vertex.texuv = billboard.texcoords[j]; // The parallax can move the lookup off the image.
+                vertex.shapeRight = _worldSpriteRight;
+                vertex.shapeSize = Vec2f(billboard.sideExtent.x * 2, billboard.sideExtent.y);
+                vertex.shapeThickness = billboard.shapeThickness;
+                vertex.shapeTexid = static_cast<float>(billboard.shape->renderId().value());
+            }
         };
 
         addVertex(0);
@@ -3340,6 +3350,39 @@ void OpenGLRenderer::drawWorldBillboards() {
             addVertex(3);
         }
         worldBillboardsDrawn++;
+    };
+
+    // Sprites with shapes write their depth, so they go first, the depth of their opaque parts before their colour.
+    std::vector<bool> drawn(uNumBillboardsToDraw, false);
+    if (_spriteDepth) {
+        for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
+            int index = pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D;
+            if (_worldBillboards[index].shape && _worldBillboards[index].opacity == RenderBillboardD3D::Transparent) {
+                addBillboard(index);
+                drawn[index] = true;
+            }
+        }
+        if (!_billboardVertices.empty()) {
+            std::vector<BillboardVertex> shapeVertices = _billboardVertices;
+            _billboardDepthPrepass = true;
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            glDepthMask(GL_TRUE);
+            DrawBillboards();
+            _billboardDepthPrepass = false;
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glDepthMask(GL_FALSE);
+            _billboardVertices = std::move(shapeVertices);
+            DrawBillboards();
+        }
+    }
+
+    if (_linearPipeline && additive)
+        _copySceneDepth();
+
+    for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
+        int index = pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D;
+        if (!drawn[index])
+            addBillboard(index);
     }
 
     DrawBillboards();
@@ -3544,7 +3587,10 @@ void OpenGLRenderer::DrawBillboards() {
             &BillboardVertex::shadowed,
             &BillboardVertex::crossfadeTexuv,
             &BillboardVertex::crossfade,
-            &BillboardVertex::crossfadePaletteId);
+            &BillboardVertex::crossfadePaletteId,
+            &BillboardVertex::shapeRight,
+            &BillboardVertex::shapeSize,
+            &BillboardVertex::shapeThickness);
     }
 
     ensurePaletteTexture();
@@ -3586,6 +3632,14 @@ void OpenGLRenderer::DrawBillboards() {
     bool crossfade = billbshader.hasDefine("SPRITE_CROSSFADE");
     if (crossfade)
         glUniform1i(billbshader.uniformLocation("texture1"), CROSSFADE_TEXTURE_UNIT);
+    bool shapes = billbshader.hasDefine("SPRITE_DEPTH");
+    if (shapes) {
+        glUniform1i(billbshader.uniformLocation("spriteShape"), SPRITE_SHAPE_TEXTURE_UNIT);
+        glUniform3f(billbshader.uniformLocation("eyePosition"), _view.position.x, _view.position.y, _view.position.z);
+        Vec3f origin = _worldBillboardQuadsBuilt ? _worldBillboardEye : _view.position; // The head, where the quads were built.
+        glUniform3f(billbshader.uniformLocation("parallaxOrigin"), origin.x, origin.y, origin.z);
+        glUniform1i(billbshader.uniformLocation("depthPrepass"), _billboardDepthPrepass);
+    }
 
     auto setFilter = [&](GLuint texture, bool paletted) {
         if (paletted) {
@@ -3605,6 +3659,14 @@ void OpenGLRenderer::DrawBillboards() {
         // set texture
         GLfloat thistex = _billboardVertices[offset].texid;
         GLfloat thiscrossfadetex = _billboardVertices[offset].crossfadeTexid;
+        GLfloat thisshapetex = _billboardVertices[offset].shapeTexid;
+        if (shapes) {
+            glActiveTexture(GL_TEXTURE0 + SPRITE_SHAPE_TEXTURE_UNIT);
+            glBindTexture(GL_TEXTURE_2D, thisshapetex ? static_cast<GLuint>(thisshapetex) : static_cast<GLuint>(thistex));
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glActiveTexture(GL_TEXTURE0);
+        }
         if (crossfade) {
             glActiveTexture(GL_TEXTURE0 + CROSSFADE_TEXTURE_UNIT);
             glBindTexture(GL_TEXTURE_2D, thiscrossfadetex ? static_cast<GLuint>(thiscrossfadetex) : static_cast<GLuint>(thistex));
@@ -3643,7 +3705,7 @@ void OpenGLRenderer::DrawBillboards() {
                 break;
             }
         } while (_billboardVertices[offset + (cnt * 3)].texid == thistex && _billboardVertices[offset + (cnt * 3)].blend == thisblend &&
-                 _billboardVertices[offset + (cnt * 3)].crossfadeTexid == thiscrossfadetex);
+                 _billboardVertices[offset + (cnt * 3)].crossfadeTexid == thiscrossfadetex && _billboardVertices[offset + (cnt * 3)].shapeTexid == thisshapetex);
 
         glDrawArrays(GL_TRIANGLES, offset, (3 * cnt));
         drawcalls++;
@@ -5262,6 +5324,8 @@ bool OpenGLRenderer::ReloadShaders() {
     std::vector<std::string_view> billboardDefines = outdoorDefines;
     if (_spriteCrossfade)
         billboardDefines.push_back("SPRITE_CROSSFADE");
+    if (_spriteDepth)
+        billboardDefines.push_back("SPRITE_DEPTH");
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          terrainDefines},
         {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorLitDefines},

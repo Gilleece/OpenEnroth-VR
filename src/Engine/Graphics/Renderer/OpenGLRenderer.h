@@ -58,6 +58,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual void drawVignette(TextureRenderId colorTexture, Sizei size, float strength, Vec2f center) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
+    virtual bool spriteShapes() override;
     virtual void applyPipelineSettings() override;
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
     virtual void drawTorchShadows() override;
@@ -550,6 +551,8 @@ class OpenGLRenderer : public BaseRenderer {
     bool _ambientOcclusion = false; // Same for the lit world shaders.
     bool _terrainVariation = false; // Same for the terrain shaders.
     bool _spriteCrossfade = false; // Same for the billboard shader.
+    bool _spriteDepth = false; // Same.
+    bool _billboardDepthPrepass = false; // `DrawBillboards` only writes the depth of the sprites' opaque parts.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;
 };

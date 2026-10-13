@@ -111,6 +111,14 @@ static void showSpriteSide(WorldBillboard *billboard, const Sprite *sprite, bool
         halfWidth = -halfWidth;
     billboard->texture = sprite->texture;
     billboard->facing = {{{-halfWidth, height}, {-halfWidth, 0}, {halfWidth, 0}, {halfWidth, height}}};
+    billboard->sideExtent = Vec2f(halfWidth, height);
+    billboard->shape = nullptr;
+    billboard->shapeThickness = 0;
+    if (render->spriteShapes() && billboard->frame && !billboard->centered) {
+        billboard->shape = assets->getSpriteShape(sprite->texture);
+        if (billboard->shape)
+            billboard->shapeThickness = engine->resources()->packSpriteShapeThickness(sprite->texture->name());
+    }
 }
 
 static constexpr float SPRITE_CROSSFADE_BAND = 10.0f / 45.0f; // Part of a side's 45 degrees, on each side of a boundary, where it blends with the next.
@@ -126,14 +134,6 @@ static int spriteOctant(int yaw, const Vec3f &pos, const Vec3f &eye) {
     return ((TrigLUT.uIntegerPi + (TrigLUT.uIntegerPi >> 3) + yaw - angle) >> 8) & 7;
 }
 
-/**
- * @param billboard                     Billboard of a sprite side, with its `facing` set.
- * @return                              Its horizontal half extent and its height, negative half extent when mirrored.
- */
-static Vec2f spriteSideExtent(const WorldBillboard &billboard) {
-    return Vec2f(billboard.facing[2].x, billboard.facing[0].y);
-}
-
 void BaseRenderer::crossfadeSpriteSides(WorldBillboard *billboard, const Vec3f &eye) {
     billboard->crossfadeTexture = nullptr;
     billboard->crossfade = 0;
@@ -142,6 +142,7 @@ void BaseRenderer::crossfadeSpriteSides(WorldBillboard *billboard, const Vec3f &
     billboard->texcoords = {{{0, 0}, {0, 1}, {1, 1}, {1, 0}}};
     showSpriteSide(billboard, billboard->frame->sprites[billboard->octant],
                    billboardFlagsForSprite(billboard->frame->flags, billboard->octant) & BILLBOARD_MIRRORED);
+    fitSpriteQuad(billboard, Vec2f());
     if (!config->graphics.SpriteCrossfade.value() || billboard->centered)
         return;
 
@@ -161,20 +162,28 @@ void BaseRenderer::crossfadeSpriteSides(WorldBillboard *billboard, const Vec3f &
     if (sprite->texture == billboard->texture && mirrored == (billboard->facing[2].x < 0))
         return; // Both sides show the same image.
 
-    Vec2f extent = spriteSideExtent(*billboard);
     Vec2f otherExtent(sprite->uWidth / 2 * billboard->scale.x * (mirrored ? -1 : 1), sprite->uHeight * billboard->scale.y);
-    float halfWidth = std::max(std::abs(extent.x), std::abs(otherExtent.x));
-    float height = std::max(extent.y, otherExtent.y);
+    fitSpriteQuad(billboard, otherExtent);
+    billboard->crossfadeTexture = sprite->texture;
+    billboard->crossfade = 0.5f * (1.0f - boundaryDistance / SPRITE_CROSSFADE_BAND);
+}
+
+void BaseRenderer::fitSpriteQuad(WorldBillboard *billboard, Vec2f otherExtent) {
+    Vec2f extent = billboard->sideExtent;
+    float margin = billboard->shape ? billboard->shapeThickness / 2 : 0; // Room for the parallax shift at up to 45 degrees.
+    if (margin == 0 && otherExtent == Vec2f())
+        return;
 
     // The quad covers both sides, each mapped onto it at its own size, bottom centre at the billboard's position.
+    float halfWidth = std::max(std::abs(extent.x), std::abs(otherExtent.x)) + margin;
+    float height = std::max(extent.y, otherExtent.y) + margin;
     billboard->facing = {{{-halfWidth, height}, {-halfWidth, 0}, {halfWidth, 0}, {halfWidth, height}}};
     for (int i = 0; i < 4; i++) {
         Vec2f corner = billboard->facing[i];
         billboard->texcoords[i] = Vec2f(0.5f + corner.x / (2 * extent.x), 1 - corner.y / extent.y);
-        billboard->crossfadeTexcoords[i] = Vec2f(0.5f + corner.x / (2 * otherExtent.x), 1 - corner.y / otherExtent.y);
+        if (otherExtent != Vec2f())
+            billboard->crossfadeTexcoords[i] = Vec2f(0.5f + corner.x / (2 * otherExtent.x), 1 - corner.y / otherExtent.y);
     }
-    billboard->crossfadeTexture = sprite->texture;
-    billboard->crossfade = 0.5f * (1.0f - boundaryDistance / SPRITE_CROSSFADE_BAND);
 }
 
 void BaseRenderer::buildWorldBillboardQuad(WorldBillboard *billboard) {
@@ -225,6 +234,8 @@ void BaseRenderer::turnWorldSpritesTo(const Vec3f &eye) {
         if (billboard.crossfadeTexture)
             if (GraphicsImage *variant = assets->getSpriteVariant(billboard.crossfadeTexture, billboard.paletteId))
                 replacements.push_back(variant);
+        if (billboard.shape)
+            replacements.push_back(billboard.shape);
     }
     if (engine->resources()->hasTexturePack())
         GraphicsImage::loadReplacements(replacements);

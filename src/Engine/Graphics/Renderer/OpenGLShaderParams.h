@@ -195,6 +195,10 @@ struct BillboardVertex {
     float crossfade = 0; // Weight of the second texture.
     float crossfadePaletteId = 0;
     float crossfadeTexid = 0; // Only for batching, not passed to the shader.
+    Vec3f shapeRight; // World direction of the sprite image's u, only read when `shapeThickness` isn't 0.
+    Vec2f shapeSize; // World width and height of the sprite image, negative width when mirrored.
+    float shapeThickness = 0;
+    float shapeTexid = 0; // Only for batching, not passed to the shader.
 };
 
 struct BillboardUniforms {

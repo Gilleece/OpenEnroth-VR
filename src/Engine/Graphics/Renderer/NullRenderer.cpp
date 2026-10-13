@@ -71,6 +71,10 @@ bool NullRenderer::worldSpaceBillboards() {
     return false;
 }
 
+bool NullRenderer::spriteShapes() {
+    return false;
+}
+
 void NullRenderer::applyPipelineSettings() {}
 
 void NullRenderer::drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) {}
