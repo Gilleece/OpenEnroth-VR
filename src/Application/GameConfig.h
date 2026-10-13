@@ -790,6 +790,11 @@ class GameConfig : public Config {
 
         Float UiWidth = {this, "ui_width", 1.0f, &ValidateUiWidth, "Width of the floating game screen in metres."};
 
+        ConfigEntry<VrUiFollow> UiFollow = {this, "ui_follow", VR_UI_FOLLOW_LOCKED,
+            "How the floating game screen follows the head, 'locked' in front of the eyes or 'lazy', where it stays put "
+            "until the head turns more than 15 degrees sideways or 10 up or down, or moves 0.3 m, and then glides back in "
+            "front over half a second, upright."};
+
         Bool SnapTurn = {this, "snap_turn", false, "Turn in fixed steps instead of smoothly."};
 
         Int SnapTurnDegrees = {this, "snap_turn_degrees", 30, &ValidateSnapTurnDegrees, "Degrees per snap turn."};

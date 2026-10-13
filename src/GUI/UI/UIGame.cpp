@@ -369,7 +369,7 @@ void GUIWindow_GameKeyBindings::Update() {
 
 static constexpr Recti VR_PANEL_RECT(244, 142, 212, 156); // Covers the gamma preview panel.
 static constexpr int VR_LINE_TOP = 164;
-static constexpr int VR_LINE_HEIGHT = 18;
+static constexpr int VR_LINE_HEIGHT = 16;
 
 /**
  * @param setting                       Entry of the VR block.
@@ -410,6 +410,9 @@ void changeVrSetting(VrSetting setting) {
     case VR_SETTING_UI_WIDTH:
         vr.UiWidth.setValue(nextStep(vr.UiWidth.value(), {0.6f, 0.8f, 1.0f, 1.2f, 1.5f}));
         break;
+    case VR_SETTING_UI_FOLLOW:
+        vr.UiFollow.setValue(vr.UiFollow.value() == VR_UI_FOLLOW_LOCKED ? VR_UI_FOLLOW_LAZY : VR_UI_FOLLOW_LOCKED);
+        break;
     case VR_SETTING_HEAD_OFFSET_RADIUS:
         vr.HeadOffsetRadius.setValue(nextStep(vr.HeadOffsetRadius.value(), {0.1f, 0.3f, 0.5f, 1.0f}));
         break;
@@ -432,6 +435,7 @@ static std::string vrSettingText(VrSetting setting) {
     case VR_SETTING_MINIMAL_HUD: return vr.MinimalHud.value() ? "Minimal HUD: on" : "Minimal HUD: off";
     case VR_SETTING_UI_DISTANCE: return fmt::format("Screen distance: {:.1f} m", vr.UiDistance.value());
     case VR_SETTING_UI_WIDTH: return fmt::format("Screen width: {:.1f} m", vr.UiWidth.value());
+    case VR_SETTING_UI_FOLLOW: return vr.UiFollow.value() == VR_UI_FOLLOW_LAZY ? "Screen follows: lazily" : "Screen follows: locked";
     case VR_SETTING_HEAD_OFFSET_RADIUS: return fmt::format("Head offset radius: {:.1f} m", vr.HeadOffsetRadius.value());
     case VR_SETTING_RECENTER: return "Recenter now";
     }

@@ -40,6 +40,10 @@
 #include "Utility/String/Format.h"
 
 static constexpr XrViewConfigurationType VIEW_CONFIGURATION = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+static constexpr float UI_DEAD_ZONE_YAW = 15 * M_PI / 180; // The lazy UI quad re-aims when the head turns further.
+static constexpr float UI_DEAD_ZONE_PITCH = 10 * M_PI / 180;
+static constexpr float UI_DEAD_ZONE_DISTANCE = 0.3f; // Metres.
+static constexpr std::chrono::duration<float> UI_EASE_DURATION(0.5f);
 static constexpr float GAME_UNITS_PER_METRE = 100.0f; // The party's eye level of 160 units is a 1.6 m standing eye height.
 static constexpr int64_t LOGGED_FRAME_COUNT = 5;
 static constexpr std::chrono::seconds FRAME_SUMMARY_INTERVAL(5);
@@ -243,14 +247,25 @@ bool VrSystem::pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) {
     if (!_running || !_lastCullingCamera)
         return false;
 
-    // The point under the cursor on the UI quad, in the game's view axes, forward, left and up.
     Sizei size = render->GetRenderDimensions();
     float width = engine->config->vr.UiWidth.value();
     float height = width * size.h / size.w;
-    glm::vec3 point(engine->config->vr.UiDistance.value(),
-                    -((uiPosition.x + 0.5f) / size.w - 0.5f) * width,
-                    (0.5f - (uiPosition.y + 0.5f) / size.h) * height);
-    glm::vec3 world = _lastPickOrientation * glm::normalize(point);
+    float right = ((uiPosition.x + 0.5f) / size.w - 0.5f) * width;
+    float up = (0.5f - (uiPosition.y + 0.5f) / size.h) * height;
+
+    glm::vec3 world;
+    if (_uiPose) {
+        // The point under the cursor on the UI quad, relative to the head, in the head origin space.
+        const XrPosef &pose = *_uiPose;
+        glm::quat facing(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+        glm::vec3 point = glm::vec3(pose.position.x, pose.position.y, pose.position.z) + facing * glm::vec3(right, up, 0) - _uiHead;
+        glm::quat partyYaw = glm::angleAxis(static_cast<float>(2 * M_PI * pParty->_viewYaw / 2048), glm::vec3(0, 0, 1));
+        world = partyYaw * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
+    } else {
+        // Without a located head the quad hangs in VIEW space, the same point in the game's view axes, forward, left and up.
+        glm::vec3 point(engine->config->vr.UiDistance.value(), -right, up);
+        world = _lastPickOrientation * glm::normalize(point);
+    }
 
     *origin = _lastPickOrigin;
     *direction = Vec3f(world.x, world.y, world.z);
@@ -682,14 +697,75 @@ bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
         _uiPlacement = Vec2f(width, distance);
     }
     layer->layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT; // The UI target holds premultiplied colour.
-    layer->space = _viewSpace;
     layer->eyeVisibility = XR_EYE_VISIBILITY_BOTH;
     layer->subImage.swapchain = _ui.swapchain;
     layer->subImage.imageRect.extent = {_ui.size.w, _ui.size.h};
-    layer->pose.orientation.w = 1.0f;
-    layer->pose.position.z = -distance; // VIEW space looks along -z.
     layer->size = {width, width * _ui.size.h / _ui.size.w};
+    placeUi(layer, distance);
     return true;
+}
+
+void VrSystem::placeUi(XrCompositionLayerQuad *layer, float distance) {
+    layer->space = _viewSpace;
+    layer->pose = {{0, 0, 0, 1}, {0, 0, -distance}}; // VIEW space looks along -z.
+    _uiPose.reset();
+
+    XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
+    XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+    if (_space == XR_NULL_HANDLE || XR_FAILED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &head)) ||
+        (head.locationFlags & tracked) != tracked) {
+        _uiAim.reset();
+        return;
+    }
+    const XrQuaternionf &orientation = head.pose.orientation;
+    glm::quat headOrientation(orientation.w, orientation.x, orientation.y, orientation.z);
+    _uiHead = glm::vec3(head.pose.position.x, head.pose.position.y, head.pose.position.z);
+
+    glm::vec3 position;
+    glm::quat facing;
+    if (engine->config->vr.UiFollow.value() == VR_UI_FOLLOW_LOCKED) {
+        _uiAim.reset();
+        position = _uiHead + headOrientation * glm::vec3(0, 0, -distance);
+        facing = headOrientation;
+    } else {
+        glm::vec3 forward = headOrientation * glm::vec3(0, 0, -1);
+        UiAim now = {_uiHead, std::atan2(-forward.x, -forward.z), std::asin(std::clamp(forward.y, -1.0f, 1.0f))};
+        auto time = std::chrono::steady_clock::now();
+        if (!_uiAim) {
+            _uiAim = now;
+            _uiAimFrom = now;
+            _uiAimTime = time - std::chrono::duration_cast<std::chrono::steady_clock::duration>(UI_EASE_DURATION);
+        } else {
+            float turn = std::abs(std::remainder(now.yaw - _uiAim->yaw, 2 * static_cast<float>(M_PI)));
+            float tilt = std::abs(now.pitch - _uiAim->pitch);
+            float move = glm::length(now.head - _uiAim->head);
+            if (turn > UI_DEAD_ZONE_YAW || tilt > UI_DEAD_ZONE_PITCH || move > UI_DEAD_ZONE_DISTANCE) {
+                _uiAimFrom = easedUiAim(time);
+                MM_INFO("VR: UI re-aims after the head turned {:.1f} and tilted {:.1f} degrees and moved {:.2f} m, from yaw {:.1f} and pitch "
+                        "{:.1f} to yaw {:.1f} and pitch {:.1f} degrees.", turn * 180 / M_PI, tilt * 180 / M_PI, move,
+                        _uiAimFrom.yaw * 180 / M_PI, _uiAimFrom.pitch * 180 / M_PI, now.yaw * 180 / M_PI, now.pitch * 180 / M_PI);
+                _uiAim = now;
+                _uiAimTime = time;
+            }
+        }
+
+        UiAim aim = easedUiAim(time);
+        facing = glm::angleAxis(aim.yaw, glm::vec3(0, 1, 0)); // Upright, only turned to face the head.
+        position = aim.head + facing * glm::angleAxis(aim.pitch, glm::vec3(1, 0, 0)) * glm::vec3(0, 0, -distance);
+        layer->space = _space;
+        layer->pose = {{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}};
+    }
+    _uiPose = XrPosef{{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}};
+}
+
+VrSystem::UiAim VrSystem::easedUiAim(std::chrono::steady_clock::time_point time) const {
+    float t = std::clamp(std::chrono::duration<float>(time - _uiAimTime) / UI_EASE_DURATION, 0.0f, 1.0f);
+    float eased = t * t * (3 - 2 * t);
+    UiAim result;
+    result.head = glm::mix(_uiAimFrom.head, _uiAim->head, eased);
+    result.yaw = _uiAimFrom.yaw + std::remainder(_uiAim->yaw - _uiAimFrom.yaw, 2 * static_cast<float>(M_PI)) * eased;
+    result.pitch = _uiAimFrom.pitch + (_uiAim->pitch - _uiAimFrom.pitch) * eased;
+    return result;
 }
 
 bool VrSystem::captureOrigin(XrTime time) {
@@ -715,6 +791,8 @@ bool VrSystem::captureOrigin(XrTime time) {
         xrDestroySpace(_space);
     _space = space;
     _heldValid = false;
+    _uiAim.reset();
+    _uiPose.reset();
 
     const XrVector3f &position = head.pose.position;
     MM_INFO("VR: head origin at ({:.3f}, {:.3f}, {:.3f}) m in the runtime's LOCAL space, turned {:.1f} degrees.",
