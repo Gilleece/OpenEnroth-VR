@@ -390,6 +390,8 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLRenderTarget _worldTarget;
     std::map<GLuint, std::unique_ptr<OpenGLRenderTarget>> _externalTargets; // By colour texture.
     OpenGLRenderTarget *_externalWorldTarget = nullptr;
+    OpenGLRenderTarget *_externalOutput = nullptr; // Wraps the colour texture given to `setExternalWorldTarget`.
+    OpenGLRenderTarget _externalLinearTarget; // What the world is drawn into for an external target with the linear pipeline.
     OpenGLRenderTarget _mirrorTarget;
     bool _mirrorPending = false;
     bool _mirrorPresentPending = false; // The UI layer leaves the mirror for `flushAndScale`.

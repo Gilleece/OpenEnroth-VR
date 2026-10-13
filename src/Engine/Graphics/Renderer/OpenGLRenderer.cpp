@@ -431,7 +431,12 @@ void OpenGLRenderer::EndScene3D() {
         return;
     }
 
-    if (_linearPipeline) {
+    if (_linearPipeline && target == &_externalLinearTarget) {
+        // An external target has no 2D pass of its own, so it gets the tonemapped world here and the 2D quads over it.
+        _externalOutput->bind();
+        drawComposite(*target, Recti(Pointi(0, 0), target->size()), GL_LINEAR);
+        target = _externalOutput;
+    } else if (_linearPipeline) {
         _bindUiTarget(); // The 2D quads are display colours, the 2D pass draws them over the tonemapped world.
         glEnable(GL_SCISSOR_TEST);
         glViewport(0, 0, outputRender.w, outputRender.h);
@@ -652,7 +657,13 @@ TextureRenderId OpenGLRenderer::uiTargetTexture() {
 }
 
 void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {
-    _externalWorldTarget = colorTexture ? _externalTarget(colorTexture, size) : nullptr;
+    _externalOutput = colorTexture ? _externalTarget(colorTexture, size) : nullptr;
+    _externalWorldTarget = _externalOutput;
+    if (_externalOutput && _linearPipeline) {
+        if (_externalLinearTarget.size() != size)
+            _externalLinearTarget.reset(size, RENDER_TARGET_FORMAT_RGBA16F, true);
+        _externalWorldTarget = &_externalLinearTarget;
+    }
 }
 
 void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
@@ -4222,10 +4233,8 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
     BaseRenderer::Reinitialize(firstInit);
 
     if (firstInit) {
-        _linearPipeline = config->graphics.LinearPipeline.value() && !config->vr.Enabled.value();
+        _linearPipeline = config->graphics.LinearPipeline.value();
         _sunShadows = config->graphics.SunShadows.value();
-        if (config->graphics.LinearPipeline.value() && !_linearPipeline)
-            MM_INFO("The linear pipeline is not supported in VR yet, drawing the world without it.");
     }
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);       // Black Background

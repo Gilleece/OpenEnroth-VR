@@ -505,7 +505,7 @@ class GameConfig : public Config {
         Bool LinearPipeline = {this, "linear_pipeline", false,
                                "Blend the 3D world in linear colour in a 16-bit floating point world target, then tonemap it into the"
                                " game viewport. Uses a world target the size of the viewport when world_target_width and"
-                               " world_target_height are not set. Not supported in VR yet. Takes effect on restart."};
+                               " world_target_height are not set. Takes effect on restart."};
         Float Exposure = {this, "exposure", 1.0f, &ValidateExposure,
                           "Brightness multiplier for the 3D world before tonemapping. Only applies with linear_pipeline."};
         Bool Bloom = {this, "bloom", false, "Let light brighter than bloom_threshold glow into its surroundings. Only applies with linear_pipeline."};
