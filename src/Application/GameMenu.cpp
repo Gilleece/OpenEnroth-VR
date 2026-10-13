@@ -255,7 +255,7 @@ void Menu::EventLoop() {
                 static_cast<GUIWindow_GameVideoOptions *>(pGUIWindow_CurrentMenu.get())->cycleTexturePack();
                 continue;
             case UIMSG_ChangeVrSetting:
-                changeVrSetting(static_cast<VrSetting>(param));
+                static_cast<GUIWindow_GameVideoOptions *>(pGUIWindow_CurrentMenu.get())->changeVrLine(param);
                 continue;
 
             case UIMSG_ChangeMusicVolume: {
