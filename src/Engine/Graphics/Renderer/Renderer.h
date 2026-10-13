@@ -297,6 +297,15 @@ class Renderer {
                                 GraphicsImage *texture) = 0;
 
     virtual TextureRenderId CreateTexture(RgbaImageView image, TextureFilter filter) = 0;
+
+    /**
+     * Replaces the pixels of a texture made by `CreateTexture`.
+     *
+     * @param id                        Texture to update.
+     * @param image                     New pixels, the same size as the texture.
+     */
+    virtual void updateTexture(TextureRenderId id, RgbaImageView image) = 0;
+
     virtual void DeleteTexture(TextureRenderId id) = 0;
 
     virtual void BeginScene2D() = 0;

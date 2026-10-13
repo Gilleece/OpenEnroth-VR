@@ -108,6 +108,14 @@ RgbaImage &GraphicsImage::rgba() {
     return *_rgba;
 }
 
+void GraphicsImage::update(RgbaImage image) {
+    assert(!_loader && image.size() == size());
+
+    _rgba = std::move(image);
+    if (_renderId)
+        render->updateTexture(_renderId, *_rgba);
+}
+
 RgbaImageView GraphicsImage::textureRgba() {
     if (!_textureRgba) {
         _textureRgba = _loader->loadTextureRgba();
