@@ -58,6 +58,16 @@ struct TexturePackSpriteEntry {
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackSpriteEntry)
 
 /**
+ * Baked indirect light of a map in a texture pack, as the manifest lists it.
+ */
+struct TexturePackGiEntry {
+    std::string crc32; // CRC-32 of the `games.lod` map entry the probes were baked from, as 8 hex digits.
+    std::string file; // Path of the probe file in the pack, e.g. `gi/d18.blv.bin`.
+    int probes = 0; // Probes in the file, for display only.
+};
+MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackGiEntry)
+
+/**
  * Contents of a texture pack's `manifest.json`.
  */
 struct TexturePackManifest {
@@ -66,5 +76,6 @@ struct TexturePackManifest {
     std::unordered_map<std::string, TexturePackEntry> bitmaps; // Keyed by `bitmaps.lod` entry name.
     std::unordered_map<std::string, TexturePackEntry> icons; // Keyed by `icons.lod` entry name.
     std::unordered_map<std::string, TexturePackSpriteEntry> sprites; // Keyed by `sprites.lod` entry name.
+    std::unordered_map<std::string, TexturePackGiEntry> gi; // Keyed by `games.lod` map file name, e.g. `d18.blv`.
 };
 MM_DECLARE_JSON_SERIALIZATION_FUNCTIONS(TexturePackManifest)

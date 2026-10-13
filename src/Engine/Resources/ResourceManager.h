@@ -1,9 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 
+#include "Engine/Resources/GiProbes.h"
 #include "Engine/Tables/ResourceMaskTable.h"
 
 #include "Utility/Memory/Blob.h"
@@ -192,6 +194,13 @@ class ResourceManager {
      *                                  empty image if there is none.
      */
     RgbaImage packSpriteShape(std::string_view filename);
+
+    /**
+     * @param mapFile                   Map file name in `games.lod`, case-insensitive, e.g. `d18.blv`.
+     * @return                          The texture pack's baked indirect light for the map, or `std::nullopt` if there
+     *                                  is none.
+     */
+    std::optional<GiProbes> packGiProbes(std::string_view mapFile);
 
  private:
     void desaturate(std::span<Color> colors) const;

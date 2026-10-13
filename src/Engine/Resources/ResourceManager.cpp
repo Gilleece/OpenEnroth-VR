@@ -28,6 +28,7 @@
 #include "Utility/MapAccess.h"
 
 #include "EngineFileSystem.h"
+#include "LOD.h"
 #include "TexturePack.h"
 #include "TileGenerator.h"
 
@@ -343,6 +344,14 @@ RgbaImage ResourceManager::packSprite(std::string_view filename, int paletteId) 
     if (result && _texturePack->colors() == TEXTURE_PACK_COLORS_RAW)
         desaturate(result.pixels());
     return result;
+}
+
+std::optional<GiProbes> ResourceManager::packGiProbes(std::string_view mapFile) {
+    std::string name = ascii::toLower(mapFile);
+    if (!_texturePack || !pGames_LOD || !pGames_LOD->exists(name))
+        return std::nullopt;
+
+    return _texturePack->giProbes(name, pGames_LOD->read(name));
 }
 
 float ResourceManager::packSpriteShapeThickness(std::string_view filename) const {

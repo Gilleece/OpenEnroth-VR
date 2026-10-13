@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.27 FATAL_ERROR)
 
 set(ENGINE_RESOURCES_SOURCES
         EngineFileSystem.cpp
+        GiProbes.cpp
         LOD.cpp
         LodSpriteCache.cpp
         ResourceManager.cpp
@@ -10,6 +11,7 @@ set(ENGINE_RESOURCES_SOURCES
 
 set(ENGINE_RESOURCES_HEADERS
         EngineFileSystem.h
+        GiProbes.h
         LOD.h
         LodSpriteCache.h
         ResourceManager.h
@@ -22,6 +24,7 @@ target_check_style(engine_resources)
 
 if(OE_BUILD_TESTS)
     set(TEST_ENGINE_RESOURCES_SOURCES
+            Tests/GiProbes_ut.cpp
             Tests/TexturePack_ut.cpp)
 
     add_library(test_engine_resources OBJECT ${TEST_ENGINE_RESOURCES_SOURCES})

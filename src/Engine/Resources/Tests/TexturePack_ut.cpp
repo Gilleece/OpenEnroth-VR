@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <optional>
 #include <string>
 
 #include "Testing/Unit/UnitTest.h"
@@ -230,4 +231,29 @@ UNIT_TEST(TexturePack, SpriteShape) {
     EXPECT_FALSE(pack.spriteShapeImage("goblb0", lodEntry, {4, 3})); // No thickness, no shape.
     EXPECT_FALSE(pack.spriteShapeImage("gobla0", Blob::fromString("other lod sprite"), {4, 3})); // Made from another sprite.
     EXPECT_FALSE(pack.spriteShapeImage("gobla0", lodEntry, {3, 3})); // Not a pack scale of the sprite.
+}
+
+UNIT_TEST(TexturePack, GiProbes) {
+    // A map's probes are found by the map file name and refused when they were baked from another version of the map.
+    MemoryFileSystem fs("pack");
+    Blob lodEntry = Blob::fromString("lod map");
+    GiProbes probes;
+    probes.dims = Vec3i(2, 2, 1);
+    probes.timeHours = {0.0f};
+    probes.averageIrradiance = {Vec3f(0.1f, 0.1f, 0.1f)};
+    probes.coefficients.assign(probes.probeCount() * GiProbes::COEFFICIENTS, floatToHalf(0.5f));
+    fs.write("manifest.json", Blob::fromString(fmt::format(
+        R"({{"format": 1, "gi": {{"D18.blv": {{"crc32": "{}", "file": "gi/d18.blv.bin", "probes": 4}}, "d19.blv": {{"crc32": "{}", "file": "gi/d19.blv.bin", "probes": 4}}}}}})",
+        crcString(lodEntry), crcString(lodEntry))));
+    fs.write("gi/d18.blv.bin", writeGiProbes(probes));
+    fs.write("gi/d19.blv.bin", Blob::fromString("not probes"));
+
+    TexturePack pack(&fs);
+    std::optional<GiProbes> result = pack.giProbes("d18.BLV", lodEntry);
+    ASSERT_TRUE(result);
+    EXPECT_EQ(result->dims, probes.dims);
+    EXPECT_EQ(result->coefficients, probes.coefficients);
+    EXPECT_FALSE(pack.giProbes("d18.blv", Blob::fromString("changed map"))); // Stale.
+    EXPECT_FALSE(pack.giProbes("d19.blv", lodEntry)); // Malformed.
+    EXPECT_FALSE(pack.giProbes("d20.blv", lodEntry)); // Unlisted.
 }
