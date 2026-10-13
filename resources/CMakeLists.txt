@@ -67,6 +67,8 @@ set(RESOURCE_SOURCES
         shaders/glforcepershader.frag
         shaders/glforcepershader.vert
         shaders/glfxaa.frag
+        shaders/glluminance.frag
+        shaders/glluminance.vert
         shaders/glfxaa.vert
         shaders/gllinesshader.frag
         shaders/gllinesshader.vert

@@ -73,6 +73,10 @@ static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
 static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
+static constexpr GLint ADAPTATION_TEXTURE_UNIT = 7; // The composite samples units 0 and 3 besides.
+static constexpr int LUMINANCE_SIZE = 256; // Of the image the world's average luminance is taken from.
+static constexpr float ADAPTATION_TIME = 2.0f; // Time constant of the eye adaptation, in seconds.
+static constexpr float ADAPTATION_MAX_STEP = 0.1f; // Seconds one update covers at most, so that the eye doesn't adapt across a load at once.
 static constexpr GLint CROSSFADE_TEXTURE_UNIT = 5; // Second side of a billboard's sprite.
 static constexpr GLint SPRITE_SHAPE_TEXTURE_UNIT = 6;
 static constexpr GLint SCENE_DEPTH_TEXTURE_UNIT = 4; // The billboards sample units 0 and 1 only, and 8 in the vertex shader.
@@ -616,6 +620,13 @@ void OpenGLRenderer::drawComposite(const OpenGLRenderTarget &source, const Recti
         bloom = _drawBloom(source);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destination);
     }
+    if (compositeshader.hasDefine("EYE_ADAPTATION")) {
+        _updateEyeAdaptation(source);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, destination);
+        glActiveTexture(GL_TEXTURE0 + ADAPTATION_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, _adaptationTargets[_adaptationIndex].colorTexture());
+        glActiveTexture(GL_TEXTURE0);
+    }
 
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);
@@ -650,6 +661,8 @@ void OpenGLRenderer::drawComposite(const OpenGLRenderTarget &source, const Recti
     uniforms.bloom = BLOOM_TEXTURE_UNIT;
     uniforms.bloomIntensity = bloom ? config->graphics.BloomIntensity.value() : 0.0f;
     uniforms.submit(compositeshader);
+    if (compositeshader.hasDefine("EYE_ADAPTATION"))
+        glUniform1i(compositeshader.uniformLocation("adaptation"), ADAPTATION_TEXTURE_UNIT);
 
     _compositeBuffer.bind();
     glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -740,6 +753,68 @@ GLuint OpenGLRenderer::_drawBloom(const OpenGLRenderTarget &source) {
     _compositeBuffer.unbind();
     glBindTexture(GL_TEXTURE_2D, 0);
     return _bloomTargets[0]->colorTexture();
+}
+
+void OpenGLRenderer::_updateEyeAdaptation(const OpenGLRenderTarget &source) {
+    if (_adaptedFrame == _frameNumber)
+        return;
+
+    int64_t now = platform->tickCount();
+    float seconds = std::clamp((now - _adaptedTime) / 1000.0f, 0.0f, ADAPTATION_MAX_STEP); // Tests restart the clock.
+    float rate = _adaptedFrame == UINT64_MAX ? 1.0f : 1.0f - std::exp(-seconds / ADAPTATION_TIME); // The first update starts at the target.
+    _adaptedFrame = _frameNumber;
+    _adaptedTime = now;
+
+    if (!_luminanceTarget) {
+        _luminanceTarget.reset(Sizei(LUMINANCE_SIZE, LUMINANCE_SIZE), RENDER_TARGET_FORMAT_R16F, false);
+        for (OpenGLRenderTarget &target : _adaptationTargets) {
+            target.reset(Sizei(1, 1), RENDER_TARGET_FORMAT_R16F, false);
+            target.bind();
+            glClearColor(1, 1, 1, 1);
+            glClear(GL_COLOR_BUFFER_BIT);
+        }
+    }
+
+    _ensureFullscreenTriangle();
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    _compositeBuffer.bind();
+
+    _luminanceTarget.bind();
+    glViewport(0, 0, LUMINANCE_SIZE, LUMINANCE_SIZE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, source.colorTexture());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    luminanceshader.use();
+    glUniform1i(luminanceshader.uniformLocation("source"), 0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    drawcalls++;
+
+    glBindTexture(GL_TEXTURE_2D, _luminanceTarget.colorTexture());
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+
+    int next = 1 - _adaptationIndex;
+    _adaptationTargets[next].bind();
+    glViewport(0, 0, 1, 1);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, _adaptationTargets[_adaptationIndex].colorTexture());
+    adaptshader.use();
+    glUniform1i(adaptshader.uniformLocation("source"), 0);
+    glUniform1i(adaptshader.uniformLocation("previous"), 1);
+    glUniform1f(adaptshader.uniformLocation("sourceLevel"), std::log2(static_cast<float>(LUMINANCE_SIZE)));
+    glUniform1f(adaptshader.uniformLocation("rate"), rate);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    drawcalls++;
+    adaptshader.unuse();
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    _compositeBuffer.unbind();
+    _adaptationIndex = next;
 }
 
 void OpenGLRenderer::_ensureFullscreenTriangle() {
@@ -1665,6 +1740,8 @@ void OpenGLRenderer::_readPipelineSettings() {
     _spriteCrossfade = config->graphics.SpriteCrossfade.value();
     _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
     _spriteLighting = _spriteDepth && config->graphics.SpriteLighting.value();
+    _filmicTonemap = _linearPipeline && config->graphics.FilmicTonemap.value();
+    _eyeAdaptation = _linearPipeline && config->graphics.EyeAdaptation.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
@@ -4304,6 +4381,7 @@ void OpenGLRenderer::swapBuffers() {
     }
 
     openGLContext->swapBuffers();
+    _frameNumber++;
 
     if (!_texturesForDeletion.empty()) {
         glDeleteTextures(_texturesForDeletion.size(), _texturesForDeletion.data());
@@ -5588,6 +5666,12 @@ bool OpenGLRenderer::ReloadShaders() {
         indoorMaterialDefines.push_back("TORCH_SHADOWS");
     }
     static constexpr std::string_view aoBlurDefines[] = {"AO_BLUR"};
+    static constexpr std::string_view adaptDefines[] = {"EYE_ADAPT"};
+    std::vector<std::string_view> compositeDefines;
+    if (_filmicTonemap)
+        compositeDefines.push_back("FILMIC_TONEMAP");
+    if (_eyeAdaptation)
+        compositeDefines.push_back("EYE_ADAPTATION");
     std::vector<std::string_view> outdoorLitDefines = outdoorDefines;
     std::vector<std::string_view> outdoorLitMaterialDefines = outdoorMaterialDefines;
     if (_ambientOcclusion) {
@@ -5624,7 +5708,9 @@ bool OpenGLRenderer::ReloadShaders() {
         {&decalshader,            "gldecalshader",    "Decals",                           worldDefines},
         {&forcepershader,         "glforcepershader", "Forced perspective",               worldDefines},
         {&skyshader,              "glskyshader",      "Sky",                              worldDefines},
-        {&compositeshader,        "glcomposite",      "Composite",                        {}},
+        {&compositeshader,        "glcomposite",      "Composite",                        compositeDefines},
+        {&luminanceshader,        "glluminance",      "Luminance",                        {}},
+        {&adaptshader,            "glluminance",      "Eye adaptation",                   adaptDefines},
         {&bloomdownshader,        "glbloom",          "Bloom downsample",                 {}},
         {&bloomupshader,          "glbloom",          "Bloom upsample",                   bloomUpsampleDefines},
         {&fxaashader,             "glfxaa",           "FXAA",                             {}},
