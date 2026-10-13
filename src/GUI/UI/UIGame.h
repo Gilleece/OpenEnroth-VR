@@ -39,14 +39,6 @@ class GUIWindow_GameKeyBindings : public GUIWindow {
 
 
 
-/**
- * Toggles or cycles one entry of the VR block on the video options screen, or recenters the headset view. Takes
- * effect at once.
- *
- * @param setting                       Entry to change.
- */
-void changeVrSetting(VrSetting setting);
-
 class GUIWindow_GameVideoOptions : public GUIWindow {
  public:
     GUIWindow_GameVideoOptions();
@@ -60,8 +52,17 @@ class GUIWindow_GameVideoOptions : public GUIWindow {
      */
     void cycleTexturePack();
 
+    /**
+     * Toggles or cycles the entry on a line of the VR block, recenters the headset view, or flips the block to its
+     * other page. Takes effect at once, apart from `vr.render_scale`, which takes effect on restart.
+     *
+     * @param line                      Line of the block, from the top.
+     */
+    void changeVrLine(int line);
+
  private:
     std::vector<std::string> _texturePacks; // Values for `graphics.texture_pack`, the first one is none.
+    int _vrPage = 0; // Page of the VR block shown.
 };
 
 class GraphicsImage;

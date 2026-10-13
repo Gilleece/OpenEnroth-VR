@@ -207,7 +207,7 @@ enum UIMessageType : uint32_t {
     UIMSG_ToggleTint = 424,
     UIMSG_ChangeGammaLevel = 425,
     UIMSG_ToggleEnhancedGraphics = 430,
-    UIMSG_ChangeVrSetting = 431,
+    UIMSG_ChangeVrSetting = 431, // Param is a line of the VR block on the video options screen, from the top.
     UIMSG_CycleTexturePack = 432,
 
     UIMSG_MMT_MainMenu_MM6 = 426,
@@ -227,7 +227,7 @@ enum UIMessageType : uint32_t {
 };
 
 /**
- * Entries of the VR block on the video options screen, the param of `UIMSG_ChangeVrSetting`.
+ * Entries of the VR block on the video options screen.
  */
 enum class VrSetting {
     VR_SETTING_SNAP_TURN,
@@ -239,9 +239,13 @@ enum class VrSetting {
     VR_SETTING_HEAD_OFFSET_RADIUS,
     VR_SETTING_VIGNETTE,
     VR_SETTING_RECENTER,
-
-    VR_SETTING_FIRST = VR_SETTING_SNAP_TURN,
-    VR_SETTING_LAST = VR_SETTING_RECENTER
+    VR_SETTING_HUD_LAYOUT,
+    VR_SETTING_HUD_DISTANCE,
+    VR_SETTING_HUD_SCALE,
+    VR_SETTING_HUD_SPREAD,
+    VR_SETTING_RENDER_SCALE,
+    VR_SETTING_MORE, // Shows the second page of the block.
+    VR_SETTING_BACK, // Shows the first page again.
 };
 using enum VrSetting;
 

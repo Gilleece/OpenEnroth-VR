@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 #include <memory>
+#include <array>
+#include <span>
 
 #include "GUI/UI/UIGame.h"
 
@@ -59,7 +61,6 @@
 #include "Core/Serialization/PlatformKeySerialization.h"
 
 #include "Utility/Math/TrigLut.h"
-#include "Utility/Segment.h"
 #include "Utility/System/Fs.h"
 
 #include "Library/Logger/Logger.h"
@@ -370,13 +371,31 @@ void GUIWindow_GameKeyBindings::Update() {
 static constexpr Recti VR_PANEL_RECT(244, 142, 212, 156); // Covers the gamma preview panel.
 static constexpr int VR_LINE_TOP = 160;
 static constexpr int VR_LINE_HEIGHT = 15;
+static constexpr int VR_LINE_COUNT = 9; // Lines that fit in the panel.
+
+static constexpr std::array VR_FIRST_PAGE = {VR_SETTING_SNAP_TURN, VR_SETTING_SNAP_TURN_DEGREES, VR_SETTING_MINIMAL_HUD, VR_SETTING_UI_DISTANCE,
+                                             VR_SETTING_UI_WIDTH, VR_SETTING_HEAD_OFFSET_RADIUS, VR_SETTING_VIGNETTE, VR_SETTING_RECENTER,
+                                             VR_SETTING_MORE};
+static constexpr std::array VR_SECOND_PAGE = {VR_SETTING_HUD_LAYOUT, VR_SETTING_HUD_DISTANCE, VR_SETTING_HUD_SCALE, VR_SETTING_HUD_SPREAD,
+                                              VR_SETTING_UI_FOLLOW, VR_SETTING_RENDER_SCALE, VR_SETTING_BACK};
+static_assert(VR_FIRST_PAGE.size() <= VR_LINE_COUNT && VR_SECOND_PAGE.size() <= VR_LINE_COUNT);
 
 /**
- * @param setting                       Entry of the VR block.
- * @return                              Rectangle of its line on the video options screen, which is also its button.
+ * @param page                          Page of the VR block, 0 for the first.
+ * @return                              Entries on the page, top to bottom.
  */
-static Recti vrLineRect(VrSetting setting) {
-    return Recti(VR_PANEL_RECT.x + 2, VR_LINE_TOP + std::to_underlying(setting) * VR_LINE_HEIGHT, VR_PANEL_RECT.w - 4, VR_LINE_HEIGHT - 2);
+static std::span<const VrSetting> vrPage(int page) {
+    if (page == 0)
+        return VR_FIRST_PAGE;
+    return VR_SECOND_PAGE;
+}
+
+/**
+ * @param line                          Line of the VR block, from the top.
+ * @return                              Rectangle of the line on the video options screen, which is also its button.
+ */
+static Recti vrLineRect(int line) {
+    return Recti(VR_PANEL_RECT.x + 2, VR_LINE_TOP + line * VR_LINE_HEIGHT, VR_PANEL_RECT.w - 4, VR_LINE_HEIGHT - 2);
 }
 
 /**
@@ -392,7 +411,12 @@ static T nextStep(T value, std::initializer_list<T> steps) {
     return *steps.begin();
 }
 
-void changeVrSetting(VrSetting setting) {
+/**
+ * Toggles or cycles one entry of the VR block, or recenters the headset view.
+ *
+ * @param setting                       Entry to change.
+ */
+static void changeVrSetting(VrSetting setting) {
     GameConfig::Vr &vr = engine->config->vr;
     switch (setting) {
     case VR_SETTING_SNAP_TURN:
@@ -423,6 +447,24 @@ void changeVrSetting(VrSetting setting) {
         if (engine->_worldFrameViews)
             engine->_worldFrameViews->recenter();
         break;
+    case VR_SETTING_HUD_LAYOUT:
+        vr.HudLayout.setValue(vr.HudLayout.value() == VR_HUD_LAYOUT_CLASSIC ? VR_HUD_LAYOUT_SPREAD : VR_HUD_LAYOUT_CLASSIC);
+        break;
+    case VR_SETTING_HUD_DISTANCE:
+        vr.HudDistance.setValue(nextStep(vr.HudDistance.value(), {0.8f, 1.0f, 1.2f, 1.5f, 2.0f}));
+        break;
+    case VR_SETTING_HUD_SCALE:
+        vr.HudScale.setValue(nextStep(vr.HudScale.value(), {0.75f, 1.0f, 1.25f, 1.5f}));
+        break;
+    case VR_SETTING_HUD_SPREAD:
+        vr.HudSpread.setValue(nextStep(vr.HudSpread.value(), {0.8f, 1.0f, 1.2f, 1.4f}));
+        break;
+    case VR_SETTING_RENDER_SCALE:
+        vr.RenderScale.setValue(nextStep(vr.RenderScale.value(), {0.7f, 0.8f, 1.0f, 1.2f}));
+        break;
+    case VR_SETTING_MORE:
+    case VR_SETTING_BACK:
+        break; // Pages are flipped by the window.
     }
 }
 
@@ -442,6 +484,13 @@ static std::string vrSettingText(VrSetting setting) {
     case VR_SETTING_HEAD_OFFSET_RADIUS: return fmt::format("Head offset radius: {:.1f} m", vr.HeadOffsetRadius.value());
     case VR_SETTING_VIGNETTE: return vr.Vignette.value() ? "Comfort vignette: on" : "Comfort vignette: off";
     case VR_SETTING_RECENTER: return "Recenter now";
+    case VR_SETTING_HUD_LAYOUT: return vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD ? "HUD layout: spread" : "HUD layout: classic";
+    case VR_SETTING_HUD_DISTANCE: return fmt::format("HUD distance: {:.1f} m", vr.HudDistance.value());
+    case VR_SETTING_HUD_SCALE: return fmt::format("HUD scale: {:g}", vr.HudScale.value());
+    case VR_SETTING_HUD_SPREAD: return fmt::format("HUD spread: {:.1f}", vr.HudSpread.value());
+    case VR_SETTING_RENDER_SCALE: return fmt::format("Render scale: {:.1f}, on restart", vr.RenderScale.value());
+    case VR_SETTING_MORE: return "More...";
+    case VR_SETTING_BACK: return "Back";
     }
     return {};
 }
@@ -548,9 +597,9 @@ GUIWindow_GameVideoOptions::GUIWindow_GameVideoOptions()
         CreateButton({22, 238}, {211, 12}, BUTTON_TYPE_NORMAL, 0, UIMSG_CycleTexturePack, 0);
 
     if (render->uiLayer()) {
-        for (VrSetting setting : Segment(VR_SETTING_FIRST, VR_SETTING_LAST)) {
-            Recti rect = vrLineRect(setting);
-            CreateButton(rect.topLeft(), rect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeVrSetting, std::to_underlying(setting));
+        for (int line = 0; line < VR_LINE_COUNT; line++) {
+            Recti rect = vrLineRect(line);
+            CreateButton(rect.topLeft(), rect.size(), BUTTON_TYPE_NORMAL, 0, UIMSG_ChangeVrSetting, line);
         }
     }
 
@@ -598,10 +647,25 @@ void GUIWindow_GameVideoOptions::Update() {
         render->FillRect(VR_PANEL_RECT, colorTable.Black);
         DrawTitleText(assets->pFontSmallnum.get(), 0, 0, ui_gamemenu_video_gamma_title_color, "VR", 3,
                       Recti(VR_PANEL_RECT.x, VR_PANEL_RECT.y + 4, VR_PANEL_RECT.w, 14));
-        for (VrSetting setting : Segment(VR_SETTING_FIRST, VR_SETTING_LAST)) {
-            Recti rect = vrLineRect(setting);
-            DrawTitleText(assets->pFontSmallnum.get(), 0, 0, colorTable.White, vrSettingText(setting), 3, Recti(rect.x, rect.y + 2, rect.w, rect.h));
+        std::span<const VrSetting> page = vrPage(_vrPage);
+        for (int line = 0; line < static_cast<int>(page.size()); line++) {
+            Recti rect = vrLineRect(line);
+            DrawTitleText(assets->pFontSmallnum.get(), 0, 0, colorTable.White, vrSettingText(page[line]), 3, Recti(rect.x, rect.y + 2, rect.w, rect.h));
         }
+    }
+}
+
+void GUIWindow_GameVideoOptions::changeVrLine(int line) {
+    std::span<const VrSetting> page = vrPage(_vrPage);
+    if (line < 0 || line >= static_cast<int>(page.size()))
+        return;
+
+    if (page[line] == VR_SETTING_MORE) {
+        _vrPage = 1;
+    } else if (page[line] == VR_SETTING_BACK) {
+        _vrPage = 0;
+    } else {
+        changeVrSetting(page[line]);
     }
 }
 
