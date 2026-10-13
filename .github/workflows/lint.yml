@@ -128,6 +128,12 @@ jobs:
                 ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
               done
             done
+            for shader in resources/shaders/glbspshader.{vert,frag}; do
+              for defines in "TORCH_SHADOWS" "TORCH_SHADOWS MATERIAL_MAPS" "TORCH_SHADOWS LINEAR_PIPELINE" "TORCH_SHADOWS MATERIAL_MAPS LINEAR_PIPELINE"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
             for shader in resources/shaders/glshadow.{vert,frag}; do
               echo "Checking $shader with SHADOW_SPRITE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" SHADOW_SPRITE

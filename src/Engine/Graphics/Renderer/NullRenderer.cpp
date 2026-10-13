@@ -71,6 +71,8 @@ void NullRenderer::applyPipelineSettings() {}
 
 void NullRenderer::drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) {}
 
+void NullRenderer::drawTorchShadows() {}
+
 void NullRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) {}
 
 void NullRenderer::DrawProjectile(float srcX, float srcY, float a3, float a4,

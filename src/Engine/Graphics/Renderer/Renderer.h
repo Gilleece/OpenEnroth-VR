@@ -136,6 +136,13 @@ class Renderer {
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) = 0;
 
     /**
+     * Draws the shadow maps of the indoor lights nearest to the camera for the 3D passes of this frame. Does nothing
+     * unless torch shadows are enabled and an indoor level is loaded. Call once per frame, between
+     * `WorldFrame::prepare` and the first draw.
+     */
+    virtual void drawTorchShadows() = 0;
+
+    /**
      * @return                          Whether the current 3D pass draws sprites, particles, projectiles and the sky in
      *                                  world space through the view and projection matrices. That's the case when
      *                                  `graphics.world_space_billboards` is set, and always for external world targets,

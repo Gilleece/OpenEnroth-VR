@@ -39,6 +39,8 @@ void WorldFrame::prepare() {
 void WorldFrame::drawShadows() {
     if (_prepared && uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)
         render->drawSunShadows(_sunShadowModels, _sunShadowSprites);
+    if (_prepared && uCurrentlyLoadedLevelType == LEVEL_INDOOR)
+        render->drawTorchShadows();
 }
 
 void WorldFrame::draw() {

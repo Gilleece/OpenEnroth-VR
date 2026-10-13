@@ -72,6 +72,9 @@ static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample un
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
 static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
 static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
+static constexpr GLint TORCH_SHADOW_TEXTURE_UNIT = 16; // The indoor pass binds its arrays to units 0 to 15.
+static constexpr int TORCH_SHADOW_SIZE = 512;
+static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
 static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
@@ -736,6 +739,147 @@ static float sunShadowBillboardRatio() {
     return std::clamp(ambient / 0.85f, 0.0f, 1.0f);
 }
 
+void OpenGLRenderer::drawTorchShadows() {
+    _torchShadowLights.clear();
+    if (!_torchShadows || uCurrentlyLoadedLevelType != LEVEL_INDOOR)
+        return;
+
+    if (!_torchShadowMaps) {
+        _torchShadowCount = config->graphics.TorchShadowCount.value();
+        glGenTextures(1, &_torchShadowMaps);
+        glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, _torchShadowMaps);
+        glTexImage3D(GL_TEXTURE_CUBE_MAP_ARRAY, 0, GL_DEPTH_COMPONENT16, TORCH_SHADOW_SIZE, TORCH_SHADOW_SIZE, _torchShadowCount * 6, 0,
+                     GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+        glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, 0);
+
+        GLenum none = GL_NONE;
+        _torchShadowFramebuffers.resize(_torchShadowCount * 6);
+        glGenFramebuffers(static_cast<GLsizei>(_torchShadowFramebuffers.size()), _torchShadowFramebuffers.data());
+        for (size_t i = 0; i < _torchShadowFramebuffers.size(); i++) {
+            glBindFramebuffer(GL_FRAMEBUFFER, _torchShadowFramebuffers[i]);
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, _torchShadowMaps, 0, static_cast<GLint>(i));
+            glDrawBuffers(1, &none);
+            glReadBuffer(GL_NONE);
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+                MM_ERROR("Torch shadow framebuffer {} is incomplete.", i);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        _torchShadowBuffer.reset(GL_DYNAMIC_DRAW, &TorchShadowVertex::pos, &TorchShadowVertex::normal);
+    }
+
+    // The nearest lights, by how far the camera is from the edge of their reach.
+    Vec3f camera(pCamera3D->vCameraPos.x, pCamera3D->vCameraPos.y, pCamera3D->vCameraPos.z);
+    std::vector<std::pair<float, int>> candidates;
+    for (int i = 0; i < pStationaryLightsStack->uNumLightsActive; i++) {
+        const StationaryLight &light = pStationaryLightsStack->pLights[i];
+        if (light.uRadius >= 1)
+            candidates.emplace_back((light.vPosition - camera).length() - light.uRadius, i);
+    }
+    int count = std::min(static_cast<int>(candidates.size()), _torchShadowCount);
+    std::partial_sort(candidates.begin(), candidates.begin() + count, candidates.end());
+
+    // Walls, floors and ceilings of the sectors each light reaches, gathered every frame because doors move.
+    std::vector<std::pair<int, int>> ranges;
+    _torchShadowVertices.clear();
+    for (int c = 0; c < count; c++) {
+        const StationaryLight &light = pStationaryLightsStack->pLights[candidates[c].second];
+        int first = static_cast<int>(_torchShadowVertices.size());
+        for (const BLVSector &sector : pIndoor->sectors) {
+            if (!sector.boundingBox.intersectsCube(light.vPosition, static_cast<float>(light.uRadius)))
+                continue;
+            for (std::span<uint16_t> ids : {sector.floorIds, sector.wallIds, sector.ceilingIds}) {
+                for (uint16_t faceId : ids) {
+                    const BLVFace &face = pIndoor->faces[faceId];
+                    if (face.Invisible() || face.isPortal() || face.vertexIds.size() < 3)
+                        continue;
+                    for (int z = 0; z + 2 < static_cast<int>(face.vertexIds.size()); z++)
+                        for (int i : {0, z + 1, z + 2})
+                            _torchShadowVertices.push_back({pIndoor->vertices[face.vertexIds[i]], face.facePlane.normal});
+                }
+            }
+        }
+        ranges.emplace_back(first, static_cast<int>(_torchShadowVertices.size()) - first);
+        _torchShadowLights.push_back(candidates[c].second);
+    }
+    if (_torchShadowVertices.empty())
+        return;
+    _torchShadowBuffer.update(_torchShadowVertices);
+
+    GLint framebuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+    std::array<GLint, 4> viewport;
+    glGetIntegerv(GL_VIEWPORT, viewport.data());
+    GLboolean cullFace = glIsEnabled(GL_CULL_FACE);
+    GLboolean blend = glIsEnabled(GL_BLEND);
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean depthTest = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean depthMask = GL_TRUE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glViewport(0, 0, TORCH_SHADOW_SIZE, TORCH_SHADOW_SIZE);
+    torchshadowshader.use();
+    _torchShadowBuffer.bind();
+
+    // Cube map face directions and up vectors, in the order of the faces in a cube map array layer.
+    static const std::array<std::pair<glm::vec3, glm::vec3>, 6> faces = {{
+        {{1, 0, 0}, {0, -1, 0}}, {{-1, 0, 0}, {0, -1, 0}}, {{0, 1, 0}, {0, 0, 1}},
+        {{0, -1, 0}, {0, 0, -1}}, {{0, 0, 1}, {0, -1, 0}}, {{0, 0, -1}, {0, -1, 0}}
+    }};
+    for (size_t c = 0; c < ranges.size(); c++) {
+        const StationaryLight &light = pStationaryLightsStack->pLights[_torchShadowLights[c]];
+        glm::vec3 position(light.vPosition.x, light.vPosition.y, light.vPosition.z);
+        glm::mat4 projection = glm::perspectiveRH_NO(glm::radians(90.0f), 1.0f, TORCH_SHADOW_NEAR, static_cast<float>(light.uRadius));
+        glUniform3f(torchshadowshader.uniformLocation("lightPosition"), position.x, position.y, position.z);
+        glUniform1f(torchshadowshader.uniformLocation("lightRadius"), static_cast<float>(light.uRadius));
+        for (int face = 0; face < 6; face++) {
+            glm::mat4 lightMatrix = projection * glm::lookAtRH(position, position + faces[face].first, faces[face].second);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _torchShadowFramebuffers[c * 6 + face]);
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glUniformMatrix4fv(torchshadowshader.uniformLocation("lightMatrix"), 1, GL_FALSE, &lightMatrix[0][0]);
+            if (ranges[c].second > 0) {
+                glDrawArrays(GL_TRIANGLES, ranges[c].first, ranges[c].second);
+                drawcalls++;
+            }
+        }
+    }
+
+    _torchShadowBuffer.unbind();
+    torchshadowshader.unuse();
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glDepthMask(depthMask);
+    if (cullFace)
+        glEnable(GL_CULL_FACE);
+    if (blend)
+        glEnable(GL_BLEND);
+    if (scissor)
+        glEnable(GL_SCISSOR_TEST);
+    if (!depthTest)
+        glDisable(GL_DEPTH_TEST);
+}
+
+void OpenGLRenderer::_submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers) {
+    if (!shader.hasDefine("TORCH_SHADOWS"))
+        return;
+
+    glActiveTexture(GL_TEXTURE0 + TORCH_SHADOW_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, _torchShadowMaps);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(shader.uniformLocation("torchShadowMaps"), TORCH_SHADOW_TEXTURE_UNIT);
+    glUniform1iv(shader.uniformLocation("torchShadowLayers"), static_cast<GLsizei>(layers.size()), layers.data());
+}
+
 void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) {
     _sunShadowFade = 0;
     if (!_sunShadows || uCurrentlyLoadedLevelType != LEVEL_OUTDOOR)
@@ -1058,6 +1202,7 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
 void OpenGLRenderer::_readPipelineSettings() {
     _linearPipeline = config->graphics.LinearPipeline.value();
     _sunShadows = config->graphics.SunShadows.value();
+    _torchShadows = config->graphics.TorchShadows.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
@@ -4170,6 +4315,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
         }
 
         // stack the static lights next (wall torches)
+        std::array<int, 40> torchShadowLayers;
+        torchShadowLayers.fill(-1);
         for (int i = 0; i < pStationaryLightsStack->uNumLightsActive; ++i) {
             if (num_lights >= 40) break;
 
@@ -4217,6 +4364,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
             uniforms.pointLights[num_lights].diffuse = color;
             uniforms.pointLights[num_lights].specular = Colorf(0.0f, 0.0f, 0.0f);
             uniforms.pointLights[num_lights].radius = test.uRadius;
+            auto cube = std::ranges::find(_torchShadowLights, i);
+            torchShadowLayers[num_lights] = cube == _torchShadowLights.end() ? -1 : static_cast<int>(cube - _torchShadowLights.begin());
             num_lights++;
         }
 
@@ -4241,10 +4390,12 @@ void OpenGLRenderer::DrawIndoorFaces() {
 
         // remaining lights are default-initialized (type = 0)
         uniforms.submit(bspshader);
+        _submitTorchShadows(bspshader, torchShadowLayers);
         bool hasMaterials = std::ranges::any_of(bspmaterials, [](GLuint id) { return id != 0; });
         if (hasMaterials) {
             bspmaterialshader.use();
             uniforms.submit(bspmaterialshader);
+            _submitTorchShadows(bspmaterialshader, torchShadowLayers);
             glUniform1i(bspmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         }
 
@@ -4568,10 +4719,16 @@ bool OpenGLRenderer::ReloadShaders() {
         outdoorDefines.push_back("SUN_SHADOWS");
         outdoorMaterialDefines.push_back("SUN_SHADOWS");
     }
+    std::vector<std::string_view> indoorDefines = worldDefines;
+    std::vector<std::string_view> indoorMaterialDefines = materialDefines;
+    if (_torchShadows) {
+        indoorDefines.push_back("TORCH_SHADOWS");
+        indoorMaterialDefines.push_back("TORCH_SHADOWS");
+    }
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          outdoorDefines},
         {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorDefines},
-        {&bspshader,              "glbspshader",      "Indoor BSP",                       worldDefines},
+        {&bspshader,              "glbspshader",      "Indoor BSP",                       indoorDefines},
         {&textshader,             "gltextshader",     "Text",                             {}},
         {&lineshader,             "gllinesshader",    "Lines",                            {}},
         {&twodshader,             "gltwodshader",     "2D",                               {}},
@@ -4587,7 +4744,8 @@ bool OpenGLRenderer::ReloadShaders() {
         {&shadowspriteshader,     "glshadow",         "Sprite shadow map",                spriteShadowDefines},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           outdoorMaterialDefines},
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", outdoorMaterialDefines},
-        {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}
+        {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        indoorMaterialDefines},
+        {&torchshadowshader,      "gltorchshadow",    "Torch shadow map",                 {}}
     };
 
     SubFileSystem shadersFs("shaders", dfs);

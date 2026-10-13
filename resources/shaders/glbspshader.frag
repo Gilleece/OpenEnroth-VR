@@ -30,6 +30,10 @@ uniform PointLight fspointlights[num_point_lights];
 uniform sampler2DArray textureArray0;
 uniform ivec2 logicaltexsize;
 
+#ifdef TORCH_SHADOWS
+#include "torchshadow.glsl"
+#endif
+
 #ifdef MATERIAL_MAPS
 uniform sampler2DArray materialArray;
 #include "material.glsl"
@@ -124,10 +128,17 @@ void main() {
     result += CalcPointLight(fspointlights[0], fragnorm, vsPos, fragviewdir);
 
     // stack stationary
+#ifdef TORCH_SHADOWS
+    for(int i = 1; i < num_point_lights; i++) {
+        if (fspointlights[i].type == 1.0)
+            result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir) * TorchShadow(i, vsPos, fragnorm);
+    }
+#else
     for(int i = 1; i < num_point_lights; i++) {
         if (fspointlights[i].type == 1.0)
             result += CalcPointLight(fspointlights[i], fragnorm, vsPos, fragviewdir);
     }
+#endif
 
 #ifdef LINEAR_PIPELINE
     result *= linearToSrgb(fragcol.rgb); // Lit in sRGB like the stock shaders, the sRGB curve doesn't commute with the product.

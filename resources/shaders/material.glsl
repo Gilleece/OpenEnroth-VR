@@ -93,8 +93,13 @@ vec3 CalcMaterialLighting(vec4 material, vec3 albedo, vec3 geometricNormal, vec3
     result += CalcPointLightMaterial(fspointlights[0], normal, geometricNormal, fragPos, viewDir, shininess);
 
     for (int i = 1; i < num_point_lights; i++) {
-        if (fspointlights[i].type == 1.0)
+        if (fspointlights[i].type == 1.0) {
+#ifdef TORCH_SHADOWS
+            result += CalcPointLightMaterial(fspointlights[i], normal, geometricNormal, fragPos, viewDir, shininess) * TorchShadow(i, fragPos, geometricNormal);
+#else
             result += CalcPointLightMaterial(fspointlights[i], normal, geometricNormal, fragPos, viewDir, shininess);
+#endif
+        }
     }
 
 #ifdef LINEAR_PIPELINE
