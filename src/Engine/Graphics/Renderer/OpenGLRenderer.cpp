@@ -1704,6 +1704,35 @@ void OpenGLRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {
     glEnable(GL_SCISSOR_TEST);
 }
 
+void OpenGLRenderer::beginUiCard(TextureRenderId colorTexture, Sizei size, const Recti &screenRect) {
+    assert(!_uiCard);
+    DrawTwodVerts();
+    EndTextNew();
+
+    _uiCard = UiCard{_externalTarget(colorTexture, size, false), screenRect};
+    GLfloat clearColor[4];
+    glGetFloatv(GL_COLOR_CLEAR_VALUE, clearColor);
+    _uiCard->target->bind();
+    glDisable(GL_SCISSOR_TEST);
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glClearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+    glEnable(GL_SCISSOR_TEST);
+    _set_ortho_projection();
+    _set_ortho_modelview();
+    ResetUIClipRect();
+}
+
+void OpenGLRenderer::endUiCard() {
+    assert(_uiCard);
+    DrawTwodVerts();
+    EndTextNew();
+    _uiCard.reset();
+    _bindUiTarget();
+    _set_ortho_projection();
+    ResetUIClipRect();
+}
+
 void OpenGLRenderer::copyUiLayerRect(TextureRenderId colorTexture, Sizei size, const Recti &rect, Pointi position) {
     assert(_uiLayer);
 
@@ -2392,7 +2421,11 @@ void OpenGLRenderer::_set_3d_modelview_matrix() {
 
 // TODO(pskelton): to camera?
 void OpenGLRenderer::_set_ortho_projection(bool gameviewport) {
-    if (!gameviewport) {  // project over entire window
+    if (_uiCard) { // Over the card's rectangle of the screen.
+        _setUiViewport();
+        const Recti &rect = _uiCard->screenRect;
+        projmat = glm::ortho(float(rect.x), float(rect.x + rect.w), float(rect.y + rect.h), float(rect.y), float(-1), float(1));
+    } else if (!gameviewport) {  // project over entire window
         _setUiViewport();
         projmat = glm::ortho(float(0), float(outputRender.w), float(outputRender.h), float(0), float(-1), float(1));
     } else {  // project to game viewport
@@ -2415,11 +2448,18 @@ void OpenGLRenderer::_setWorldViewport() {
 }
 
 void OpenGLRenderer::_setUiViewport() {
-    Sizei size = uiTargetSize();
+    Sizei size = _uiCard ? _uiCard->target->size() : uiTargetSize();
     glViewport(0, 0, size.w, size.h);
 }
 
 Recti OpenGLRenderer::_uiPixels(const Recti &rect) const {
+    if (_uiCard) {
+        const Recti &card = _uiCard->screenRect;
+        Sizei size = _uiCard->target->size();
+        auto x = [&](int value) { return static_cast<int>(std::lround(static_cast<float>(value - card.x) * size.w / card.w)); };
+        auto y = [&](int value) { return static_cast<int>(std::lround(static_cast<float>(card.y + card.h - value) * size.h / card.h)); };
+        return Recti(x(rect.x), y(rect.y + rect.h), x(rect.x + rect.w) - x(rect.x), y(rect.y) - y(rect.y + rect.h));
+    }
     return Recti(rect.x * _uiScale, (outputRender.h - (rect.y + rect.h)) * _uiScale, rect.w * _uiScale, rect.h * _uiScale);
 }
 
@@ -2445,7 +2485,9 @@ OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture
 }
 
 void OpenGLRenderer::_bindUiTarget() {
-    if (_usesUiTarget()) {
+    if (_uiCard) {
+        _uiCard->target->bind();
+    } else if (_usesUiTarget()) {
         _uiTarget.bind();
     } else {
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -3989,14 +4031,14 @@ void OpenGLRenderer::SetUIClipRect(const Recti &rect) {
 }
 
 void OpenGLRenderer::ResetUIClipRect() {
-    this->SetUIClipRect(Recti(Pointi(0, 0), outputRender));
+    this->SetUIClipRect(_uiCard ? _uiCard->screenRect : Recti(Pointi(0, 0), outputRender));
 }
 
 void OpenGLRenderer::BeginScene2D() {
     // Setup for 2D
 
-    if (_usesUiTarget())
-        _uiTarget.bind();
+    if (_uiCard || _usesUiTarget())
+        _bindUiTarget();
 
     glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
@@ -4015,8 +4057,8 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     if (engine->callObserver)
         engine->callObserver->notify(CALL_DRAW_2D_TEXTURE, texture->name());
 
-    // Early out if destination is completely outside render area.
-    if (dstRect.x >= outputRender.w || dstRect.y >= outputRender.h)
+    // Early out if destination is completely outside render area. A card can reach past it, its clip rectangle limits it.
+    if (!_uiCard && (dstRect.x >= outputRender.w || dstRect.y >= outputRender.h))
         return;
 
     // Clip destination rect against clip rect.
@@ -4048,7 +4090,7 @@ void OpenGLRenderer::DrawQuad2D(GraphicsImage *texture, const Recti &srcRect, co
     int gltexid = texture->renderId().value();
 
     // Images without a higher resolution replacement stay sharp when the UI scale magnifies them a whole number of times.
-    bool nearest = texture->textureScale() == 1 && _uiScale > 1 && srcRect.w > 0 && srcRect.h > 0 &&
+    bool nearest = !_uiCard && texture->textureScale() == 1 && _uiScale > 1 && srcRect.w > 0 && srcRect.h > 0 &&
                    dstRect.w * _uiScale % srcRect.w == 0 && dstRect.h * _uiScale % srcRect.h == 0 && dstRect.w * _uiScale > srcRect.w;
 
     float drawx = clippedDst.x;

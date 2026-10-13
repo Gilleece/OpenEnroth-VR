@@ -89,9 +89,11 @@ static int64_t countFadeFrames(const VrSystem::FrameStats &stats) {
 
 static void checkFrames(VrSystem *vr, std::string_view phase) {
     // Each frame carries the eyes' projection layer if it has the world, a quad over it while it fades out, and the UI
-    // as one quad or the spread HUD's six, which only spreads around the world.
+    // as one quad or the spread HUD's six, which only spreads around the world. Every quad shows its whole swapchain
+    // image, since runtimes don't agree on where a part of one is.
     if (!vr)
         return;
+    EXPECT_EQ(vr->frameStats().partialImageQuads, 0) << phase;
     for (const auto &[kind, count] : vr->frameStats().kinds) {
         uint32_t expected = (kind.world ? 1 : 0) + (kind.fade ? 1 : 0) + (kind.spreadHud ? 6 : 1);
         EXPECT_EQ(kind.layers, expected) << phase << ": " << count << " frames, world " << kind.world << ", fade " << kind.fade

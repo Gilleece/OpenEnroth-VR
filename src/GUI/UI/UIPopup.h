@@ -3,8 +3,22 @@
 #include <string>
 
 #include "Library/Geometry/Point.h"
+#include "Library/Geometry/Rect.h"
 
 void DrawPopupWindow(int uX, int uY, int uWidth, int uHeight);  // idb
+
+/**
+ * @param content                   Rectangle in 640x480 UI coordinates.
+ * @return                          Rectangle that a popup's frame around `content` takes up.
+ */
+Recti PopupFrameAround(const Recti &content);
+
+/**
+ * Draws a popup's parchment and frame around a rectangle, leaving what's inside it as it is.
+ *
+ * @param content                   Rectangle in 640x480 UI coordinates, see `PopupFrameAround`.
+ */
+void DrawPopupFrameAround(const Recti &content);
 
 /**
  * If `mousePos` is over a character portrait, uses the picked item on that character and return true. Note that using

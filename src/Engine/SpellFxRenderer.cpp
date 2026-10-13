@@ -1305,16 +1305,20 @@ void SpellFxRenderer::finishFrame() {
 }
 
 //----- (004A902A) --------------------------------------------------------
+void SpellFxRenderer::UpdatePlayerBuffAnims() {
+    for (PlayerBuffAnim &buff : pCharacterBuffs) {
+        if (!buff.bRender)
+            continue;
+        buff.uSpellAnimTimeElapsed += gameTimer->dt();
+        if (buff.uSpellAnimTimeElapsed >= buff.uSpellAnimTime)
+            buff.bRender = false;
+    }
+}
+
 void SpellFxRenderer::DrawPlayerBuffAnims() {
     for (unsigned i = 0; i < 4; ++i) {
         PlayerBuffAnim *buff = &pCharacterBuffs[i];
         if (!buff->bRender) continue;
-
-        buff->uSpellAnimTimeElapsed += gameTimer->dt();
-        if (buff->uSpellAnimTimeElapsed >= buff->uSpellAnimTime) {
-            buff->bRender = false;
-            continue;
-        }
 
         GraphicsImage *icon = pIconsFrameTable->animationFrame(buff->uSpellIconID, buff->uSpellAnimTimeElapsed);
         render->DrawQuad2D(icon, {pPlayerPortraitsXCoords_For_PlayerBuffAnimsDrawing[i], 385});

@@ -1453,8 +1453,6 @@ void GameUI_DrawPartySpells() {
 void GameUI_DrawPortraits() {
     GraphicsImage *pPortrait;                 // [sp-4h] [bp-1Ch]@27
 
-    pParty->updateDelayedReaction();
-
     for (int i = 0; i < pParty->pCharacters.size(); ++i) {
         Character *pPlayer = &pParty->pCharacters[i];
         if (pPlayer->IsEradicated()) {

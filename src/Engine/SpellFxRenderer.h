@@ -144,6 +144,11 @@ struct SpellFxRenderer {
      */
     void finishFrame();
 
+    /**
+     * Moves the animations over the portraits on by a frame, and ends those that are over.
+     */
+    void UpdatePlayerBuffAnims();
+
     void DrawPlayerBuffAnims();
     void LoadAnimations();
 

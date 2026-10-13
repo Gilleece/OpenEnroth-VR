@@ -203,12 +203,16 @@ void Io::Mouse::drawLayerCursor() {
 
     render->BeginScene2D();
     render->ResetUIClipRect();
+    drawCursorImage();
+    render->DrawTwodVerts();
+}
+
+void Io::Mouse::drawCursorImage() {
     if (cursor_img) {
         render->DrawQuad2D(cursor_img, position() - cursor_img->size() / 2);
     } else {
         render->DrawQuad2D(assets->getIcon("MICON1"), position());
     }
-    render->DrawTwodVerts();
 }
 
 void Io::Mouse::DrawPickedItem() {
