@@ -544,7 +544,8 @@ class GameConfig : public Config {
         Float ShadowStrength = {this, "shadow_strength", 0.0f, &ValidateShadowStrength,
                                 "Part of the ambient light that sun shadows take away too. At 0 a shadow only takes the sun's direct light."};
         ConfigEntry<ShadowFilterMode> ShadowFilter = {this, "shadow_filter", SHADOW_FILTER_PCF3X3,
-                                                      "Filtering of sun shadow edges, 'pcf3x3' or the cheaper 'pcf1'."};
+                                                      "Filtering of sun shadow edges, 'pcf3x3' or the cheaper 'pcf1'. Always pcf1 in VR, where the"
+                                                      " eye images are too large for pcf3x3."};
         Int ShadowMapSize = {this, "shadow_map_size", 2048, &ValidateShadowMapSize,
                              "Size of each of the four sun shadow maps, 1024 or 2048. Takes effect on restart."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
@@ -802,6 +803,10 @@ class GameConfig : public Config {
             "How far in metres the eyes can move away from the centre of the VR view. The default keeps them inside "
             "the party's collision volume, so that leaning can't put them past a wall or a ceiling the party touches."};
 
+        Float RenderScale = {this, "render_scale", 1.0f, &ValidateRenderScale,
+            "Size of the eye images as a multiple of the size the headset recommends, from 0.5 to 1.5. Most of the cost "
+            "of a frame grows with the number of pixels, which goes with the square of this."};
+
      private:
         static float ValidateUiDistance(float distance) {
             return std::clamp(distance, 0.3f, 10.0f);
@@ -817,6 +822,9 @@ class GameConfig : public Config {
         }
         static float ValidateHeadOffsetRadius(float radius) {
             return std::clamp(radius, 0.0f, 10.0f);
+        }
+        static float ValidateRenderScale(float scale) {
+            return std::clamp(scale, 0.5f, 1.5f);
         }
     };
 

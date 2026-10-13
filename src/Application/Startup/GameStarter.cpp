@@ -187,7 +187,7 @@ void GameStarter::initialize() {
     // Init VR, on the OpenGL context the renderer has just made current.
     if (_config->vr.Enabled.value() && !_options.headless) {
         std::unique_ptr<VrSystem> vrSystem = std::make_unique<VrSystem>();
-        if (vrSystem->initialize()) {
+        if (vrSystem->initialize(_config->vr.RenderScale.value())) {
             _vrSystem = _application->installComponent(std::move(vrSystem));
         } else {
             MM_ERROR("VR: could not start, continuing without VR.");
