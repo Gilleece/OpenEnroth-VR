@@ -120,7 +120,15 @@ def test_bakes_every_map_and_records_it_in_the_manifest(tmp_path):
     engine = FakeEngine({"d18.blv": gi_bytes(), "out01.odm": outdoor_gi_bytes()})
     result = run_bake(data, pack, Path("OpenEnroth"), runner=engine)
     assert [command[command.index("--map") + 1] for command in engine.commands] == ["d18.blv", "out01.odm"]
-    assert engine.commands[0][:5] == ["OpenEnroth", "--headless", "--data-path", str(data), "bake-gi"]
+    assert engine.commands[0][:7] == [
+        "OpenEnroth",
+        "--headless",
+        "--data-path",
+        str(data),
+        "--log-level",
+        "error",
+        "bake-gi",
+    ]
     assert result.failures == {}
     assert result.baked == {
         "d18.blv": (2.5, len(gi_bytes())),

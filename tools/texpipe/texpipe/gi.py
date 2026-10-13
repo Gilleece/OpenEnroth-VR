@@ -137,6 +137,8 @@ def bake_command(engine: Path, data: Path, out: Path, map_name: str, report: Pat
         "--headless",
         "--data-path",
         str(data),
+        "--log-level",
+        "error",  # Loading every map logs a few hundred warnings.
         "bake-gi",
         "--out",
         str(out),
@@ -148,8 +150,9 @@ def bake_command(engine: Path, data: Path, out: Path, map_name: str, report: Pat
 
 
 def run_engine(command: list[str]) -> int:
-    """Runs the engine with its log silenced and returns its exit code."""
-    return subprocess.run(command, stdout=subprocess.DEVNULL, check=False).returncode
+    """Runs the engine and returns its exit code."""
+    # On Windows the engine waits for a key press when it exits with an error, unless its stdin is closed.
+    return subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, check=False).returncode
 
 
 @dataclass
