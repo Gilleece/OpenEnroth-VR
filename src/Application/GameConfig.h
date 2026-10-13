@@ -519,8 +519,9 @@ class GameConfig : public Config {
                                  "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
         Bool Enhanced = {this, "enhanced", false,
                          "Turn on the enhanced renderer: linear_pipeline, bloom, FXAA, sun_shadows, torch_shadows, "
-                         "world_space_billboards and a ui_scale of 2, with the 3D world drawn at the window's resolution. The UI "
-                         "scale changes on restart. Entries in this file that differ from their defaults take precedence over it."};
+                         "ambient_occlusion, world_space_billboards and a ui_scale of 2, with the 3D world drawn at the window's "
+                         "resolution. The UI scale changes on restart. Entries in this file that differ from their defaults take "
+                         "precedence over it."};
         Bool LinearPipeline = {this, "linear_pipeline", false,
                                "Blend the 3D world in linear colour in a 16-bit floating point world target, then tonemap it into the"
                                " game viewport. Uses a world target the size of the viewport when world_target_width and"
