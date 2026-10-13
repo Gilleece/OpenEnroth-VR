@@ -234,12 +234,12 @@ void GameStarter::initialize() {
 GameStarter::~GameStarter() {
     _application->removeComponent<EngineControlComponent>(); // Join the control thread first.
 
-    _game.reset();
-    _engine.reset();
 #ifdef OE_BUILD_VR
     if (_vrSystem)
-        _application->removeComponent<VrSystem>(); // Before the renderer and the OpenGL context go away.
+        _application->removeComponent<VrSystem>(); // Before the engine, the renderer and the OpenGL context go away.
 #endif
+    _game.reset();
+    _engine.reset();
     _overlaySystem.reset();
     _scriptingSystem.reset();
     _renderer.reset();
