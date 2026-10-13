@@ -153,14 +153,16 @@ void main() {
     vec3 surfaceNormal = normalize(shapeRight * sign(shapeSize.x) * shapeNormal.x + vec3(0.0, 0.0, 1.0) * shapeNormal.y +
                                    spriteNormal * sqrt(max(1.0 - dot(shapeNormal, shapeNormal), 0.0)));
     vec3 relight = SpriteLightSum(surfaceNormal, worldPos, toEye) / max(SpriteLightSum(spriteNormal, worldPos, toEye), vec3(0.05));
-    if (shapeThickness > 0.0)
-        fragcol.rgb *= clamp(relight, vec3(SPRITE_RELIGHT_MIN), vec3(SPRITE_RELIGHT_MAX));
+    relight = shapeThickness > 0.0 ? clamp(relight, vec3(SPRITE_RELIGHT_MIN), vec3(SPRITE_RELIGHT_MAX)) : vec3(1.0);
 #endif
 #ifdef SUN_SHADOWS
     fragcol.rgb *= sunlight;
 #endif
 #ifdef LINEAR_PIPELINE
     fragcol.rgb = srgbToLinear(fragcol.rgb);
+#endif
+#ifdef SPRITE_LIGHTING
+    fragcol.rgb *= relight; // On linear light, so that the clamp bounds the brightness the eye sees.
 #endif
 
 #ifdef LINEAR_PIPELINE
