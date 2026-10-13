@@ -23,7 +23,7 @@ class GraphicsImage {
     /**
      * Loads the higher resolution replacements of `images` and their materials on several threads, so that
      * `textureRgba()` and `materialRgba()` find them loaded. Their loaders must be safe to call from several threads
-     * at once, like those that read from a texture pack.
+     * at once, like those that read from a texture pack. Images whose replacements are loaded already are skipped.
      *
      * @param images                    Images to load the replacements of, each at most once.
      */

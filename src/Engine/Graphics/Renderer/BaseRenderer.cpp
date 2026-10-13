@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "Engine/AssetsManager.h"
 #include "Engine/Engine.h"
 #include "Engine/SpellFxRenderer.h"
 #include "Engine/Party.h"
@@ -31,6 +32,7 @@
 #include "Engine/Tables/DecorationTable.h"
 #include "Engine/Graphics/Image.h"
 #include "Engine/EngineGlobals.h"
+#include "Engine/Resources/ResourceManager.h"
 
 #include "Library/Logger/Logger.h"
 
@@ -291,8 +293,31 @@ void BaseRenderer::PrepareDecorationsRenderList_ODM() {
     }
 }
 
+/**
+ * Loads the texture pack images of this frame's sprite billboards all at once on several threads, instead of one by
+ * one as they are drawn. Does nothing without a texture pack.
+ */
+static void loadBillboardReplacements() {
+    if (!engine->resources()->hasTexturePack())
+        return;
+
+    std::vector<GraphicsImage *> images;
+    std::unordered_set<GraphicsImage *> seen;
+    for (unsigned int i = 0; i < ::uNumBillboardsToDraw; ++i) {
+        const RenderBillboard &billboard = pBillboardRenderList[i];
+        if (!billboard.hwsprite || !billboard.hwsprite->texture)
+            continue;
+
+        GraphicsImage *variant = assets->getSpriteVariant(billboard.hwsprite->texture, billboard.uPaletteId);
+        if (variant && seen.insert(variant).second)
+            images.push_back(variant);
+    }
+    GraphicsImage::loadReplacements(images);
+}
+
 void BaseRenderer::TransformBillboards() {
     pODMRenderParams->uNumBillboards = ::uNumBillboardsToDraw;
+    loadBillboardReplacements();
 
     for (unsigned int i = 0; i < ::uNumBillboardsToDraw; ++i) {
         RenderBillboard *p = &pBillboardRenderList[i];

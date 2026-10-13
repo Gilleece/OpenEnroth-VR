@@ -58,13 +58,18 @@ void GraphicsImage::loadReplacements(std::span<GraphicsImage *const> images) {
             image->_materialRgba = image->_loader->loadMaterialRgba(image->_textureRgba->size());
     };
 
+    std::vector<GraphicsImage *> pending;
+    for (GraphicsImage *image : images)
+        if (!image->_textureRgba || (*image->_textureRgba && !image->_materialRgba))
+            pending.push_back(image);
+
     std::atomic<size_t> next = 0;
     auto work = [&] {
-        for (size_t i = next++; i < images.size(); i = next++)
-            load(images[i]);
+        for (size_t i = next++; i < pending.size(); i = next++)
+            load(pending[i]);
     };
 
-    size_t threadCount = std::min<size_t>({images.size(), std::max(1u, std::thread::hardware_concurrency()), MAX_REPLACEMENT_THREADS});
+    size_t threadCount = std::min<size_t>({pending.size(), std::max(1u, std::thread::hardware_concurrency()), MAX_REPLACEMENT_THREADS});
     std::vector<std::thread> threads;
     for (size_t i = 1; i < threadCount; i++)
         threads.emplace_back(work);
