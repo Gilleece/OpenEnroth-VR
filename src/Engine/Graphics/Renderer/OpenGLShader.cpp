@@ -66,6 +66,7 @@ bool OpenGLShader::load(const Blob &vertSource, const Blob &fragSource, bool ope
     }
 
     _id = result;
+    _uniformLocations.clear();
     _paths = fmt::format("{}+{}", vertSource.displayPath(), fragSource.displayPath());
     _defines.assign(defines.begin(), defines.end());
     return true;
@@ -77,14 +78,19 @@ void OpenGLShader::release() {
 
     glDeleteProgram(_id);
     _id = 0;
+    _uniformLocations.clear();
 }
 
 int OpenGLShader::uniformLocation(const char *name) const {
     assert(isValid());
 
+    if (auto pos = _uniformLocations.find(std::string_view(name)); pos != _uniformLocations.end())
+        return pos->second;
+
     int location = glGetUniformLocation(_id, name);
     if (location == -1)
         MM_ERROR("Uniform '{}' not found in shader program '{}'", name, _paths);
+    _uniformLocations.emplace(name, location);
     return location;
 }
 

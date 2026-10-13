@@ -3,9 +3,11 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "Utility/Memory/Blob.h"
+#include "Utility/String/TransparentFunctors.h"
 
 class FileSystem;
 
@@ -41,7 +43,7 @@ class OpenGLShader {
     /**
      * @param name                      Macro name.
      * @return                          Whether the program was compiled with `name` defined. Uniforms that only a
-     *                                  variant uses must only be set on that variant, `uniformLocation` logs every
+     *                                  variant uses must only be set on that variant, `uniformLocation` logs each
      *                                  uniform it can't find.
      */
     [[nodiscard]] bool hasDefine(std::string_view name) const;
@@ -58,4 +60,5 @@ class OpenGLShader {
     unsigned _id = 0;
     std::string _paths;
     std::vector<std::string> _defines;
+    mutable std::unordered_map<std::string, int, TransparentStringHash, TransparentStringEquals> _uniformLocations;
 };
