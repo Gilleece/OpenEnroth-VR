@@ -185,7 +185,6 @@ The headset view starts at the head's position and facing when the session begin
 
 Things known to be left for later:
 * Spell targeting that picks the closest actor uses the headset's culling view, which is wider than the flat view. Whether that feels right needs a session in the headset.
-* Snow is drawn in the UI pass, so in the headset it falls on the flat UI screen rather than in the world.
 * With `vr.minimal_hud` the buttons that the right frame paints can't be seen but still take clicks.
 
 
