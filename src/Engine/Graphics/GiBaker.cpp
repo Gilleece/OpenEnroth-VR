@@ -33,8 +33,8 @@
 static constexpr int GI_RAYS_PER_PROBE = 256;
 static constexpr float GI_INDOOR_SPACING = 128.0f; // World units between indoor probes, grown until the grid fits.
 static constexpr int GI_INDOOR_MAX_PROBES = 65536;
-static constexpr float GI_OUTDOOR_SPACING = 1024.0f;
-static constexpr int GI_OUTDOOR_GRID = 64; // Probes along x and y, covering the 128 terrain cells of 512 units.
+static constexpr float GI_OUTDOOR_SPACING = 512.0f; // One probe per terrain cell.
+static constexpr int GI_OUTDOOR_GRID = 128; // Probes along x and y, covering the 128 terrain cells.
 static constexpr std::array<float, 3> GI_OUTDOOR_LAYERS = {64.0f, 256.0f, 768.0f};
 static constexpr std::array<float, 7> GI_OUTDOOR_HOURS = {0.0f, 6.0f, 9.0f, 12.0f, 15.0f, 18.0f, 21.0f};
 static constexpr float GI_RAY_LENGTH = 16384.0f;
@@ -389,6 +389,14 @@ static std::vector<BakeLight> outdoorLights() {
     return result;
 }
 
+/**
+ * The ambient curve and the sun at ambient + 0.3 are the sun uniforms that `DrawOutdoorTerrain` and
+ * `DrawOutdoorBuildings` in `OpenGLRenderer` set for both pipelines, and the sun's path is that of
+ * `OutdoorLocation::UpdateSunlightVectors`. A change to either has to be made here too.
+ *
+ * @param hour                          Time of day.
+ * @return                              The outdoor sky at that time.
+ */
 static BakeSky outdoorSky(float hour) {
     float minutes = hour * 60.0f;
     BakeSky result;
