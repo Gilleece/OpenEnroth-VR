@@ -128,10 +128,18 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     /**
      * Copies the UI layer into the UI swapchain, recreating the swapchain if the UI changed size.
      *
-     * @param[out] layer                Quad layer that shows the UI in front of the head.
+     * @param[out] layers               Quad layers that show the UI, one in front of the head, or one per element of
+     *                                  the spread HUD.
      * @return                          Whether there was a UI layer to copy.
      */
-    bool copyUi(XrCompositionLayerQuad *layer);
+    bool copyUi(std::vector<XrCompositionLayerQuad> *layers);
+
+    /**
+     * Cuts the world viewport out of the UI quad, and adds a quad for each element of the spread HUD.
+     *
+     * @param[in,out] layers            The UI quad, placed, followed by the HUD elements' quads.
+     */
+    void spreadHud(std::vector<XrCompositionLayerQuad> *layers);
 
     /**
      * Places the UI quad for this frame, fixed in front of the eyes or following the head lazily as `vr.ui_follow`
@@ -220,6 +228,12 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     std::chrono::steady_clock::time_point _uiAimTime; // When it started.
     std::optional<XrPosef> _uiPose; // Of the UI quad in the last frame, in the head origin space.
     glm::vec3 _uiHead = glm::vec3(0); // Head position in the head origin space in that frame.
+    uint32_t _maxLayerCount = 0; // Composition layers the runtime takes in a frame.
+    bool _hudSpread = false; // Whether the last frame showed the spread HUD.
+    bool _hudWanted = false; // Whether the settings and the screen asked for it in that frame.
+    std::vector<XrPosef> _hudPoses; // Of the spread HUD's element quads in that frame, in VIEW space.
+    float _hudMetresPerPixel = 0; // Of those quads.
+    std::optional<std::array<float, 5>> _hudPlacement; // Settings the spread HUD was last logged with.
     int64_t _swapchainFormat = 0;
     bool _running = false;
     bool _focused = false;

@@ -34,6 +34,7 @@
 #include "Io/KeyboardActionMapping.h"
 #include "Io/Mouse.h"
 
+#include "Library/Geometry/Rect.h"
 #include "Library/Logger/Logger.h"
 #include "Library/Platform/Interface/PlatformEvents.h"
 
@@ -54,6 +55,27 @@ static constexpr float VIGNETTE_MIN_MOVE = 0.5f; // Game units per frame, below 
 static constexpr std::chrono::milliseconds VIGNETTE_MOVE_HOLD(50); // How long the party counts as moving after it last moved.
 static constexpr float CULLING_MARGIN_RAD = 5 * M_PI / 180; // Slack for the culling yaw and pitch, rounded to the party's units.
 static constexpr float MAX_CULLING_HALF_FOV_RAD = 85 * M_PI / 180;
+
+/**
+ * Part of the game screen that the spread HUD shows on a quad of its own, hanging in VIEW space around the head and
+ * facing it.
+ */
+struct HudElement {
+    const char *name;
+    Recti rect; // In the game's 640x480 layout.
+    float yawDegrees; // Of the quad's centre, positive to the right.
+    float pitchDegrees; // Positive up.
+};
+
+static constexpr std::array<HudElement, 5> HUD_ELEMENTS = {{
+    {"status bar", Recti(0, 352, 468, 24), 0, -24},
+    {"portraits", Recti(0, 376, 468, 104), 0, -31},
+    {"minimap", Recti(468, 0, 172, 140), 30, 20},
+    {"right panel", Recti(468, 140, 172, 204), 34, 0},
+    {"buttons", Recti(468, 344, 172, 136), 30, -21},
+}};
+static constexpr Recti HUD_VIEWPORT(8, 8, 460, 344); // Inside the frame around the world view.
+static constexpr uint32_t HUD_LAYER_COUNT = static_cast<uint32_t>(2 + HUD_ELEMENTS.size()); // With the viewport and the world's projection layer.
 
 using PfnWglSwapIntervalExt = BOOL (WINAPI *)(int interval);
 using PfnWglGetSwapIntervalExt = int (WINAPI *)();
@@ -251,6 +273,25 @@ bool VrSystem::pickRay(Pointi uiPosition, Vec3f *origin, Vec3f *direction) {
     if (!_running || !_lastCullingCamera)
         return false;
 
+    if (_hudSpread) {
+        for (size_t i = 0; i < HUD_ELEMENTS.size(); i++) {
+            const Recti &rect = HUD_ELEMENTS[i].rect;
+            if (!rect.contains(uiPosition))
+                continue;
+
+            // The point under the cursor on the element's quad in VIEW space, then in the game's view axes, forward, left and up.
+            const XrPosef &pose = _hudPoses[i];
+            glm::quat facing(pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+            glm::vec3 local((uiPosition.x + 0.5f - rect.x - rect.w / 2.0f) * _hudMetresPerPixel,
+                            (rect.y + rect.h / 2.0f - uiPosition.y - 0.5f) * _hudMetresPerPixel, 0);
+            glm::vec3 point = glm::vec3(pose.position.x, pose.position.y, pose.position.z) + facing * local;
+            glm::vec3 world = _lastPickOrientation * glm::normalize(glm::vec3(-point.z, -point.x, point.y));
+            *origin = _lastPickOrigin;
+            *direction = Vec3f(world.x, world.y, world.z);
+            return true;
+        }
+    }
+
     Sizei size = render->GetRenderDimensions();
     float width = engine->config->vr.UiWidth.value();
     float height = width * size.h / size.w;
@@ -434,9 +475,11 @@ bool VrSystem::createInstance() {
 
     XrSystemProperties systemProperties = {XR_TYPE_SYSTEM_PROPERTIES};
     if (check(xrGetSystemProperties(_instance, _systemId, &systemProperties), "xrGetSystemProperties")) {
-        MM_INFO("VR: headset '{}', vendor {:#x}, swapchains up to {}x{}, orientation tracking {}, position tracking {}.",
+        _maxLayerCount = systemProperties.graphicsProperties.maxLayerCount;
+        MM_INFO("VR: headset '{}', vendor {:#x}, swapchains up to {}x{}, up to {} layers, orientation tracking {}, position tracking {}.",
                 systemProperties.systemName, systemProperties.vendorId,
                 systemProperties.graphicsProperties.maxSwapchainImageWidth, systemProperties.graphicsProperties.maxSwapchainImageHeight,
+                _maxLayerCount,
                 systemProperties.trackingProperties.orientationTracking ? "on" : "off",
                 systemProperties.trackingProperties.positionTracking ? "on" : "off");
     }
@@ -657,9 +700,10 @@ void VrSystem::endFrame() {
         projection.views = _projectionViews.data();
         layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&projection));
     }
-    XrCompositionLayerQuad ui = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+    std::vector<XrCompositionLayerQuad> ui;
     if (_frameState.shouldRender && copyUi(&ui))
-        layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&ui));
+        for (const XrCompositionLayerQuad &quad : ui)
+            layers.push_back(reinterpret_cast<const XrCompositionLayerBaseHeader *>(&quad));
 
     XrFrameEndInfo endInfo = {XR_TYPE_FRAME_END_INFO};
     endInfo.displayTime = _frameState.predictedDisplayTime;
@@ -692,7 +736,7 @@ void VrSystem::endFrame() {
     _viewsLocated = false;
 }
 
-bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
+bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     if (!render->uiLayer())
         return false;
 
@@ -722,13 +766,89 @@ bool VrSystem::copyUi(XrCompositionLayerQuad *layer) {
         MM_INFO("VR: UI shown {:.2f} m wide at {:.2f} m.", width, distance);
         _uiPlacement = Vec2f(width, distance);
     }
-    layer->layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT; // The UI target holds premultiplied colour.
-    layer->eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-    layer->subImage.swapchain = _ui.swapchain;
-    layer->subImage.imageRect.extent = {_ui.size.w, _ui.size.h};
-    layer->size = {width, width * _ui.size.h / _ui.size.w};
-    placeUi(layer, distance);
+    XrCompositionLayerQuad &layer = layers->emplace_back(XrCompositionLayerQuad{XR_TYPE_COMPOSITION_LAYER_QUAD});
+    layer.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT; // The UI target holds premultiplied colour.
+    layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+    layer.subImage.swapchain = _ui.swapchain;
+    layer.subImage.imageRect.extent = {_ui.size.w, _ui.size.h};
+    layer.size = {width, width * _ui.size.h / _ui.size.w};
+    placeUi(&layer, distance);
+
+    bool wanted = engine->config->vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD && current_screen_type == SCREEN_GAME;
+    bool spread = wanted && _maxLayerCount >= HUD_LAYER_COUNT;
+    if (spread != _hudSpread || wanted != _hudWanted) {
+        if (wanted && !spread) {
+            MM_INFO("VR: frame {} shows the HUD on one quad, the runtime takes {} layers and the spread HUD needs {}.", _frameIndex, _maxLayerCount,
+                    HUD_LAYER_COUNT);
+        } else {
+            MM_INFO("VR: frame {} shows the HUD {}.", _frameIndex, spread ? "spread around the view" : "on one quad");
+        }
+    }
+    _hudSpread = spread;
+    _hudWanted = wanted;
+    if (spread)
+        spreadHud(layers);
     return true;
+}
+
+/**
+ * @param rect                          Rectangle in the game's layout.
+ * @param screen                        Size of that layout.
+ * @param image                         Size of the UI swapchain images.
+ * @return                              The same rectangle in the swapchain images, which have their origin at the
+ *                                      bottom left in OpenGL.
+ */
+static XrRect2Di imageRect(const Recti &rect, Sizei screen, Sizei image) {
+    float scaleX = static_cast<float>(image.w) / screen.w;
+    float scaleY = static_cast<float>(image.h) / screen.h;
+    XrRect2Di result;
+    result.offset = {static_cast<int32_t>(std::lround(rect.x * scaleX)), static_cast<int32_t>(std::lround((screen.h - rect.y - rect.h) * scaleY))};
+    result.extent = {static_cast<int32_t>(std::lround(rect.w * scaleX)), static_cast<int32_t>(std::lround(rect.h * scaleY))};
+    return result;
+}
+
+void VrSystem::spreadHud(std::vector<XrCompositionLayerQuad> *layers) {
+    const GameConfig::Vr &config = engine->config->vr;
+    Sizei screen = render->GetRenderDimensions();
+
+    // The viewport stays where it is on the UI quad, so that it picks the same way.
+    XrCompositionLayerQuad &viewport = layers->front();
+    float quadMetresPerPixel = viewport.size.width / screen.w;
+    glm::quat quadFacing(viewport.pose.orientation.w, viewport.pose.orientation.x, viewport.pose.orientation.y, viewport.pose.orientation.z);
+    glm::vec3 offset((HUD_VIEWPORT.x + HUD_VIEWPORT.w / 2.0f - screen.w / 2.0f) * quadMetresPerPixel,
+                     (screen.h / 2.0f - HUD_VIEWPORT.y - HUD_VIEWPORT.h / 2.0f) * quadMetresPerPixel, 0);
+    glm::vec3 centre = glm::vec3(viewport.pose.position.x, viewport.pose.position.y, viewport.pose.position.z) + quadFacing * offset;
+    viewport.pose.position = {centre.x, centre.y, centre.z};
+    viewport.size = {HUD_VIEWPORT.w * quadMetresPerPixel, HUD_VIEWPORT.h * quadMetresPerPixel};
+    viewport.subImage.imageRect = imageRect(HUD_VIEWPORT, screen, _ui.size);
+    XrCompositionLayerQuad quad = viewport;
+
+    float distance = config.HudDistance.value();
+    float spread = config.HudSpread.value();
+    _hudMetresPerPixel = config.UiWidth.value() / screen.w * distance / config.UiDistance.value() * config.HudScale.value();
+    std::array<float, 5> placement = {distance, config.HudScale.value(), spread, config.UiWidth.value(), config.UiDistance.value()};
+    bool log = _hudPlacement != placement;
+    _hudPlacement = placement;
+
+    _hudPoses.clear();
+    for (const HudElement &element : HUD_ELEMENTS) {
+        float yaw = element.yawDegrees * spread * static_cast<float>(M_PI) / 180;
+        float pitch = element.pitchDegrees * spread * static_cast<float>(M_PI) / 180;
+        glm::quat facing = glm::angleAxis(-yaw, glm::vec3(0, 1, 0)) * glm::angleAxis(pitch, glm::vec3(1, 0, 0));
+        glm::vec3 position = facing * glm::vec3(0, 0, -distance); // VIEW space looks along -z.
+        const XrPosef &pose = _hudPoses.emplace_back(XrPosef{{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}});
+
+        XrCompositionLayerQuad &layer = layers->emplace_back(quad);
+        layer.space = _viewSpace;
+        layer.pose = pose;
+        layer.size = {element.rect.w * _hudMetresPerPixel, element.rect.h * _hudMetresPerPixel};
+        layer.subImage.imageRect = imageRect(element.rect, screen, _ui.size);
+        if (log) {
+            MM_INFO("VR: HUD {} at ({:.3f}, {:.3f}, {:.3f}) m in VIEW space, {:.3f}x{:.3f} m, from image rectangle {}x{} at {}, {}.", element.name,
+                    position.x, position.y, position.z, layer.size.width, layer.size.height, layer.subImage.imageRect.extent.width,
+                    layer.subImage.imageRect.extent.height, layer.subImage.imageRect.offset.x, layer.subImage.imageRect.offset.y);
+        }
+    }
 }
 
 void VrSystem::placeUi(XrCompositionLayerQuad *layer, float distance) {
