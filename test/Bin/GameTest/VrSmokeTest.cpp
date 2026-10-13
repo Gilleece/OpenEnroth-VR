@@ -121,6 +121,7 @@ GAME_TEST(VrSmoke, Session) {
         engine->config->vr.HudLayout.setValue(VR_HUD_LAYOUT_CLASSIC);
         if (vr) {
             vr->setHeadTurn(0, 0);
+            vr->setHeadShift(Vec3f());
             vr->setPositionTracking(true);
         }
     });
@@ -195,6 +196,27 @@ GAME_TEST(VrSmoke, Session) {
             compared++;
         }
         EXPECT_GT(compared, 0);
+
+        // Moving the head by as much as tracking noise leaves them exactly where they were, moving it further turns them.
+        vr->setHeadShift(Vec3f(0.003f, 0, 0));
+        game.tick(2);
+        std::map<uint16_t, Vec3f> nudged = uprightSpriteAxes();
+        vr->setHeadShift(Vec3f(0.2f, 0, 0));
+        game.tick(2);
+        std::map<uint16_t, Vec3f> leaned = uprightSpriteAxes();
+        vr->setHeadShift(Vec3f());
+        int still = 0;
+        int followed = 0;
+        for (const auto &[id, axis] : ahead) {
+            if (nudged.contains(id)) {
+                EXPECT_EQ(nudged.at(id), axis) << "object " << id;
+                still++;
+            }
+            if (leaned.contains(id) && leaned.at(id) != axis)
+                followed++;
+        }
+        EXPECT_GT(still, 0);
+        EXPECT_GT(followed, 0);
     }
     phase("turning the head");
 

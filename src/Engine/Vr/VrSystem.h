@@ -110,6 +110,13 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     void setHeadTurn(float yawDegrees, float pitchDegrees);
 
     /**
+     * Moves the head by a fixed offset on top of its tracked position, for tests that can't move a headset.
+     *
+     * @param metres                    Offset in the head origin space, x to the right, y up and z back.
+     */
+    void setHeadShift(Vec3f metres);
+
+    /**
      * Makes the head untracked in position the way a headset that only tracks orientation is, for tests. The head
      * origin is captured again when this changes.
      *
@@ -299,10 +306,12 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
      *
      * @param index                     Eye index, 0 is the left eye.
      * @param view                      Eye view located for this frame.
+     * @param spriteShift               Offset from the eye to where the sprites take it to be when they pick the side
+     *                                  of their frame to show, in the head origin space.
      * @param frame                     Prepared world frame.
      * @return                          Whether the eye was drawn.
      */
-    bool drawEye(int index, const XrView &view, WorldFrame &frame);
+    bool drawEye(int index, const XrView &view, glm::vec3 spriteShift, WorldFrame &frame);
 
     /**
      * @param index                     Eye index, 0 is the left eye.
@@ -375,6 +384,8 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     int64_t _frameIndex = 0;
     FrameStats _frameStats;
     glm::quat _headTurn = glm::quat(1, 0, 0, 0); // Set by `setHeadTurn`, in the game's view axes.
+    glm::vec3 _headShift = glm::vec3(0); // Set by `setHeadShift`.
+    std::optional<glm::vec3> _spriteHead; // Head position the sprites face, in the head origin space, see `drawViews`.
     bool _positionTracking = true; // Set by `setPositionTracking`.
     int64_t _worldFrameCount = 0;
     std::chrono::steady_clock::time_point _summaryTime; // Of the last frame summary in the log.
