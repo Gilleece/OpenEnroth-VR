@@ -323,6 +323,11 @@ class OpenGLRenderer : public BaseRenderer {
     void _submitWater(const OpenGLShader &shader, const Colorf *reflection);
 
     /**
+     * Copies the depth buffer of the world viewport into `_sceneDepth`, for the soft edges of additive billboards.
+     */
+    void _copySceneDepth();
+
+    /**
      * Creates `_waterNormals` if it doesn't exist yet.
      */
     void _ensureWaterNormals();
@@ -451,6 +456,13 @@ class OpenGLRenderer : public BaseRenderer {
     int _aoIndoorVertexCount = 0;
     int _aoIndoorVersion = 0; // `IndoorLocation::geometryVersion` of `_aoIndoorBuffer`.
     Recti _aoViewport; // World viewport the occlusion was drawn for.
+
+    // soft particles
+    GLuint _sceneDepth = 0; // Copy of the world's depth buffer, taken before the billboards.
+    GLuint _sceneDepthFramebuffer = 0;
+    Sizei _sceneDepthSize;
+    Recti _sceneDepthViewport; // World viewport `_sceneDepth` was copied from.
+    bool _sceneDepthCopied = false; // Whether `_sceneDepth` holds the current view.
 
     // linear pipeline sky and water
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
