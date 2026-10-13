@@ -534,6 +534,10 @@ class GameConfig : public Config {
         Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
         ConfigEntry<AntialiasingMode> Antialiasing = {this, "antialiasing", ANTIALIASING_OFF,
                                                       "Antialiasing of the 3D world, 'off' or 'fxaa'. Only applies with linear_pipeline."};
+        Bool SpriteDepth = {this, "sprite_depth", false,
+                            "Give sprites the depth of a texture pack's sprite shapes: they cut into walls, floors and each other,"
+                            " and each eye sees them with its own parallax. Only applies with linear_pipeline and"
+                            " world_space_billboards."};
         Bool SpriteCrossfade = {this, "sprite_crossfade", false,
                                 "Blend a sprite between its two nearest sides as it turns, instead of switching sides every 45"
                                 " degrees. Only applies with world_space_billboards."};

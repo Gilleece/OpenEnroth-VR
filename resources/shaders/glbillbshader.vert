@@ -15,6 +15,16 @@ out float crossfade;
 flat out int crossfadePaletteid;
 #endif
 
+#ifdef SPRITE_DEPTH
+layout (location = 11) in vec3 vaShapeRight;
+layout (location = 12) in vec2 vaShapeSize;
+layout (location = 13) in float vaShapeThickness;
+
+flat out vec3 shapeRight;
+flat out vec2 shapeSize;
+flat out float shapeThickness;
+#endif
+
 out vec4 colour;
 out vec2 texuv;
 out float screenspace;
@@ -45,6 +55,11 @@ void main() {
     texuv = vaTexUV;
     screenspace = vaScreenSpace;
     paletteid = int(palid);
+#ifdef SPRITE_DEPTH
+    shapeRight = vaShapeRight;
+    shapeSize = vaShapeSize;
+    shapeThickness = vaShapeThickness;
+#endif
 #ifdef SPRITE_CROSSFADE
     crossfadeTexuv = vaCrossfadeTexUV;
     crossfade = vaCrossfade;

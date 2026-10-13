@@ -32,6 +32,7 @@ class NullRenderer : public BaseRenderer {
     virtual void drawVignette(TextureRenderId colorTexture, Sizei size, float strength, Vec2f center) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
+    virtual bool spriteShapes() override;
     virtual void applyPipelineSettings() override;
     virtual void drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) override;
     virtual void drawTorchShadows() override;

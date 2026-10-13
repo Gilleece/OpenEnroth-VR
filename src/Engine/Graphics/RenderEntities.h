@@ -128,6 +128,9 @@ struct WorldBillboard {
     int yaw = 0;
     bool centered = false;
     Vec2f scale; // World units per sprite pixel.
+    GraphicsImage *shape = nullptr; // Shape of the side shown, see `TexturePackShape`, null when there's none.
+    float shapeThickness = 0; // Game units across the shape's depth range.
+    Vec2f sideExtent; // Half width and height of the side shown in world units, negative half width when mirrored.
     GraphicsImage *crossfadeTexture = nullptr; // Neighbouring side blended in, null when there's none.
     std::array<Vec2f, 4> crossfadeTexcoords = {{}};
     float crossfade = 0; // Weight of `crossfadeTexture`, up to 0.5 at the boundary between the sides.

@@ -49,9 +49,46 @@ vec4 SpriteSide(sampler2D image, vec2 uv, int palette) {
 }
 #endif
 
+#ifdef SPRITE_DEPTH
+flat in vec3 shapeRight;
+flat in vec2 shapeSize;
+flat in float shapeThickness; // 0 for billboards without a shape.
+
+uniform sampler2D spriteShape; // RG normal, B depth with 0.5 on the sprite's plane, A coverage.
+uniform vec3 eyePosition;
+uniform vec3 parallaxOrigin; // Where the sprite is seen without parallax, the head between the eyes.
+uniform int depthPrepass; // Only the depth of the opaque parts is drawn.
+uniform mat4 view;
+uniform mat4 projection;
+
+const float SPRITE_FOOT_FADE = 0.1; // Part of the sprite's height, at its bottom, where the depth flattens to its plane.
+#endif
+
 void main() {
+#ifdef SPRITE_DEPTH
+    // The sprite's surface as a height field over its plane, with the parallax of this eye against the head in two
+    // steps, so the eyes see it differently but the head sees the stock image.
+    vec3 spriteNormal = normalize(cross(vec3(0.0, 0.0, 1.0), shapeRight));
+    if (dot(spriteNormal, eyePosition - worldPos) < 0.0)
+        spriteNormal = -spriteNormal;
+    vec3 toEye = normalize(eyePosition - worldPos);
+    vec3 toOrigin = normalize(parallaxOrigin - worldPos);
+    vec2 slope = vec2(dot(toEye, shapeRight), -toEye.z) / max(dot(toEye, spriteNormal), 0.0001) -
+                 vec2(dot(toOrigin, shapeRight), -toOrigin.z) / max(dot(toOrigin, spriteNormal), 0.0001);
+    slope = clamp(slope, vec2(-1.0), vec2(1.0));
+    vec2 parallax = shapeThickness > 0.0 ? slope * shapeThickness / shapeSize : vec2(0.0);
+    vec2 spriteuv = texuv + parallax * (texture(spriteShape, texuv).b - 0.5);
+    spriteuv = texuv + parallax * (texture(spriteShape, spriteuv).b - 0.5);
+    float spriteDepth = (texture(spriteShape, spriteuv).b - 0.5) * shapeThickness * clamp((1.0 - spriteuv.y) / SPRITE_FOOT_FADE, 0.0, 1.0);
+    vec4 spriteClip = projection * view * vec4(worldPos + spriteNormal * spriteDepth, 1.0);
+    gl_FragDepth = shapeThickness > 0.0 ? spriteClip.z / spriteClip.w * 0.5 + 0.5 : gl_FragCoord.z;
+#endif
 #ifdef SPRITE_CROSSFADE
+#ifdef SPRITE_DEPTH
+    vec4 sideA = SpriteSide(texture0, spriteuv, paletteid);
+#else
     vec4 sideA = SpriteSide(texture0, texuv, paletteid);
+#endif
     vec4 sideB = SpriteSide(texture1, crossfadeTexuv, crossfadePaletteid);
     // Colour from the sides that cover the pixel, by weight. Coverage grows to both silhouettes at the boundary, so
     // where only one side covers a pixel it stays solid rather than turning see-through.
@@ -61,13 +98,24 @@ void main() {
     float coverage = mix(sideA.a, max(sideA.a, sideB.a), crossfade * 2.0);
     vec4 fragcol = vec4(sidesColour, coverage);
 #else
+#ifdef SPRITE_DEPTH
+    vec4 fragcol = texture(texture0, spriteuv);
+    if (any(lessThan(spriteuv, vec2(0.0))) || any(greaterThan(spriteuv, vec2(1.0))))
+        fragcol = vec4(0.0);
+#else
     vec4 fragcol = texture(texture0, texuv);
+#endif
     int index = int(fragcol.r * 255.0);
     vec4 newcol = vec4(texelFetch(paltex2D, ivec2(index, paletteid), 0));
 
     if (paletteid > 0)
         if (index > 0)
             fragcol = vec4(newcol.r, newcol.g, newcol.b, 1.0);
+#endif
+
+#ifdef SPRITE_DEPTH
+    if (depthPrepass != 0 && fragcol.a < 0.5)
+        discard;
 #endif
 
     fragcol *= colour;

@@ -165,6 +165,12 @@ class Renderer {
      *                                  `graphics.world_space_billboards` is set, and always for external world targets,
      *                                  which are drawn from views other than the party camera.
      */
+    /**
+     * @return                          Whether world space sprites are drawn with the depth of their texture pack
+     *                                  shapes.
+     */
+    virtual bool spriteShapes() = 0;
+
     virtual bool worldSpaceBillboards() = 0;
 
     /**

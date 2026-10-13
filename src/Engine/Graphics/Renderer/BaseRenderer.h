@@ -81,6 +81,15 @@ class BaseRenderer : public Renderer {
      * @param eye                           Position the billboard is seen from.
      */
     void crossfadeSpriteSides(WorldBillboard *billboard, const Vec3f &eye);
+
+    /**
+     * Grows a sprite billboard's quad to cover a second side and the parallax of its shape, and maps the sides onto
+     * it. Does nothing to a billboard with neither.
+     *
+     * @param billboard                     Billboard showing its side, with `sideExtent` and `shape` set.
+     * @param otherExtent                   Half width and height of the second side, zero for none.
+     */
+    void fitSpriteQuad(WorldBillboard *billboard, Vec2f otherExtent);
     void buildTerrainBloodsplatDecals();
     void buildBuildingBloodsplatDecals();
     void buildIndoorBloodsplatDecals();
