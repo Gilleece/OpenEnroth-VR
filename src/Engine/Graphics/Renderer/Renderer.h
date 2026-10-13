@@ -126,7 +126,8 @@ class Renderer {
 
     /**
      * Draws the sun's shadow maps for the 3D passes of this frame. Does nothing unless sun shadows are enabled and an
-     * outdoor level is loaded. Call once per frame, between `WorldFrame::prepare` and the first draw.
+     * outdoor level is loaded. Call once per frame, between `WorldFrame::prepare` and the first draw. The shadow
+     * cascades cover what `pCamera3D` sees, which in VR is the head's culling camera.
      *
      * @param casterModels              Indices into `OutdoorLocation::pBModels` of the building models that can cast
      *                                  shadows into the shadow distance.

@@ -155,7 +155,7 @@ The 3D world is drawn through a small set of pieces that also let it go to a VR 
 
 #### Camera views
 
-`CameraView` in `Engine/Graphics/CameraView.h` holds everything a 3D pass needs to know about the camera it draws from: the eye position, the view and projection matrices, the frustum planes and the viewport in the render target. `CameraView::fromCamera3D` builds one from `pCamera3D`, which follows the party, and asserts that the camera sits at the party's eye. `CameraView::fromPose` builds one from any position and orientation with an asymmetric frustum, which is how a headset eye is described. `Renderer::BeginScene3D` takes a `CameraView`, and every draw in the pass uses its matrices.
+`CameraView` in `Engine/Graphics/CameraView.h` holds everything a 3D pass needs to know about the camera it draws from: the eye position, the view and projection matrices, the frustum planes and the viewport in the render target. `CameraView::fromCamera3D` builds one from `pCamera3D`, which follows the party between frames and can be aimed at another pose with `Camera3D::updateFromPose`. `CameraView::fromPose` builds one from any position and orientation with an asymmetric frustum, which is how a headset eye is described. `Renderer::BeginScene3D` takes a `CameraView`, and every draw in the pass uses its matrices.
 
 #### World frames
 

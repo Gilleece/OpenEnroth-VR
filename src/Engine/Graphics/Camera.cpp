@@ -107,15 +107,19 @@ void Camera3D::debug_outline_sw(RenderVertexSoft *a2,
 void Camera3D::updateFromParty() {
     _viewPitch = pParty->_viewPitch;
     _viewYaw = pParty->_viewYaw;
-    vCameraPos.x = pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    vCameraPos.y = pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0);
-    vCameraPos.z = pParty->pos.z + pParty->eyeLevel;  // 193, but real 353
+    vCameraPos = partyEyePosition();
     _fovOverrideRad = 0;
     _nearClipOverride = 0;
 
     CalculateRotations(pParty->_viewYaw, pParty->_viewPitch);
     CreateViewMatrixAndProjectionScale();
     BuildViewFrustum();
+}
+
+glm::vec3 Camera3D::partyEyePosition() {
+    return glm::vec3(pParty->pos.x - pParty->_yawGranularity * cosf(2 * M_PI * pParty->_viewYaw / 2048.0),
+                     pParty->pos.y - pParty->_yawGranularity * sinf(2 * M_PI * pParty->_viewYaw / 2048.0),
+                     pParty->pos.z + pParty->eyeLevel);  // 193, but real 353
 }
 
 void Camera3D::updateFromPose(Vec3f position, int yaw, int pitch, float horizontalFovRad, float nearClip) {
