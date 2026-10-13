@@ -89,6 +89,7 @@ static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
 static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
+static constexpr float SUN_SHADOW_ANGLE_STEP = 0.25f; // Degrees the shadows' sun moves at a time, about every three seconds in daytime.
 static constexpr float CONTACT_SHADOW_STRENGTH = 0.7f; // Darkening of the linear colour at the middle of the ellipse in full daylight.
 static constexpr float CONTACT_SHADOW_SUNLIT_SCALE = 0.6f; // Part of the strength left when the sun casts shadows.
 static constexpr float CONTACT_SHADOW_MIN_SIZE = 24.0f; // World units across the ellipse's long axis.
@@ -834,7 +835,7 @@ void OpenGLRenderer::setExternalFramePacing(bool external) {
  * @param[out] fade                     How strong the sun's shadows are, from 0 below the horizon to 1 at
  *                                      `SUN_SHADOW_FADE_ELEVATION` and above.
  * @return                              Unit vector towards the sun. Same as `OutdoorLocation::UpdateSunlightVectors`,
- *                                      but with the seconds too, so that shadows move smoothly instead of a step a
+ *                                      but with the seconds too, so that the sky moves smoothly instead of a step a
  *                                      minute.
  */
 static Vec3f sunDirection(Time time, float *fade) {
@@ -1292,6 +1293,11 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
         return;
 
     _ensureSunShadowResources();
+
+    // The shadow maps move with the sun in steps, every texel of a turning map lands somewhere else each frame.
+    float step = glm::radians(SUN_SHADOW_ANGLE_STEP);
+    float angle = std::round(std::atan2(sun.z, sun.x) / step) * step;
+    sun = Vec3f(std::cos(angle), 0, std::sin(angle));
     _sunShadowDirection = sun;
 
     // The sprite quads stand upright and turn to face the sun, the same quads go into every cascade.
@@ -1386,6 +1392,7 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
         glm::vec3 lightCentre = glm::vec3(lightRotation * glm::vec4(centre, 1));
         lightCentre.x = std::floor(lightCentre.x / texel) * texel;
         lightCentre.y = std::floor(lightCentre.y / texel) * texel;
+        lightCentre.z = std::floor(lightCentre.z / texel) * texel;
         float zNear = -lightCentre.z - radius - SUN_SHADOW_EXTRUSION;
         float zFar = -lightCentre.z + radius;
         glm::mat4 projection = glm::ortho(lightCentre.x - radius, lightCentre.x + radius, lightCentre.y - radius, lightCentre.y + radius, zNear, zFar);
