@@ -64,6 +64,28 @@ uniform mat4 projection;
 const float SPRITE_FOOT_FADE = 0.1; // Part of the sprite's height, at its bottom, where the depth flattens to its plane.
 #endif
 
+#ifdef SPRITE_LIGHTING
+#include "lighting.glsl"
+
+#define num_point_lights 20
+uniform Sunlight sun;
+uniform PointLight fspointlights[num_point_lights];
+
+const float SPRITE_RELIGHT_MIN = 0.5; // Range of the relighting against the stock look.
+const float SPRITE_RELIGHT_MAX = 1.5;
+
+// The level's light reaching a surface facing `normal`, without its colour.
+vec3 SpriteLightSum(vec3 normal, vec3 pos, vec3 viewDir) {
+    vec3 result = sun.ambient;
+    if (dot(sun.direction, sun.direction) > 0.0) // Indoors there is no sun.
+        result += sun.diffuse * max(dot(normal, normalize(sun.direction)), 0.0);
+    for (int i = 0; i < num_point_lights; i++)
+        if (fspointlights[i].type > 0.0)
+            result += CalcPointLight(fspointlights[i], normal, pos, viewDir);
+    return result;
+}
+#endif
+
 void main() {
 #ifdef SPRITE_DEPTH
     // The sprite's surface as a height field over its plane, with the parallax of this eye against the head in two
@@ -119,6 +141,15 @@ void main() {
 #endif
 
     fragcol *= colour;
+#ifdef SPRITE_LIGHTING
+    // The stock tint stays the light of a flat sprite, the shape's normals move that light around.
+    vec2 shapeNormal = texture(spriteShape, spriteuv).rg * 2.0 - 1.0;
+    vec3 surfaceNormal = normalize(shapeRight * sign(shapeSize.x) * shapeNormal.x + vec3(0.0, 0.0, 1.0) * shapeNormal.y +
+                                   spriteNormal * sqrt(max(1.0 - dot(shapeNormal, shapeNormal), 0.0)));
+    vec3 relight = SpriteLightSum(surfaceNormal, worldPos, toEye) / max(SpriteLightSum(spriteNormal, worldPos, toEye), vec3(0.05));
+    if (shapeThickness > 0.0)
+        fragcol.rgb *= clamp(relight, vec3(SPRITE_RELIGHT_MIN), vec3(SPRITE_RELIGHT_MAX));
+#endif
 #ifdef SUN_SHADOWS
     fragcol.rgb *= sunlight;
 #endif
