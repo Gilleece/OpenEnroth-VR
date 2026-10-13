@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "Engine/Graphics/LightsStack.h"
+#include "Engine/Graphics/RenderEntities.h"
 
 /**
  * The 3D world part of a frame, split into a `prepare` step that updates all the engine state the frame needs and a
@@ -57,5 +58,6 @@ class WorldFrame {
  private:
     LightsSnapshot _staticGeometryLights;
     std::vector<int> _sunShadowModels; // Building models that can cast sun shadows, culled by distance only.
+    std::vector<SunShadowSprite> _sunShadowSprites; // Same for decorations and actors.
     bool _prepared = false;
 };

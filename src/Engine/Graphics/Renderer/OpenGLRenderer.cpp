@@ -34,6 +34,7 @@
 #include "Engine/Objects/Decoration.h"
 #include "Engine/Graphics/LightsStack.h"
 #include "Engine/Graphics/Outdoor.h"
+#include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Indoor.h"
 #include "Engine/Graphics/ParticleEngine.h"
 #include "Engine/Tables/TextureFrameTable.h"
@@ -716,7 +717,18 @@ static Vec3f sunDirection(Time time, float *fade) {
     return Vec3f(std::cos(angle), 0, std::sin(angle));
 }
 
-void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels) {
+/**
+ * @return                              Brightness of a sprite in sun shadow relative to one in the sun. Terrain and
+ *                                      buildings in shadow keep the sun's ambient light, while in the sun they reach
+ *                                      the 0.85 the shaders clamp the sun to, so sprites take their ratio.
+ */
+static float sunShadowBillboardRatio() {
+    float minutes = pParty->uCurrentMinute + pParty->uCurrentHour * 60.0f;
+    float ambient = 0.15f + (std::sin((minutes - 360.0f) * 2 * static_cast<float>(M_PI) / 1440) + 1) * 0.27f; // As DrawOutdoorTerrain.
+    return std::clamp(ambient / 0.85f, 0.0f, 1.0f);
+}
+
+void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) {
     _sunShadowFade = 0;
     if (!_sunShadows || uCurrentlyLoadedLevelType != LEVEL_OUTDOOR)
         return;
@@ -727,6 +739,44 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels) {
         return;
 
     _ensureSunShadowResources();
+    _sunShadowDirection = sun;
+
+    // The sprite quads stand upright and turn to face the sun, the same quads go into every cascade.
+    Vec3f right = cross(Vec3f(-sun.x, -sun.y, 0), Vec3f(0, 0, 1));
+    right /= right.length();
+    struct SpriteBatch {
+        GLuint texture;
+        bool palette;
+        int first;
+        int count;
+    };
+    std::vector<SpriteBatch> spriteBatches;
+    _sunShadowSpriteVertices.clear();
+    for (const SunShadowSprite &caster : casterSprites) {
+        int paletteId = caster.paletteId;
+        GLuint texture = static_cast<GLuint>(billboardTextureId(caster.sprite->texture, &paletteId));
+        float halfWidth = caster.sprite->uWidth / 2.0f * caster.scale;
+        float height = caster.sprite->uHeight * caster.scale;
+        float left = caster.mirrored ? 1.0f : 0.0f;
+        std::array<ShadowSpriteVertex, 4> corners = {{
+            {caster.pos - right * halfWidth + Vec3f(0, 0, height), Vec2f(left, 0), static_cast<float>(paletteId)},
+            {caster.pos - right * halfWidth, Vec2f(left, 1), static_cast<float>(paletteId)},
+            {caster.pos + right * halfWidth, Vec2f(1 - left, 1), static_cast<float>(paletteId)},
+            {caster.pos + right * halfWidth + Vec3f(0, 0, height), Vec2f(1 - left, 0), static_cast<float>(paletteId)}
+        }};
+        if (spriteBatches.empty() || spriteBatches.back().texture != texture)
+            spriteBatches.push_back({texture, paletteId != 0, static_cast<int>(_sunShadowSpriteVertices.size()), 0});
+        for (int i : {0, 1, 2, 0, 2, 3})
+            _sunShadowSpriteVertices.push_back(corners[i]);
+        spriteBatches.back().count += 6;
+    }
+    if (!_sunShadowSpriteBuffer) {
+        _sunShadowSpriteBuffer.reset(GL_DYNAMIC_DRAW, &ShadowSpriteVertex::pos, &ShadowSpriteVertex::texuv, &ShadowSpriteVertex::paletteId);
+        shadowspriteshader.use();
+        glUniform1i(shadowspriteshader.uniformLocation("texture0"), 0);
+    }
+    if (!_sunShadowSpriteVertices.empty())
+        _sunShadowSpriteBuffer.update(_sunShadowSpriteVertices);
 
     CameraView view = CameraView::fromCamera3D(*pCamera3D, worldTargetViewport());
     glm::mat4 viewToWorld = glm::inverse(view.viewMatrix);
@@ -810,6 +860,23 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels) {
                 continue;
             glDrawArrays(GL_TRIANGLES, first, count);
             drawcalls++;
+        }
+
+        if (!spriteBatches.empty()) {
+            shadowspriteshader.use();
+            glUniformMatrix4fv(shadowspriteshader.uniformLocation("lightMatrix"), 1, GL_FALSE, &lightMatrix[0][0]);
+            _sunShadowSpriteBuffer.bind();
+            glActiveTexture(GL_TEXTURE0);
+            for (const SpriteBatch &batch : spriteBatches) {
+                glBindTexture(GL_TEXTURE_2D, batch.texture);
+                GLint filter = batch.palette ? GL_NEAREST : GL_LINEAR; // Palette sprites hold indices, which don't filter.
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+                glDrawArrays(GL_TRIANGLES, batch.first, batch.count);
+                drawcalls++;
+            }
+            glBindTexture(GL_TEXTURE_2D, 0);
+            shadowshader.use();
         }
 
         splitNear = splitFar;
@@ -906,6 +973,8 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
     glUniformMatrix4fv(shader.uniformLocation("sunShadowMatrices"), SUN_SHADOW_CASCADES, GL_FALSE, &_sunShadowMatrices[0][0][0]);
     glUniform1fv(shader.uniformLocation("sunShadowTexels"), SUN_SHADOW_CASCADES, _sunShadowTexels.data());
     glUniform1f(shader.uniformLocation("sunShadowFade"), _sunShadowFade);
+    glUniform1f(shader.uniformLocation("sunShadowStrength"), config->graphics.ShadowStrength.value());
+    glUniform1i(shader.uniformLocation("sunShadowFilter"), config->graphics.ShadowFilter.value() == SHADOW_FILTER_PCF1);
 }
 
 bool OpenGLRenderer::worldSpaceBillboards() {
@@ -2349,6 +2418,23 @@ static constexpr float OUTDOOR_SKY_PLANE_HEIGHT = 64.0f;
 static constexpr float INDOOR_SKY_PLANE_HEIGHT = 512.0f / 16.0f; // DrawIndoorSky intersects at 512 and scales down by 16.
 
 //----- (004A1C1E) --------------------------------------------------------
+/**
+ * @param billboard                     Billboard to draw.
+ * @param[out] anchor                   Point the billboard looks up the sun shadow at, halfway up its sprite.
+ * @return                              Whether the billboard receives sun shadows. Only sprites drawn opaque do, glows
+ *                                      and particles don't.
+ */
+static bool billboardShadowAnchor(const RenderBillboardD3D &billboard, Vec3f *anchor) {
+    if (billboard.sParentBillboardID < 0 || billboard.opacity != RenderBillboardD3D::Transparent)
+        return false;
+
+    const RenderBillboard &parent = pBillboardRenderList[billboard.sParentBillboardID];
+    if (!parent.hwsprite)
+        return false;
+    *anchor = parent.worldPos + Vec3f(0, 0, parent.hwsprite->uHeight * parent.scale.y / 2);
+    return true;
+}
+
 void OpenGLRenderer::DoRenderBillboards_D3D() {
     if (worldSpaceBillboards()) {
         drawWorldBillboards();
@@ -2408,6 +2494,7 @@ void OpenGLRenderer::DoRenderBillboards_D3D() {
         v0.texid = gltexid;
         v0.blend = thisblend;
         v0.paletteId = paletteId;
+        v0.shadowed = billboardShadowAnchor(*billboard, &v0.shadowAnchor);
 
         BillboardVertex &v1 = _billboardVertices.emplace_back();
         v1.pos = Vec3f(billboard->pQuads[1].pos.x, billboard->pQuads[1].pos.y, thisdepth);
@@ -2495,7 +2582,8 @@ void OpenGLRenderer::drawWorldBillboards() {
         buildWorldBillboardQuads(_view);
 
     for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
-        const WorldBillboard &billboard = _worldBillboards[pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D];
+        int index = pSortedBillboardRenderListD3D[i] - pBillboardRenderListD3D;
+        const WorldBillboard &billboard = _worldBillboards[index];
 
         int paletteId = billboard.paletteId;
         float texid = billboardTextureId(billboard.texture, &paletteId);
@@ -2509,6 +2597,7 @@ void OpenGLRenderer::drawWorldBillboards() {
             vertex.texid = texid;
             vertex.blend = static_cast<float>(billboard.opacity);
             vertex.paletteId = paletteId;
+            vertex.shadowed = billboardShadowAnchor(pBillboardRenderListD3D[index], &vertex.shadowAnchor);
         };
 
         addVertex(0);
@@ -2713,7 +2802,9 @@ void OpenGLRenderer::DrawBillboards() {
             &BillboardVertex::color,
             &BillboardVertex::screenspace,
             &BillboardVertex::texid,
-            &BillboardVertex::paletteId);
+            &BillboardVertex::paletteId,
+            &BillboardVertex::shadowAnchor,
+            &BillboardVertex::shadowed);
     }
 
     ensurePaletteTexture();
@@ -2736,6 +2827,11 @@ void OpenGLRenderer::DrawBillboards() {
     uniforms.gamma = gamma;
     uniforms.paltex2D = PALETTE_TEXTURE_UNIT;
     uniforms.submit(billbshader);
+    if (billbshader.hasDefine("SUN_SHADOWS")) {
+        _submitSunShadow(billbshader);
+        glUniform3f(billbshader.uniformLocation("sunShadowDirection"), _sunShadowDirection.x, _sunShadowDirection.y, _sunShadowDirection.z);
+        glUniform1f(billbshader.uniformLocation("sunShadowBillboardRatio"), sunShadowBillboardRatio());
+    }
 
     size_t offset = 0;
     while (offset < _billboardVertices.size()) {
@@ -4338,6 +4434,7 @@ bool OpenGLRenderer::ReloadShaders() {
     _skyVertices.clear();
 
     static constexpr std::string_view bloomUpsampleDefines[] = {"BLOOM_UPSAMPLE"};
+    static constexpr std::string_view spriteShadowDefines[] = {"SHADOW_SPRITE"};
     std::vector<std::string_view> worldDefines;
     if (_linearPipeline)
         worldDefines.push_back("LINEAR_PIPELINE");
@@ -4356,7 +4453,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&textshader,             "gltextshader",     "Text",                             {}},
         {&lineshader,             "gllinesshader",    "Lines",                            {}},
         {&twodshader,             "gltwodshader",     "2D",                               {}},
-        {&billbshader,            "glbillbshader",    "Billboards",                       worldDefines},
+        {&billbshader,            "glbillbshader",    "Billboards",                       outdoorDefines},
         {&decalshader,            "gldecalshader",    "Decals",                           worldDefines},
         {&forcepershader,         "glforcepershader", "Forced perspective",               worldDefines},
         {&skyshader,              "glskyshader",      "Sky",                              worldDefines},
@@ -4365,6 +4462,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&bloomupshader,          "glbloom",          "Bloom upsample",                   bloomUpsampleDefines},
         {&fxaashader,             "glfxaa",           "FXAA",                             {}},
         {&shadowshader,           "glshadow",         "Shadow map",                       {}},
+        {&shadowspriteshader,     "glshadow",         "Sprite shadow map",                spriteShadowDefines},
         {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           outdoorMaterialDefines},
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", outdoorMaterialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}
@@ -4400,6 +4498,7 @@ void OpenGLRenderer::endOverlays() {
 void OpenGLRenderer::ReleaseTerrain() {
     _sunShadowTerrainBuffer.reset();
     _sunShadowBuildingBuffer.reset();
+    _sunShadowSpriteBuffer.reset();
     _sunShadowModelRanges.clear();
 
     /*GLuint terrainVBO, terrainVAO;

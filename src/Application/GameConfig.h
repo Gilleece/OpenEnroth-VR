@@ -514,9 +514,14 @@ class GameConfig : public Config {
         Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
         ConfigEntry<AntialiasingMode> Antialiasing = {this, "antialiasing", ANTIALIASING_OFF,
                                                       "Antialiasing of the 3D world, 'off' or 'fxaa'. Only applies with linear_pipeline."};
-        Bool SunShadows = {this, "sun_shadows", false, "Let terrain and buildings cast shadows from the sun outdoors. Takes effect on restart."};
+        Bool SunShadows = {this, "sun_shadows", false,
+                           "Let terrain, buildings, trees and monsters cast shadows from the sun outdoors. Takes effect on restart."};
         Int ShadowDistance = {this, "shadow_distance", 8192, &ValidateShadowDistance,
                               "Distance from the camera up to which the sun casts shadows, in world units."};
+        Float ShadowStrength = {this, "shadow_strength", 0.0f, &ValidateShadowStrength,
+                                "Part of the ambient light that sun shadows take away too. At 0 a shadow only takes the sun's direct light."};
+        ConfigEntry<ShadowFilterMode> ShadowFilter = {this, "shadow_filter", SHADOW_FILTER_PCF3X3,
+                                                      "Filtering of sun shadow edges, 'pcf3x3' or the cheaper 'pcf1'."};
         Int ShadowMapSize = {this, "shadow_map_size", 2048, &ValidateShadowMapSize,
                              "Size of each of the four sun shadow maps, 1024 or 2048. Takes effect on restart."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
@@ -576,6 +581,9 @@ class GameConfig : public Config {
         }
         static int ValidateShadowDistance(int distance) {
             return std::clamp(distance, 1024, 16192);
+        }
+        static float ValidateShadowStrength(float strength) {
+            return std::clamp(strength, 0.0f, 1.0f);
         }
         static int ValidateShadowMapSize(int size) {
             return size < 1536 ? 1024 : 2048;

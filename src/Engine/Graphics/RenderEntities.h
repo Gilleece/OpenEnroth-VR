@@ -14,6 +14,17 @@ class Sprite;
 class SpriteFrame;
 class GraphicsImage;
 
+/**
+ * Sprite that casts a sun shadow, drawn as a quad standing at `pos` and turned about the vertical axis to face the sun.
+ */
+struct SunShadowSprite {
+    Sprite *sprite = nullptr; // Frame as seen from the sun.
+    int paletteId = 0;
+    Vec3f pos; // Bottom centre.
+    float scale = 1;
+    bool mirrored = false;
+};
+
 struct ODMRenderParams {
     int shading_dist_shade = 0x800;
     int shading_dist_shademist = 0x1000;

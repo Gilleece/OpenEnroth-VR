@@ -22,12 +22,12 @@ vec3 CalcSunLightMaterial(Sunlight light, vec3 normal, vec3 viewDir, float shini
 }
 
 #ifdef SUN_SHADOWS
-// CalcSunLightMaterial with the direct light scaled by the shadow, see CalcSunLightShadowed.
+// CalcSunLightMaterial with the light scaled by the shadow, see CalcSunLightShadowed.
 vec3 CalcSunLightMaterialShadowed(Sunlight light, vec3 normal, vec3 viewDir, float shininess, float shadow) {
     vec3 lightDir = normalize(light.direction);
     float diff = max(dot(normal, lightDir), 0.0);
     float spec = MaterialSpecular(normal, lightDir, viewDir, shininess);
-    return clamp(light.ambient + (light.diffuse * diff + light.specular * spec) * shadow, 0.0, 1.0);
+    return clamp(light.ambient * SunShadowAmbient(shadow) + (light.diffuse * diff + light.specular * spec) * shadow, 0.0, 1.0);
 }
 #endif
 

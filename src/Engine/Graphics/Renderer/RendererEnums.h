@@ -20,6 +20,16 @@ enum class AntialiasingMode {
 using enum AntialiasingMode;
 MM_DECLARE_SERIALIZATION_FUNCTIONS(AntialiasingMode)
 
+/**
+ * Filtering of sun shadow edges.
+ */
+enum class ShadowFilterMode {
+    SHADOW_FILTER_PCF3X3, // 3x3 bilinear depth comparisons.
+    SHADOW_FILTER_PCF1, // One bilinear depth comparison.
+};
+using enum ShadowFilterMode;
+MM_DECLARE_SERIALIZATION_FUNCTIONS(ShadowFilterMode)
+
 enum class TextureFilter {
     TEXTURE_FILTER_LINEAR,
     TEXTURE_FILTER_MIPMAPPED, // Trilinear, plus anisotropic where the driver supports it.
