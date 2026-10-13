@@ -94,6 +94,8 @@ TextureRenderId NullRenderer::CreateTexture(RgbaImageView image, TextureFilter f
     return TextureRenderId(1);
 }
 
+void NullRenderer::updateTexture(TextureRenderId id, RgbaImageView image) {}
+
 void NullRenderer::DeleteTexture(TextureRenderId id) {}
 
 void NullRenderer::BeginScene2D() {}

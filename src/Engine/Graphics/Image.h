@@ -38,6 +38,13 @@ class GraphicsImage {
     RgbaImage &rgba();
 
     /**
+     * Replaces the pixels of an image made from an `RgbaImage`, and those of its texture if it has one.
+     *
+     * @param image                     New pixels, the same size as the image.
+     */
+    void update(RgbaImage image);
+
+    /**
      * @return                          Pixels to upload to the GPU. Same as `rgba()`, unless the loader provides a
      *                                  higher resolution replacement, sized `size()` times `textureScale()`.
      */

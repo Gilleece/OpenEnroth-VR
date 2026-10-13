@@ -2310,6 +2310,17 @@ TextureRenderId OpenGLRenderer::CreateTexture(RgbaImageView image, TextureFilter
     return TextureRenderId(glId);
 }
 
+void OpenGLRenderer::updateTexture(TextureRenderId id, RgbaImageView image) {
+    assert(id && image);
+
+    GLuint glId = static_cast<GLuint>(id.value());
+    glBindTexture(GL_TEXTURE_2D, glId);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image.width(), image.height(), GL_RGBA, GL_UNSIGNED_BYTE, image.pixels().data());
+    if (_mipmappedTextures.contains(glId))
+        glGenerateMipmap(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 void OpenGLRenderer::DeleteTexture(TextureRenderId id) {
     if (!id)
         return;

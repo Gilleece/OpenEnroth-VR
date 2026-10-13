@@ -1593,8 +1593,11 @@ void GameUI_DrawMinimap(const Recti &rect, int zoom) {
                     dstLine[dstX] = srcLine[srcX16 >> 16];
             }
 
-            // draw image
-            minimaptemp = GraphicsImage::Create(std::move(minimapImage));
+            if (!minimaptemp) {
+                minimaptemp = GraphicsImage::Create(std::move(minimapImage));
+            } else if (!std::ranges::equal(minimaptemp->rgba().pixels(), minimapImage.pixels())) {
+                minimaptemp->update(std::move(minimapImage));
+            }
             render->DrawQuad2D(minimaptemp.get(), rect.topLeft());
         } else {
             // no need to update map - just redraw
