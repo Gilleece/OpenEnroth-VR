@@ -807,10 +807,10 @@ class GameConfig : public Config {
 
         Float UiWidth = {this, "ui_width", 1.0f, &ValidateUiWidth, "Width of the floating game screen in metres."};
 
-        ConfigEntry<VrUiFollow> UiFollow = {this, "ui_follow", VR_UI_FOLLOW_LOCKED,
-            "How the floating game screen follows the head, 'locked' in front of the eyes or 'lazy', where it stays put "
-            "until the head turns more than 15 degrees sideways or 10 up or down, or moves 0.3 m, and then glides back in "
-            "front over half a second, upright."};
+        ConfigEntry<VrUiFollow> UiFollow = {this, "ui_follow", VR_UI_FOLLOW_FIXED,
+            "How the floating game screen follows the head. With 'fixed' it hangs in front of where the head looked when "
+            "the screen opened and stays there. With 'lazy' it also glides back in front over half a second once the head "
+            "turns more than 15 degrees sideways or 10 up or down, or moves 0.3 m. It's always upright."};
 
         ConfigEntry<VrHudLayout> HudLayout = {this, "hud_layout", VR_HUD_LAYOUT_CLASSIC,
             "How the game screen is shown in the headset, 'classic' as one floating screen or 'spread', where the "

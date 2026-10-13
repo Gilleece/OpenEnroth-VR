@@ -20,7 +20,8 @@ MM_DEFINE_ENUM_SERIALIZATION_FUNCTIONS(AntialiasingMode, CASE_INSENSITIVE, {
 })
 
 MM_DEFINE_ENUM_SERIALIZATION_FUNCTIONS(VrUiFollow, CASE_INSENSITIVE, {
-    {VR_UI_FOLLOW_LOCKED,   "locked"},
+    {VR_UI_FOLLOW_FIXED,    "fixed"},
+    {VR_UI_FOLLOW_FIXED,    "locked"}, // What fixed replaced, read from older files.
     {VR_UI_FOLLOW_LAZY,     "lazy"}
 })
 

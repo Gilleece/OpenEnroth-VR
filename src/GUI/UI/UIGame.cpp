@@ -434,7 +434,7 @@ static void changeVrSetting(VrSetting setting) {
         vr.UiWidth.setValue(nextStep(vr.UiWidth.value(), {0.6f, 0.8f, 1.0f, 1.2f, 1.5f}));
         break;
     case VR_SETTING_UI_FOLLOW:
-        vr.UiFollow.setValue(vr.UiFollow.value() == VR_UI_FOLLOW_LOCKED ? VR_UI_FOLLOW_LAZY : VR_UI_FOLLOW_LOCKED);
+        vr.UiFollow.setValue(vr.UiFollow.value() == VR_UI_FOLLOW_FIXED ? VR_UI_FOLLOW_LAZY : VR_UI_FOLLOW_FIXED);
         break;
     case VR_SETTING_HEAD_OFFSET_RADIUS:
         vr.HeadOffsetRadius.setValue(nextStep(vr.HeadOffsetRadius.value(), {0.1f, 0.3f, 0.5f, 1.0f}));
@@ -476,7 +476,7 @@ static std::string vrSettingText(VrSetting setting) {
     case VR_SETTING_MINIMAL_HUD: return vr.MinimalHud.value() ? "Minimal HUD: on" : "Minimal HUD: off";
     case VR_SETTING_UI_DISTANCE: return fmt::format("Screen distance: {:.1f} m", vr.UiDistance.value());
     case VR_SETTING_UI_WIDTH: return fmt::format("Screen width: {:.1f} m", vr.UiWidth.value());
-    case VR_SETTING_UI_FOLLOW: return vr.UiFollow.value() == VR_UI_FOLLOW_LAZY ? "Screen follows: lazily" : "Screen follows: locked";
+    case VR_SETTING_UI_FOLLOW: return vr.UiFollow.value() == VR_UI_FOLLOW_LAZY ? "Screen: follows lazily" : "Screen: fixed where opened";
     case VR_SETTING_HEAD_OFFSET_RADIUS: return fmt::format("Head offset radius: {:.1f} m", vr.HeadOffsetRadius.value());
     case VR_SETTING_RECENTER: return "Recenter now";
     case VR_SETTING_HUD_LAYOUT: return vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD ? "HUD layout: spread" : "HUD layout: classic";

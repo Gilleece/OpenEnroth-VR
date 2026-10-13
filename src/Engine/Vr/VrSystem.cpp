@@ -45,6 +45,7 @@ static constexpr float UI_DEAD_ZONE_YAW = 15 * M_PI / 180; // The lazy UI quad r
 static constexpr float UI_DEAD_ZONE_PITCH = 10 * M_PI / 180;
 static constexpr float UI_DEAD_ZONE_DISTANCE = 0.3f; // Metres.
 static constexpr std::chrono::duration<float> UI_EASE_DURATION(0.5f);
+static constexpr float UI_AIM_LOG_RAD = 1 * M_PI / 180; // The log gives a new place of the UI when it moves further.
 static constexpr float GAME_UNITS_PER_METRE = 100.0f; // The party's eye level of 160 units is a 1.6 m standing eye height.
 static constexpr int64_t LOGGED_FRAME_COUNT = 5;
 static constexpr int HEAD_SPRITE_VIEW = 2; // View index for `Renderer::turnWorldSpritesTo` of the head, after the eyes.
@@ -942,11 +943,16 @@ void VrSystem::endFrame() {
         _summaryTime = now;
     } else if (now - _summaryTime >= FRAME_SUMMARY_INTERVAL) {
         double seconds = std::chrono::duration<double>(now - _summaryTime).count();
-        MM_INFO("VR: {} frames submitted, {} in the last {:.1f} s at {:.1f} per second, {} of them with the world drawn.", _frameIndex,
-                _frameIndex - _summaryFrameIndex, seconds, (_frameIndex - _summaryFrameIndex) / seconds, _worldFrameCount - _summaryWorldFrameCount);
+        collectEyeTimers(false);
+        std::string gpu = _summaryEyeCount ? fmt::format(", {:.2f} ms of GPU time per eye", _summaryEyeGpuMs / _summaryEyeCount) : std::string();
+        MM_INFO("VR: {} frames submitted, {} in the last {:.1f} s at {:.1f} per second, {} of them with the world drawn{}.", _frameIndex,
+                _frameIndex - _summaryFrameIndex, seconds, (_frameIndex - _summaryFrameIndex) / seconds, _worldFrameCount - _summaryWorldFrameCount,
+                gpu);
         _summaryTime = now;
         _summaryFrameIndex = _frameIndex;
         _summaryWorldFrameCount = _worldFrameCount;
+        _summaryEyeGpuMs = 0;
+        _summaryEyeCount = 0;
     }
 
     _frameBegun = false;
@@ -1175,51 +1181,50 @@ void VrSystem::placeUi(XrCompositionLayerQuad *layer, float distance) {
     _uiPose.reset();
 
     XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
-    XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-    if (_space == XR_NULL_HANDLE || !_positionTracking || XR_FAILED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &head)) ||
-        (head.locationFlags & tracked) != tracked) {
+    if (_space == XR_NULL_HANDLE || XR_FAILED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &head)) ||
+        !(head.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
         _uiAim.reset();
         return;
     }
-    const XrQuaternionf &orientation = head.pose.orientation;
-    glm::quat headOrientation(orientation.w, orientation.x, orientation.y, orientation.z);
-    _uiHead = glm::vec3(head.pose.position.x, head.pose.position.y, head.pose.position.z);
+    glm::quat headOrientation = _headTurnSpace * toGlm(head.pose.orientation);
+    bool positioned = _positionTracking && (head.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT);
+    _uiHead = positioned ? toGlm(head.pose.position) : glm::vec3(0);
 
-    glm::vec3 position;
-    glm::quat facing;
-    if (engine->config->vr.UiFollow.value() == VR_UI_FOLLOW_LOCKED) {
-        _uiAim.reset();
-        position = _uiHead + headOrientation * glm::vec3(0, 0, -distance);
-        facing = headOrientation;
-    } else {
-        glm::vec3 forward = headOrientation * glm::vec3(0, 0, -1);
-        UiAim now = {_uiHead, std::atan2(-forward.x, -forward.z), std::asin(std::clamp(forward.y, -1.0f, 1.0f))};
-        auto time = std::chrono::steady_clock::now();
-        if (!_uiAim) {
-            _uiAim = now;
-            _uiAimFrom = now;
-            _uiAimTime = time - std::chrono::duration_cast<std::chrono::steady_clock::duration>(UI_EASE_DURATION);
-        } else {
-            float turn = std::abs(std::remainder(now.yaw - _uiAim->yaw, 2 * static_cast<float>(M_PI)));
-            float tilt = std::abs(now.pitch - _uiAim->pitch);
-            float move = glm::length(now.head - _uiAim->head);
-            if (turn > UI_DEAD_ZONE_YAW || tilt > UI_DEAD_ZONE_PITCH || move > UI_DEAD_ZONE_DISTANCE) {
-                _uiAimFrom = easedUiAim(time);
-                MM_INFO("VR: UI re-aims after the head turned {:.1f} and tilted {:.1f} degrees and moved {:.2f} m, from yaw {:.1f} and pitch "
-                        "{:.1f} to yaw {:.1f} and pitch {:.1f} degrees.", turn * 180 / M_PI, tilt * 180 / M_PI, move,
-                        _uiAimFrom.yaw * 180 / M_PI, _uiAimFrom.pitch * 180 / M_PI, now.yaw * 180 / M_PI, now.pitch * 180 / M_PI);
-                _uiAim = now;
-                _uiAimTime = time;
-            }
+    // Each screen that opens hangs in front of where the head looks, the lazy one also re-aims past a dead zone.
+    glm::vec3 forward = headOrientation * glm::vec3(0, 0, -1);
+    UiAim now = {_uiHead, std::atan2(-forward.x, -forward.z), std::asin(std::clamp(forward.y, -1.0f, 1.0f))};
+    auto time = std::chrono::steady_clock::now();
+    bool opened = _uiScreen != current_screen_type;
+    _uiScreen = current_screen_type;
+    if (!_uiAim || (opened && engine->config->vr.UiFollow.value() == VR_UI_FOLLOW_FIXED)) {
+        _uiAim = now;
+        _uiAimFrom = now;
+        _uiAimTime = time - std::chrono::duration_cast<std::chrono::steady_clock::duration>(UI_EASE_DURATION);
+        if (!_uiAimLogged || std::abs(std::remainder(now.yaw - _uiAimLogged->yaw, 2 * static_cast<float>(M_PI))) > UI_AIM_LOG_RAD ||
+            std::abs(now.pitch - _uiAimLogged->pitch) > UI_AIM_LOG_RAD) {
+            MM_INFO("VR: UI hangs at yaw {:.1f} and pitch {:.1f} degrees.", now.yaw * 180 / M_PI + 0.0, now.pitch * 180 / M_PI + 0.0);
+            _uiAimLogged = now;
         }
-
-        UiAim aim = easedUiAim(time);
-        facing = glm::angleAxis(aim.yaw, glm::vec3(0, 1, 0)); // Upright, only turned to face the head.
-        position = aim.head + facing * glm::angleAxis(aim.pitch, glm::vec3(1, 0, 0)) * glm::vec3(0, 0, -distance);
-        layer->space = _space;
-        layer->pose = {{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}};
+    } else if (engine->config->vr.UiFollow.value() == VR_UI_FOLLOW_LAZY) {
+        float turn = std::abs(std::remainder(now.yaw - _uiAim->yaw, 2 * static_cast<float>(M_PI)));
+        float tilt = std::abs(now.pitch - _uiAim->pitch);
+        float move = glm::length(now.head - _uiAim->head);
+        if (turn > UI_DEAD_ZONE_YAW || tilt > UI_DEAD_ZONE_PITCH || move > UI_DEAD_ZONE_DISTANCE) {
+            _uiAimFrom = easedUiAim(time);
+            MM_INFO("VR: UI re-aims after the head turned {:.1f} and tilted {:.1f} degrees and moved {:.2f} m, from yaw {:.1f} and pitch "
+                    "{:.1f} to yaw {:.1f} and pitch {:.1f} degrees.", turn * 180 / M_PI, tilt * 180 / M_PI, move,
+                    _uiAimFrom.yaw * 180 / M_PI, _uiAimFrom.pitch * 180 / M_PI, now.yaw * 180 / M_PI, now.pitch * 180 / M_PI);
+            _uiAim = now;
+            _uiAimTime = time;
+        }
     }
-    _uiPose = XrPosef{{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}};
+
+    UiAim aim = easedUiAim(time);
+    glm::quat facing = glm::angleAxis(aim.yaw, glm::vec3(0, 1, 0)); // Upright, only turned to face the head.
+    glm::vec3 position = aim.head + facing * glm::angleAxis(aim.pitch, glm::vec3(1, 0, 0)) * glm::vec3(0, 0, -distance);
+    layer->space = _space;
+    layer->pose = {{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}};
+    _uiPose = layer->pose;
 }
 
 VrSystem::UiAim VrSystem::easedUiAim(std::chrono::steady_clock::time_point time) const {
@@ -1278,6 +1283,15 @@ bool VrSystem::drawEye(int index, const XrView &view, glm::vec3 spriteShift, Wor
     if (!acquireImage(&eye, &imageIndex))
         return false;
 
+    collectEyeTimers(false);
+    EyeTimer &timer = _eyeTimers[_nextEyeTimer];
+    _nextEyeTimer = (_nextEyeTimer + 1) % _eyeTimers.size();
+    if (timer.pending)
+        collectEyeTimers(true); // All eight are in flight, the GPU is that far behind.
+    if (!timer.queries[0])
+        glGenQueries(static_cast<GLsizei>(timer.queries.size()), timer.queries.data());
+    glQueryCounter(timer.queries[0], GL_TIMESTAMP);
+
     TextureRenderId texture(eye.images[imageIndex]);
     CameraView camera = eyeView(view, eye.size);
     render->setExternalWorldTarget(texture, eye.size);
@@ -1285,6 +1299,8 @@ bool VrSystem::drawEye(int index, const XrView &view, glm::vec3 spriteShift, Wor
     render->BeginScene3D(camera);
     frame.draw();
     render->EndScene3D();
+    glQueryCounter(timer.queries[1], GL_TIMESTAMP);
+    timer.pending = true;
     if (index == 0)
         render->setViewportMirror(texture, eye.size);
 
@@ -1293,6 +1309,24 @@ bool VrSystem::drawEye(int index, const XrView &view, glm::vec3 spriteShift, Wor
 
     fillProjectionView(index, view, eye);
     return true;
+}
+
+void VrSystem::collectEyeTimers(bool wait) {
+    for (EyeTimer &timer : _eyeTimers) {
+        if (!timer.pending)
+            continue;
+        GLint available = 0;
+        glGetQueryObjectiv(timer.queries[1], GL_QUERY_RESULT_AVAILABLE, &available);
+        if (!available && !wait)
+            continue;
+        GLuint64 begin = 0;
+        GLuint64 end = 0;
+        glGetQueryObjectui64v(timer.queries[0], GL_QUERY_RESULT, &begin);
+        glGetQueryObjectui64v(timer.queries[1], GL_QUERY_RESULT, &end);
+        _summaryEyeGpuMs += (end - begin) / 1e6;
+        _summaryEyeCount++;
+        timer.pending = false;
+    }
 }
 
 void VrSystem::fillProjectionView(int index, const XrView &view, const Swapchain &eye) {
@@ -1311,6 +1345,11 @@ void VrSystem::shutdown() {
     }
     setRunning(false);
 
+    for (EyeTimer &timer : _eyeTimers) {
+        if (timer.queries[0])
+            glDeleteQueries(static_cast<GLsizei>(timer.queries.size()), timer.queries.data());
+        timer = EyeTimer();
+    }
     for (Swapchain &eye : _eyes)
         destroySwapchain(&eye);
     destroySwapchain(&_ui);
@@ -1336,6 +1375,7 @@ void VrSystem::shutdown() {
 void VrSystem::setHeadTurn(float yawDegrees, float pitchDegrees) {
     // The game's view axes have +y to the left and +z up, so tilting up turns about -y.
     _headTurn = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0, 0, 1)) * glm::angleAxis(glm::radians(-pitchDegrees), glm::vec3(0, 1, 0));
+    _headTurnSpace = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0, 1, 0)) * glm::angleAxis(glm::radians(pitchDegrees), glm::vec3(1, 0, 0));
 }
 
 void VrSystem::setHeadShift(Vec3f metres) {

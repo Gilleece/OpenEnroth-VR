@@ -14,6 +14,8 @@
 
 #include "Engine/Graphics/WorldFrameViews.h"
 
+#include "GUI/GUIEnums.h"
+
 #include "Library/Geometry/Point.h"
 #include "Library/Geometry/Rect.h"
 #include "Library/Geometry/Size.h"
@@ -108,6 +110,14 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
      * @param pitchDegrees              Tilt up.
      */
     void setHeadTurn(float yawDegrees, float pitchDegrees);
+
+    /**
+     * @return                          Pose of the floating game screen in the head origin space in the last frame,
+     *                                  if it hung there, for tests.
+     */
+    [[nodiscard]] std::optional<XrPosef> uiPose() const {
+        return _uiPose;
+    }
 
     /**
      * Moves the head by a fixed offset on top of its tracked position, for tests that can't move a headset.
@@ -278,8 +288,9 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     bool fadeWorld(float level, XrCompositionLayerQuad *layer);
 
     /**
-     * Places the UI quad for this frame, fixed in front of the eyes or following the head lazily as `vr.ui_follow`
-     * says, and keeps its pose in the head origin space for picking.
+     * Places the UI quad for this frame in the head origin space, in front of where the head looked when the screen
+     * opened, and following the head lazily if `vr.ui_follow` says so. Keeps its pose for picking. Without a head
+     * origin it hangs in front of the eyes.
      *
      * @param[out] layer                Quad layer to set the space and pose of.
      * @param distance                  Distance of the quad from the head in metres.
@@ -319,6 +330,13 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
      * @param eye                       Swapchain the image is in.
      */
     void fillProjectionView(int index, const XrView &view, const Swapchain &eye);
+
+    /**
+     * Adds the GPU time of the eye draws whose timer queries have finished to the frame summary.
+     *
+     * @param wait                      Whether to wait for the queries that haven't.
+     */
+    void collectEyeTimers(bool wait);
 
     void shutdown();
 
@@ -384,6 +402,9 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     int64_t _frameIndex = 0;
     FrameStats _frameStats;
     glm::quat _headTurn = glm::quat(1, 0, 0, 0); // Set by `setHeadTurn`, in the game's view axes.
+    glm::quat _headTurnSpace = glm::quat(1, 0, 0, 0); // The same turn in the axes of the head origin space.
+    std::optional<ScreenType> _uiScreen; // Screen the UI quad was last placed for.
+    std::optional<UiAim> _uiAimLogged; // Last place of the UI quad that the log gave.
     glm::vec3 _headShift = glm::vec3(0); // Set by `setHeadShift`.
     std::optional<glm::vec3> _spriteHead; // Head position the sprites face, in the head origin space, see `drawViews`.
     bool _positionTracking = true; // Set by `setPositionTracking`.
@@ -391,5 +412,18 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     std::chrono::steady_clock::time_point _summaryTime; // Of the last frame summary in the log.
     int64_t _summaryFrameIndex = 0;
     int64_t _summaryWorldFrameCount = 0;
+
+    /**
+     * GPU timestamps around one eye draw, read back a few frames later so that reading them doesn't stall.
+     */
+    struct EyeTimer {
+        std::array<uint32_t, 2> queries = {}; // OpenGL query names.
+        bool pending = false;
+    };
+
+    std::array<EyeTimer, 8> _eyeTimers;
+    size_t _nextEyeTimer = 0;
+    double _summaryEyeGpuMs = 0; // GPU time of the eye draws read back since the last frame summary.
+    int64_t _summaryEyeCount = 0;
     std::chrono::steady_clock::time_point _lastFrameTime;
 };

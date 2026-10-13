@@ -24,7 +24,7 @@ MM_DECLARE_SERIALIZATION_FUNCTIONS(AntialiasingMode)
  * How the UI quad of a headset follows the head.
  */
 enum class VrUiFollow {
-    VR_UI_FOLLOW_LOCKED, // Fixed in front of the eyes.
+    VR_UI_FOLLOW_FIXED, // Hangs in front of where the head looked when the screen opened, and stays there.
     VR_UI_FOLLOW_LAZY, // Stays put until the head turns or moves past a dead zone, then eases in front of it again.
 };
 using enum VrUiFollow;
