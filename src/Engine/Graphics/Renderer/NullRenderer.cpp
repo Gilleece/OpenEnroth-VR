@@ -66,6 +66,7 @@ bool NullRenderer::uiLayer() {
 void NullRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::holdTexture(int slot, TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::restoreHeldTexture(int slot, TextureRenderId colorTexture) {}
+void NullRenderer::forgetExternalTextures(std::span<const TextureRenderId> colorTextures) {}
 
 bool NullRenderer::worldSpaceBillboards() {
     return false;

@@ -246,6 +246,13 @@ class Renderer {
     virtual void restoreHeldTexture(int slot, TextureRenderId colorTexture) = 0;
 
     /**
+     * Releases what the renderer keeps for colour textures owned by the caller, before the caller deletes them.
+     *
+     * @param colorTextures             Textures the caller is about to delete.
+     */
+    virtual void forgetExternalTextures(std::span<const TextureRenderId> colorTextures) = 0;
+
+    /**
      * Adds a billboard to this frame's list that has no screen space version, for 3D passes that draw world space
      * billboards. A pass that draws screen space billboards draws nothing for it.
      *

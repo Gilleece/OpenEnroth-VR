@@ -725,7 +725,7 @@ Sizei OpenGLRenderer::uiTargetSize() {
 }
 
 void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {
-    _externalOutput = colorTexture ? _externalTarget(colorTexture, size) : nullptr;
+    _externalOutput = colorTexture ? _externalTarget(colorTexture, size, true) : nullptr;
     _externalWorldTarget = _externalOutput;
     if (_externalOutput && _linearPipeline) {
         if (_externalLinearTarget.size() != size)
@@ -738,7 +738,7 @@ void OpenGLRenderer::drawVignette(TextureRenderId colorTexture, Sizei size, floa
     if (strength <= 0)
         return;
 
-    _externalTarget(colorTexture, size)->bind();
+    _externalTarget(colorTexture, size, true)->bind();
     glViewport(0, 0, size.w, size.h);
     _ensureFullscreenTriangle();
     glDisable(GL_DEPTH_TEST);
@@ -764,7 +764,7 @@ void OpenGLRenderer::drawVignette(TextureRenderId colorTexture, Sizei size, floa
 }
 
 void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
-    OpenGLRenderTarget *source = _externalTarget(colorTexture, size);
+    OpenGLRenderTarget *source = _externalTarget(colorTexture, size, true);
     Sizei mirrorSize = _uiPixels(pViewport).size();
     if (_mirrorTarget.size() != mirrorSize)
         _mirrorTarget.reset(mirrorSize, RENDER_TARGET_FORMAT_RGBA8, false);
@@ -1506,7 +1506,7 @@ bool OpenGLRenderer::uiLayer() {
 void OpenGLRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {
     assert(_uiLayer);
 
-    OpenGLRenderTarget *target = _externalTarget(colorTexture, size);
+    OpenGLRenderTarget *target = _externalTarget(colorTexture, size, false);
     Sizei uiSize = uiTargetSize();
     glDisable(GL_SCISSOR_TEST);
     target->bind();
@@ -1521,13 +1521,21 @@ void OpenGLRenderer::holdTexture(int slot, TextureRenderId colorTexture, Sizei s
     OpenGLRenderTarget &held = _heldTextures[slot];
     if (held.size() != size)
         held.reset(size, RENDER_TARGET_FORMAT_RGBA8, false);
-    _copyTarget(*_externalTarget(colorTexture, size), held);
+    _copyTarget(*_externalTarget(colorTexture, size, true), held);
 }
 
 void OpenGLRenderer::restoreHeldTexture(int slot, TextureRenderId colorTexture) {
     const OpenGLRenderTarget &held = _heldTextures[slot];
     assert(held.size());
-    _copyTarget(held, *_externalTarget(colorTexture, held.size()));
+    _copyTarget(held, *_externalTarget(colorTexture, held.size(), true));
+}
+
+void OpenGLRenderer::forgetExternalTextures(std::span<const TextureRenderId> colorTextures) {
+    for (TextureRenderId colorTexture : colorTextures) {
+        GLuint texture = static_cast<GLuint>(colorTexture.value());
+        assert(!_externalOutput || _externalOutput->colorTexture() != texture);
+        _externalTargets.erase(texture);
+    }
 }
 
 void OpenGLRenderer::DrawProjectile(float srcX, float srcY, float srcworldview, float srcfovoworldview,
@@ -2210,12 +2218,12 @@ OpenGLRenderTarget *OpenGLRenderer::_currentWorldTarget() {
     return nullptr;
 }
 
-OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture, Sizei size) {
+OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture, Sizei size, bool withDepth) {
     std::unique_ptr<OpenGLRenderTarget> &target = _externalTargets[static_cast<GLuint>(colorTexture.value())];
     if (!target)
         target = std::make_unique<OpenGLRenderTarget>();
     if (target->size() != size)
-        target->resetExternal(static_cast<GLuint>(colorTexture.value()), size, true);
+        target->resetExternal(static_cast<GLuint>(colorTexture.value()), size, withDepth);
     return target.get();
 }
 
