@@ -83,6 +83,7 @@ static constexpr GLint AMBIENT_OCCLUSION_TEXTURE_UNIT = 17;
 static constexpr GLint GI_PROBES_TEXTURE_UNIT = 18;
 static constexpr GLint GI_TERRAIN_HEIGHTS_TEXTURE_UNIT = 19;
 static constexpr int GI_MAX_LAYERS = 8; // As `gi.glsl` declares it.
+static constexpr int GI_BLEND_STEPS = 32; // Steps between two time keys, a few game minutes each.
 static constexpr int TORCH_SHADOW_SIZE = 512;
 static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
@@ -1118,7 +1119,7 @@ void OpenGLRenderer::_updateGlobalIllumination() {
 
     if (_giMap != engine->_currentLoadedMapId) {
         _giMap = engine->_currentLoadedMapId;
-        _giMinute = -1;
+        _giBlend = -1;
         _giKeys.clear();
         _giProbes.reset();
         if (_giMap != MAP_INVALID) {
@@ -1177,19 +1178,20 @@ void OpenGLRenderer::_updateGlobalIllumination() {
 
     if (!_giProbes)
         return;
-    int minute = pParty->uCurrentHour * 60 + pParty->uCurrentMinute;
-    if (minute == _giMinute)
-        return;
-    _giMinute = minute;
 
     // The keys before and after the time of day, around midnight if it's past the last key or before the first.
     const std::vector<float> &hours = _giProbes->timeHours;
-    float hour = minute / 60.0f;
+    float hour = pParty->uCurrentHour + pParty->uCurrentMinute / 60.0f;
     size_t next = std::ranges::upper_bound(hours, hour) - hours.begin();
     size_t prev = next == 0 ? hours.size() - 1 : next - 1;
     next %= hours.size();
     float span = std::fmod(hours[next] - hours[prev] + 24.0f, 24.0f);
-    float weight = span > 0 ? std::fmod(hour - hours[prev] + 24.0f, 24.0f) / span : 0.0f;
+    int step = span > 0 ? static_cast<int>(std::fmod(hour - hours[prev] + 24.0f, 24.0f) / span * GI_BLEND_STEPS) : 0;
+    int blend = static_cast<int>(prev) * (GI_BLEND_STEPS + 1) + step;
+    if (blend == _giBlend)
+        return;
+    _giBlend = blend;
+    float weight = static_cast<float>(step) / GI_BLEND_STEPS;
 
     size_t size = _giKeys.size() / hours.size();
     std::vector<float> blended(size);
