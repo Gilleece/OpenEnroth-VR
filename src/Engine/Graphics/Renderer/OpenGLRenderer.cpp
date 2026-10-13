@@ -75,6 +75,8 @@ static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds it
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
 static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
+static constexpr GLint WATER_NORMALS_TEXTURE_UNIT = 9; // After the terrain arrays, the material array and the sun shadow map.
+static constexpr int WATER_NORMALS_SIZE = 256;
 static constexpr float SUN_SHADOW_SLOPE_BIAS = 2.0f;
 static constexpr float SUN_SHADOW_CONSTANT_BIAS = 4.0f;
 static constexpr int BLOOM_MAX_LEVELS = 6;
@@ -959,6 +961,77 @@ void OpenGLRenderer::_ensureSunShadowResources() {
     _sunShadowBuildingBuffer.reset(GL_STATIC_DRAW, &ShadowVertex::pos);
     if (!vertices.empty())
         _sunShadowBuildingBuffer.update(vertices);
+}
+
+OpenGLRenderer::SkyState OpenGLRenderer::_skyState() {
+    SkyState result;
+    float fade = 0;
+    result.sunDirection = sunDirection(pParty->GetPlayingTime(), &fade);
+
+    Color fogColor = GetLevelFogColor();
+    bool clear = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && !pWeather->bNight && fogColor == Color();
+    result.sunVisibility = clear ? std::clamp(result.sunDirection.z / 0.05f, 0.0f, 1.0f) : 0.0f; // Sets over its last 3 degrees.
+
+    GraphicsImage *texture = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR ? pOutdoor->sky_texture : nullptr;
+    if (texture && texture != _skyAverageTexture) {
+        float r = 0, g = 0, b = 0;
+        const RgbaImage &pixels = texture->rgba();
+        for (Color pixel : pixels.pixels()) {
+            r += pixel.r;
+            g += pixel.g;
+            b += pixel.b;
+        }
+        float count = 255.0f * pixels.width() * pixels.height();
+        _skyAverage = Colorf(r / count, g / count, b / count);
+        _skyAverageTexture = texture;
+    }
+
+    // The same tint the sky is drawn with, it darkens the sky at night and fades it into the horizon.
+    Colorf tint = GetActorTintColor(31, 0, pCamera3D->GetFarClip(), 1, 0).toColorf();
+    Colorf horizon = fogColor != Color() ? fogColor.toColorf() : tint;
+    result.horizon = _worldColor(horizon);
+    result.zenith = _worldColor(Colorf(_skyAverage.r * tint.r, _skyAverage.g * tint.g, _skyAverage.b * tint.b));
+    return result;
+}
+
+void OpenGLRenderer::_ensureWaterNormals() {
+    if (_waterNormals)
+        return;
+
+    // A sum of waves that each repeat a whole number of times across the map, so that it tiles.
+    static constexpr std::array<std::array<int, 2>, 12> waves = {{
+        {{1, 2}}, {{3, -1}}, {{-2, 3}}, {{4, 1}}, {{-3, -4}}, {{5, -2}}, {{2, 5}}, {{-6, 1}}, {{7, 3}}, {{-4, 6}}, {{8, -5}}, {{3, 9}}
+    }};
+    static constexpr float SLOPE_SCALE = 0.03f;
+    RgbaImage image = RgbaImage::uninitialized(WATER_NORMALS_SIZE, WATER_NORMALS_SIZE);
+    for (int y = 0; y < WATER_NORMALS_SIZE; y++) {
+        for (int x = 0; x < WATER_NORMALS_SIZE; x++) {
+            float dx = 0, dy = 0;
+            for (size_t i = 0; i < waves.size(); i++) {
+                float kx = static_cast<float>(waves[i][0]);
+                float ky = static_cast<float>(waves[i][1]);
+                float amplitude = 1.0f / std::sqrt(kx * kx + ky * ky);
+                float phase = 2 * static_cast<float>(M_PI) * (kx * x + ky * y) / WATER_NORMALS_SIZE + i * 2.39996f; // Golden angle apart.
+                float slope = amplitude * 2 * static_cast<float>(M_PI) * std::cos(phase);
+                dx += slope * kx;
+                dy += slope * ky;
+            }
+            Vec3f normal(-dx * SLOPE_SCALE, -dy * SLOPE_SCALE, 1);
+            normal /= normal.length();
+            image[y][x] = Color(static_cast<uint8_t>((normal.x * 0.5f + 0.5f) * 255), static_cast<uint8_t>((normal.y * 0.5f + 0.5f) * 255),
+                                static_cast<uint8_t>((normal.z * 0.5f + 0.5f) * 255), 255);
+        }
+    }
+
+    glGenTextures(1, &_waterNormals);
+    glBindTexture(GL_TEXTURE_2D, _waterNormals);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, WATER_NORMALS_SIZE, WATER_NORMALS_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.pixels().data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    setMipmappedFilter(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
@@ -2057,6 +2130,20 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(shader);
     _submitSunShadow(shader);
+    if (shader.hasDefine("LINEAR_PIPELINE")) {
+        _ensureWaterNormals();
+        glActiveTexture(GL_TEXTURE0 + WATER_NORMALS_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, _waterNormals);
+        glActiveTexture(GL_TEXTURE0);
+
+        SkyState sky = _skyState();
+        glUniform1i(shader.uniformLocation("waterNormals"), WATER_NORMALS_TEXTURE_UNIT);
+        glUniform1f(shader.uniformLocation("waterTime"), animTimer->time().realtimeMillisecondsFloat());
+        glUniform3f(shader.uniformLocation("skyZenith"), sky.zenith.r, sky.zenith.g, sky.zenith.b);
+        glUniform3f(shader.uniformLocation("skyHorizon"), sky.horizon.r, sky.horizon.g, sky.horizon.b);
+        glUniform3f(shader.uniformLocation("sunDirection"), sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
+        glUniform1f(shader.uniformLocation("sunVisibility"), sky.sunVisibility);
+    }
     if (tileMaterials) {
         glUniform1i(shader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
@@ -2756,6 +2843,11 @@ void OpenGLRenderer::drawSkyVertices(float planeHeight, bool fade) {
     uniforms.fog = forcedPerspectiveFog(_skyVertices[0].color.r);
     uniforms.fogDistance = farClip;
     uniforms.submit(skyshader);
+    if (skyshader.hasDefine("LINEAR_PIPELINE")) {
+        SkyState sky = _skyState();
+        glUniform3f(skyshader.uniformLocation("sunDirection"), sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
+        glUniform1f(skyshader.uniformLocation("sunVisibility"), sky.sunVisibility);
+    }
 
     GLboolean blend = glIsEnabled(GL_BLEND);
     glDisable(GL_BLEND);

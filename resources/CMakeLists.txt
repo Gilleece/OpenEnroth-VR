@@ -74,7 +74,9 @@ set(RESOURCE_SOURCES
         shaders/lighting.glsl
         shaders/material.glsl
         shaders/precision.glsl
-        shaders/shadow.glsl)
+        shaders/shadow.glsl
+        shaders/sky.glsl
+        shaders/water.glsl)
 
 cmrc_add_resource_library(resources NAMESPACE openenroth ${RESOURCE_SOURCES})
 
