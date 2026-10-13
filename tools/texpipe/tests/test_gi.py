@@ -17,9 +17,11 @@ OUTDOOR_MAP = b"outdoor map data"
 OUTDOOR_HOURS = (0.0, 4.0, 8.0, 12.0, 16.0, 20.0, 22.0)
 
 
-def gi_bytes(layout=0, dims=(2, 3, 1), hours=(0.0,), heights=(), magic=b"OEGI", version=1, extra=b""):
+def gi_bytes(
+    layout=0, dims=(2, 3, 1), hours=(0.0,), heights=(), magic=b"OEGI", version=1, extra=b"", spacing=(64, 64, 64)
+):
     # A hand-written probe file, every coefficient 1.0 in f16.
-    data = struct.pack("<4sII3f3f3II", magic, version, layout, 0, 0, 0, 64, 64, 64, *dims, len(hours))
+    data = struct.pack("<4sII3f3f3II", magic, version, layout, 0, 0, 0, *spacing, *dims, len(hours))
     data += struct.pack(f"<{len(hours)}f", *hours)
     data += struct.pack(f"<{len(hours) * 3}f", *([0.5] * len(hours) * 3))
     data += struct.pack(f"<{len(heights)}f", *heights)
@@ -29,7 +31,7 @@ def gi_bytes(layout=0, dims=(2, 3, 1), hours=(0.0,), heights=(), magic=b"OEGI", 
 
 
 def outdoor_gi_bytes():
-    return gi_bytes(layout=1, dims=(2, 2, 2), hours=OUTDOOR_HOURS, heights=(100.0, 400.0))
+    return gi_bytes(layout=1, dims=(2, 2, 2), hours=OUTDOOR_HOURS, heights=(100.0, 400.0), spacing=(64, 64, 0))
 
 
 def make_game(tmp_path: Path) -> Path:
@@ -37,6 +39,8 @@ def make_game(tmp_path: Path) -> Path:
     (data / "DATA").mkdir(parents=True)
     entries = {"d18.blv": INDOOR_MAP, "d18.dlv": b"delta", "out01.odm": OUTDOOR_MAP, "out01.ddm": b"delta"}
     (data / "DATA" / "games.lod").write_bytes(lod_bytes(entries))
+    (tmp_path / "work").mkdir()
+    run_pack(tmp_path / "work", tmp_path / "pack", "raw", None)
     return data
 
 
@@ -79,6 +83,13 @@ def test_reads_indoor_and_outdoor_headers():
     assert outdoor.time_hours == OUTDOOR_HOURS
 
 
+def test_terrain_layers_take_any_number_of_time_keys_and_no_z_spacing():
+    # The layer heights place the terrain layers, and the time keys are the bake's to choose.
+    for hours in ((0.0, 12.0), (0.0, 5.0, 10.0, 15.0, 20.0), tuple(float(hour) for hour in range(24))):
+        header = read_header(gi_bytes(layout=1, dims=(1, 1, 1), hours=hours, heights=(0.0,), spacing=(64, 64, 0)))
+        assert header.time_hours == hours
+
+
 @pytest.mark.parametrize(
     "data, message",
     [
@@ -86,6 +97,10 @@ def test_reads_indoor_and_outdoor_headers():
         (gi_bytes(version=2), "version 2"),
         (gi_bytes(layout=2), "layout 2"),
         (gi_bytes(hours=(0.0, 12.0)), "2 time keys"),
+        (gi_bytes(layout=1, dims=(1, 1, 1), hours=(0.0,), heights=(0.0,)), "1 time keys"),
+        (gi_bytes(layout=1, dims=(1, 1, 1), hours=tuple(range(25)), heights=(0.0,)), "25 time keys"),
+        (gi_bytes(spacing=(64, 64, 0)), "spacing"),
+        (gi_bytes(layout=1, dims=(1, 1, 1), hours=OUTDOOR_HOURS, heights=(0.0,), spacing=(64, 0, 0)), "spacing"),
         (gi_bytes(hours=(6.0,)), "hour 0"),
         (gi_bytes(dims=(2, 0, 1)), "at least 1"),
         (gi_bytes(extra=b"\0\0"), "need"),
@@ -146,7 +161,6 @@ def test_failures_are_reported_per_map(tmp_path):
 
 def test_pack_keeps_the_baked_lighting_unless_the_config_drops_it(tmp_path):
     data, pack, work = make_game(tmp_path), tmp_path / "pack", tmp_path / "work"
-    work.mkdir()
     run_bake(
         data, pack, Path("OpenEnroth"), runner=FakeEngine({"d18.blv": gi_bytes(), "out01.odm": outdoor_gi_bytes()})
     )
@@ -178,6 +192,15 @@ def test_verify_checks_the_gi_entries(tmp_path):
         f"gi/d18.blv: baked from a different map, CRC-32 00000000 against {crc32_hex(INDOOR_MAP)}",
         "gi/out01.odm.bin: the manifest says 9 probes, the file has 8",
     ]
+
+
+def test_bake_needs_the_pack_step_first(tmp_path):
+    # Bake only adds to a manifest, the pack step writes it.
+    data = make_game(tmp_path)
+    engine = FakeEngine({"d18.blv": gi_bytes()})
+    with pytest.raises(FileNotFoundError, match="run pack first"):
+        run_bake(data, tmp_path / "elsewhere", Path("OpenEnroth"), runner=engine)
+    assert engine.commands == []
 
 
 def test_bake_command_line(tmp_path, monkeypatch, capsys):
