@@ -116,6 +116,21 @@ Sizei Sprites_LOD_Loader::loadSize() {
     return resources()->spriteSize(name());
 }
 
+RgbaImage SpriteShape_LOD_Loader::loadRgba() {
+    RgbaImage result = resources()->sprite(name());
+    for (Color &pixel : result.pixels())
+        pixel = Color(128, 128, 128, pixel.a);
+    return result;
+}
+
+Sizei SpriteShape_LOD_Loader::loadSize() {
+    return resources()->spriteSize(name());
+}
+
+RgbaImage SpriteShape_LOD_Loader::loadTextureRgba() {
+    return resources()->packSpriteShape(name());
+}
+
 RgbaImage SpriteVariant_LOD_Loader::loadRgba() {
     return resources()->spriteWithPalette(name(), _paletteId);
 }

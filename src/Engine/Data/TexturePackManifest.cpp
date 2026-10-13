@@ -22,9 +22,14 @@ MM_DEFINE_JSON_STRUCT_SERIALIZATION_FUNCTIONS(TexturePackEntry, (
     (maps, "maps")
 ))
 
+MM_DEFINE_JSON_STRUCT_SERIALIZATION_FUNCTIONS(TexturePackShape, (
+    (thickness, "thickness")
+))
+
 MM_DEFINE_JSON_STRUCT_SERIALIZATION_FUNCTIONS(TexturePackSpriteEntry, (
     (crc32, "crc32"),
-    (palettes, "palettes")
+    (palettes, "palettes"),
+    (shape, "shape")
 ))
 
 MM_DEFINE_JSON_STRUCT_SERIALIZATION_FUNCTIONS(TexturePackManifest, (

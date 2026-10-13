@@ -179,6 +179,20 @@ class ResourceManager {
      */
     RgbaImage packSprite(std::string_view filename, int paletteId);
 
+    /**
+     * @param filename                  Name of a sprite in `sprites.lod`, case-insensitive.
+     * @return                          Thickness of the texture pack's shape for this sprite in game units, 0 if there
+     *                                  is none. Doesn't touch the file system.
+     */
+    float packSpriteShapeThickness(std::string_view filename) const;
+
+    /**
+     * @param filename                  Name of a sprite in `sprites.lod`, case-insensitive.
+     * @return                          The texture pack's shape image for this sprite, see `TexturePackShape`, or an
+     *                                  empty image if there is none.
+     */
+    RgbaImage packSpriteShape(std::string_view filename);
+
  private:
     void desaturate(std::span<Color> colors) const;
 

@@ -37,6 +37,13 @@ class AssetsManager {
      */
     GraphicsImage *getSpriteVariant(GraphicsImage *sprite, int paletteId);
 
+    /**
+     * @param sprite                    Sprite image, as returned by `getSprite`.
+     * @return                          The sprite's shape image from the texture pack, shared by all its palettes, or
+     *                                  `nullptr` if the pack has no shape for it.
+     */
+    GraphicsImage *getSpriteShape(GraphicsImage *sprite);
+
     std::unique_ptr<GUIFont> pFontBookOnlyShadow;
     std::unique_ptr<GUIFont> pFontBookLloyds;
     std::unique_ptr<GUIFont> pFontArrus;
@@ -53,6 +60,7 @@ class AssetsManager {
     std::unordered_map<std::string, std::unique_ptr<GraphicsImage>> sprites;
     std::unordered_map<std::string, std::unique_ptr<GraphicsImage>> images;
     std::unordered_map<std::string, std::unordered_map<int, std::unique_ptr<GraphicsImage>>> spriteVariants; // By sprite name, then palette id.
+    std::unordered_map<std::string, std::unique_ptr<GraphicsImage>> spriteShapes; // By sprite name.
 };
 
 extern AssetsManager *assets;

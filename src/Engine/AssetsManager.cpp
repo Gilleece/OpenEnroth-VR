@@ -48,7 +48,7 @@ AssetsManager::~AssetsManager() = default;
 void AssetsManager::releaseAllTextures() {
     MM_TRACE("Render - Releasing Textures.");
     // clears any textures from gpu
-    for (auto *cache : {&images, &bitmaps, &sprites})
+    for (auto *cache : {&images, &bitmaps, &sprites, &spriteShapes})
         for (const auto &[name, image] : *cache)
             image->releaseRenderId();
     for (const auto &[name, variants] : spriteVariants)
@@ -62,8 +62,10 @@ void AssetsManager::releaseImage(GraphicsImage *image) {
     for (auto *cache : {&images, &bitmaps, &sprites}) {
         auto pos = cache->find(image->name());
         if (pos != cache->end() && pos->second.get() == image) {
-            if (cache == &sprites)
+            if (cache == &sprites) {
                 spriteVariants.erase(image->name());
+                spriteShapes.erase(image->name());
+            }
             cache->erase(pos);
             return;
         }
@@ -117,6 +119,20 @@ GraphicsImage *AssetsManager::getSprite(std::string_view name) {
         i = sprites.emplace(filename, GraphicsImage::Create(std::make_unique<Sprites_LOD_Loader>(engine->resources(), filename))).first;
 
     return i->second.get();
+}
+
+GraphicsImage *AssetsManager::getSpriteShape(GraphicsImage *sprite) {
+    if (engine->resources()->packSpriteShapeThickness(sprite->name()) <= 0)
+        return nullptr;
+
+    auto pos = sprites.find(sprite->name());
+    if (pos == sprites.end() || pos->second.get() != sprite)
+        return nullptr;
+
+    std::unique_ptr<GraphicsImage> &result = spriteShapes[sprite->name()];
+    if (!result)
+        result = GraphicsImage::Create(std::make_unique<SpriteShape_LOD_Loader>(engine->resources(), sprite->name()));
+    return result.get();
 }
 
 GraphicsImage *AssetsManager::getSpriteVariant(GraphicsImage *sprite, int paletteId) {

@@ -92,6 +92,19 @@ class Sprites_LOD_Loader : public ImageLoader {
 };
 
 /**
+ * The shape of a sprite, see `TexturePackShape`. Without a texture pack image it's flat, at the sprite's plane, with
+ * the sprite's coverage. Its texture is the texture pack's shape image.
+ */
+class SpriteShape_LOD_Loader : public ImageLoader {
+ public:
+    using ImageLoader::ImageLoader;
+
+    virtual RgbaImage loadRgba() override;
+    virtual Sizei loadSize() override;
+    virtual RgbaImage loadTextureRgba() override;
+};
+
+/**
  * A sprite drawn with one palette, as a true colour image. Its texture is the texture pack's image for that palette.
  */
 class SpriteVariant_LOD_Loader : public ImageLoader {
