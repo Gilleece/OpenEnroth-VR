@@ -41,10 +41,11 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     /**
      * Creates the OpenXR instance, session, reference space and eye swapchains on the current OpenGL context.
      *
+     * @param renderScale               Size of the eye swapchains as a multiple of the size the headset recommends.
      * @return                          Whether all of it was created. On failure the reason is logged, and the game
      *                                  should go on without VR.
      */
-    bool initialize();
+    bool initialize(float renderScale);
 
     virtual bool aimCullingCamera() override;
     virtual bool drawViews(WorldFrame &frame) override;
@@ -82,7 +83,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     bool createInstance();
     bool checkGraphicsRequirements();
     bool createSession();
-    bool createSwapchains();
+    bool createSwapchains(float renderScale);
 
     /**
      * @param[out] target               Swapchain to create.

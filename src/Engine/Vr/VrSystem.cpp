@@ -188,8 +188,8 @@ VrSystem::~VrSystem() {
     shutdown();
 }
 
-bool VrSystem::initialize() {
-    return createInstance() && checkGraphicsRequirements() && createSession() && createSwapchains();
+bool VrSystem::initialize(float renderScale) {
+    return createInstance() && checkGraphicsRequirements() && createSession() && createSwapchains(renderScale);
 }
 
 bool VrSystem::aimCullingCamera() {
@@ -439,7 +439,7 @@ bool VrSystem::createSession() {
     return check(xrCreateReferenceSpace(_session, &spaceInfo, &_viewSpace), "xrCreateReferenceSpace");
 }
 
-bool VrSystem::createSwapchains() {
+bool VrSystem::createSwapchains(float renderScale) {
     uint32_t viewCount = 0;
     if (!check(xrEnumerateViewConfigurationViews(_instance, _systemId, VIEW_CONFIGURATION, 0, &viewCount, nullptr), "xrEnumerateViewConfigurationViews"))
         return false;
@@ -469,9 +469,13 @@ bool VrSystem::createSwapchains() {
 
     for (size_t i = 0; i < _eyes.size(); i++) {
         Swapchain &eye = _eyes[i];
-        if (!createSwapchain(&eye, Sizei(views[i].recommendedImageRectWidth, views[i].recommendedImageRectHeight)))
+        const XrViewConfigurationView &view = views[i];
+        Sizei size(std::min(static_cast<int>(std::lround(view.recommendedImageRectWidth * renderScale)), static_cast<int>(view.maxImageRectWidth)),
+                   std::min(static_cast<int>(std::lround(view.recommendedImageRectHeight * renderScale)), static_cast<int>(view.maxImageRectHeight)));
+        if (!createSwapchain(&eye, size))
             return false;
-        MM_INFO("VR: eye {} swapchain is {}x{} with {} images.", i, eye.size.w, eye.size.h, eye.images.size());
+        MM_INFO("VR: eye {} swapchain is {}x{} with {} images, {:.2f} times the recommended {}x{}.", i, eye.size.w, eye.size.h,
+                eye.images.size(), renderScale, view.recommendedImageRectWidth, view.recommendedImageRectHeight);
     }
     return true;
 }
