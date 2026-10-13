@@ -54,6 +54,8 @@ Sizei NullRenderer::uiTargetSize() {
 
 void NullRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {}
 void NullRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {}
+
+void NullRenderer::setVignette(float strength, Vec2f center) {}
 void NullRenderer::setExternalFramePacing(bool external) {}
 void NullRenderer::setUiLayer(bool enabled) {}
 

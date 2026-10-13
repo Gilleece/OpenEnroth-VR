@@ -29,6 +29,7 @@ class NullRenderer : public BaseRenderer {
     virtual Sizei uiTargetSize() override;
     virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
+    virtual void setVignette(float strength, Vec2f center) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
     virtual void applyPipelineSettings() override;

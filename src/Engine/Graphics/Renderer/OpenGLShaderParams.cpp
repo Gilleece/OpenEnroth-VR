@@ -59,6 +59,11 @@ void CompositeUniforms::submit(const OpenGLShader &shader) const {
     glUniform1f(shader.uniformLocation("bloomIntensity"), bloomIntensity);
 }
 
+void VignetteUniforms::submit(const OpenGLShader &shader) const {
+    glUniform1f(shader.uniformLocation("strength"), strength);
+    glUniform2f(shader.uniformLocation("center"), center.x, center.y);
+}
+
 void FxaaUniforms::submit(const OpenGLShader &shader) const {
     glUniform1i(shader.uniformLocation("source"), source);
     glUniform2f(shader.uniformLocation("texelSize"), texelSize.x, texelSize.y);

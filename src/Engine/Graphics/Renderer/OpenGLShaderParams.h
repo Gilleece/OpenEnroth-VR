@@ -136,6 +136,13 @@ struct CompositeUniforms {
     void submit(const OpenGLShader &shader) const;
 };
 
+struct VignetteUniforms {
+    float strength = 0;
+    Vec2f center;
+
+    void submit(const OpenGLShader &shader) const;
+};
+
 struct FxaaUniforms {
     int source = 0;
     Vec2f texelSize;
