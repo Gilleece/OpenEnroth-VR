@@ -70,14 +70,17 @@ void main() {
 #endif
 
 #ifdef LINEAR_PIPELINE
-    bool water = fragcol.a == 0.0 || (vsAttrib & 0x1) > 0;
+    // Water tiles are all water, shore tiles where they're transparent. Filtered high resolution shore tiles are partly
+    // transparent along the shoreline.
+    float waterAmount = (vsAttrib & 0x1) > 0 ? 1.0 : 1.0 - fragcol.a;
     vec3 waternormal = WaterNormal(vsPos); // Outside the branch, texture lookups need uniform control flow.
-#endif
-
+    fragcol = vec4(mix(fragcol.rgb, watercol.rgb, waterAmount), mix(fragcol.a, watercol.a, waterAmount));
+#else
     // replace texture with water if alpha or a water tile (bit 0x1 in attribs)
     if (fragcol.a == 0.0 || (vsAttrib & 0x1) > 0){
         fragcol = watercol;
     }
+#endif
 
 #ifdef MATERIAL_MAPS
     // Tile u runs east and v runs south, along grid x and y.
@@ -127,8 +130,8 @@ void main() {
 
 #ifdef LINEAR_PIPELINE
     result = srgbToLinear(result);
-    if (water)
-        result = WaterSurface(result, waternormal, vsPos, fragviewdir);
+    if (waterAmount > 0.0)
+        result = mix(result, WaterSurface(result, waternormal, vsPos, fragviewdir), waterAmount);
 #endif
 
     vec3 clamps = result;
