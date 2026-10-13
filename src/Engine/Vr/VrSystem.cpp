@@ -750,8 +750,10 @@ bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     Sizei size = render->uiTargetSize();
     if (_ui.size != size) {
         destroySwapchain(&_ui);
-        if (!createSwapchain(&_ui, size))
+        if (!createSwapchain(&_ui, size)) {
+            destroySwapchain(&_ui);
             return false;
+        }
         MM_INFO("VR: UI swapchain is {}x{} with {} images.", size.w, size.h, _ui.images.size());
     }
 
