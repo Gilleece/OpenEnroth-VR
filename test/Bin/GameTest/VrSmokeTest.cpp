@@ -89,8 +89,10 @@ GAME_TEST(VrSmoke, Session) {
     auto restore = ScopeGuard([&] {
         detail::logger->setSink(warnings.next());
         engine->config->vr.HudLayout.setValue(VR_HUD_LAYOUT_CLASSIC);
-        if (vr)
+        if (vr) {
             vr->setHeadTurn(0, 0);
+            vr->setPositionTracking(true);
+        }
     });
 
     auto phase = [&](std::string_view name) {
@@ -143,6 +145,16 @@ GAME_TEST(VrSmoke, Session) {
     if (vr)
         vr->setHeadTurn(0, 0);
     phase("looking up and down");
+
+    // Without position tracking, the way a headset that only tracks orientation runs.
+    if (vr)
+        vr->setPositionTracking(false);
+    game.tick(10);
+    if (vr) {
+        EXPECT_GT(countFrames(vr->frameStats(), true, false), 0);
+        vr->setPositionTracking(true);
+    }
+    phase("without position tracking");
 
     // A chest, opened with Space.
     game.teleportTo(MAP_EMERALD_ISLAND, Vec3f(8600, 5200, 1), startYaw);

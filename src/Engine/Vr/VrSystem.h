@@ -103,6 +103,14 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
      */
     void setHeadTurn(float yawDegrees, float pitchDegrees);
 
+    /**
+     * Makes the head untracked in position the way a headset that only tracks orientation is, for tests. The head
+     * origin is captured again when this changes.
+     *
+     * @param tracked                   Whether to use the head position the runtime tracks.
+     */
+    void setPositionTracking(bool tracked);
+
  private:
     friend class PlatformIntrospection; // Give access to private bases.
 
@@ -184,6 +192,12 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     bool locateViews();
 
     /**
+     * Puts the eyes in `_views` at their offsets from a head that sits at the head origin, for frames without a head
+     * position. If the runtime doesn't give the offsets either, both eyes go to the origin.
+     */
+    void placeUntrackedEyes();
+
+    /**
      * Copies the UI layer into the UI swapchain, recreating the swapchain if the UI changed size.
      *
      * @param[out] layers               Quad layers that show the UI, one in front of the head, or one per element of
@@ -216,10 +230,10 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
 
     /**
      * Locates the head in the runtime's LOCAL space and makes a reference space with its origin there, turned to the
-     * head's yaw. Eye views are located in that space from then on.
+     * head's yaw. Without a head position the origin is LOCAL's own. Eye views are located in that space from then on.
      *
      * @param time                      Time to locate the head at.
-     * @return                          Whether the head was tracked and the space was created.
+     * @return                          Whether the head's orientation was tracked and the space was created.
      */
     bool captureOrigin(XrTime time);
 
@@ -312,6 +326,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     int64_t _frameIndex = 0;
     FrameStats _frameStats;
     glm::quat _headTurn = glm::quat(1, 0, 0, 0); // Set by `setHeadTurn`, in the game's view axes.
+    bool _positionTracking = true; // Set by `setPositionTracking`.
     int64_t _worldFrameCount = 0;
     std::chrono::steady_clock::time_point _summaryTime; // Of the last frame summary in the log.
     int64_t _summaryFrameIndex = 0;

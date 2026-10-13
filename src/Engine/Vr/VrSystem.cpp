@@ -362,9 +362,34 @@ bool VrSystem::locateViews() {
         return false;
     if (!(viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT))
         return false;
+    if (!_positionTracking || !(viewState.viewStateFlags & XR_VIEW_STATE_POSITION_VALID_BIT))
+        placeUntrackedEyes();
     clampHeadOffset(_views, engine->config->vr.HeadOffsetRadius.value());
     _viewsLocated = true;
     return true;
+}
+
+void VrSystem::placeUntrackedEyes() {
+    XrViewLocateInfo locateInfo = {XR_TYPE_VIEW_LOCATE_INFO};
+    locateInfo.viewConfigurationType = VIEW_CONFIGURATION;
+    locateInfo.displayTime = _frameState.predictedDisplayTime;
+    locateInfo.space = _viewSpace;
+    XrViewState viewState = {XR_TYPE_VIEW_STATE};
+    std::array<XrView, 2> offsets = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
+    uint32_t viewCount = 0;
+    XrViewStateFlags valid = XR_VIEW_STATE_POSITION_VALID_BIT | XR_VIEW_STATE_ORIENTATION_VALID_BIT;
+    bool known = XR_SUCCEEDED(xrLocateViews(_session, &locateInfo, &viewState, static_cast<uint32_t>(offsets.size()), &viewCount, offsets.data())) &&
+                 (viewState.viewStateFlags & valid) == valid;
+
+    for (size_t i = 0; i < _views.size(); i++) {
+        glm::vec3 position(0);
+        if (known) {
+            glm::quat head = toGlm(_views[i].pose.orientation) * glm::inverse(toGlm(offsets[i].pose.orientation));
+            const XrVector3f &offset = offsets[i].pose.position;
+            position = head * glm::vec3(offset.x, offset.y, offset.z);
+        }
+        _views[i].pose.position = {position.x, position.y, position.z};
+    }
 }
 
 bool VrSystem::drawViews(WorldFrame &frame) {
@@ -887,7 +912,7 @@ void VrSystem::placeUi(XrCompositionLayerQuad *layer, float distance) {
 
     XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
     XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-    if (_space == XR_NULL_HANDLE || XR_FAILED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &head)) ||
+    if (_space == XR_NULL_HANDLE || !_positionTracking || XR_FAILED(xrLocateSpace(_viewSpace, _space, _frameState.predictedDisplayTime, &head)) ||
         (head.locationFlags & tracked) != tracked) {
         _uiAim.reset();
         return;
@@ -947,9 +972,11 @@ bool VrSystem::captureOrigin(XrTime time) {
     XrSpaceLocation head = {XR_TYPE_SPACE_LOCATION};
     if (!check(xrLocateSpace(_viewSpace, _localSpace, time, &head), "xrLocateSpace"))
         return false;
-    XrSpaceLocationFlags tracked = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-    if ((head.locationFlags & tracked) != tracked)
+    if (!(head.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))
         return false;
+    bool positioned = _positionTracking && (head.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT);
+    if (!positioned)
+        head.pose.position = {0, 0, 0};
 
     float yaw = yawOf(head.pose.orientation);
     glm::quat level = glm::angleAxis(yaw, glm::vec3(0, 1, 0));
@@ -970,8 +997,12 @@ bool VrSystem::captureOrigin(XrTime time) {
     _uiPose.reset();
 
     const XrVector3f &position = head.pose.position;
-    MM_INFO("VR: head origin at ({:.3f}, {:.3f}, {:.3f}) m in the runtime's LOCAL space, turned {:.1f} degrees.",
-            position.x, position.y, position.z, yaw * 180 / M_PI);
+    if (positioned) {
+        MM_INFO("VR: head origin at ({:.3f}, {:.3f}, {:.3f}) m in the runtime's LOCAL space, turned {:.1f} degrees.",
+                position.x, position.y, position.z, yaw * 180 / M_PI);
+    } else {
+        MM_INFO("VR: head origin at the runtime's LOCAL origin, turned {:.1f} degrees, without position tracking.", yaw * 180 / M_PI);
+    }
     return true;
 }
 
@@ -1097,6 +1128,16 @@ void VrSystem::shutdown() {
 void VrSystem::setHeadTurn(float yawDegrees, float pitchDegrees) {
     // The game's view axes have +y to the left and +z up, so tilting up turns about -y.
     _headTurn = glm::angleAxis(glm::radians(yawDegrees), glm::vec3(0, 0, 1)) * glm::angleAxis(glm::radians(-pitchDegrees), glm::vec3(0, 1, 0));
+}
+
+void VrSystem::setPositionTracking(bool tracked) {
+    if (_positionTracking == tracked)
+        return;
+    _positionTracking = tracked;
+    if (_space != XR_NULL_HANDLE)
+        xrDestroySpace(_space);
+    _space = XR_NULL_HANDLE;
+    _heldValid = false;
 }
 
 glm::quat VrSystem::worldOrientation(const XrQuaternionf &orientation) const {
