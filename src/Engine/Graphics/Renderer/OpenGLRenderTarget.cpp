@@ -45,6 +45,10 @@ void OpenGLRenderTarget::reset(Sizei size, RenderTargetFormat format, bool withD
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, size.w, size.h, 0, GL_RGB, GL_FLOAT, NULL);
     } else if (format == RENDER_TARGET_FORMAT_RG16F) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, size.w, size.h, 0, GL_RG, GL_FLOAT, NULL);
+    } else if (format == RENDER_TARGET_FORMAT_R32F) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R32F, size.w, size.h, 0, GL_RED, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); // GL ES can't filter 32 bit floats.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     } else if (format == RENDER_TARGET_FORMAT_R16F) {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, size.w, size.h, 0, GL_RED, GL_FLOAT, NULL);
     } else {

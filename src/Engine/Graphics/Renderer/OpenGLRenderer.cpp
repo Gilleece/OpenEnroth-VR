@@ -3463,6 +3463,45 @@ void OpenGLRenderer::_copySceneDepth() {
     std::array<GLint, 4> viewport;
     glGetIntegerv(GL_VIEWPORT, viewport.data());
     Sizei size(viewport[2], viewport[3]);
+
+    // A world target's depth is a texture that can be read directly, at half the resolution the soft edges need.
+    OpenGLRenderTarget *world = _currentWorldTarget();
+    if (world && world->hasDepth()) {
+        Sizei half(std::max(1, size.w / 2), std::max(1, size.h / 2));
+        if (_sceneDepthHalf.size() != half)
+            _sceneDepthHalf.reset(half, RENDER_TARGET_FORMAT_R32F, false);
+        GLint framebuffer = 0;
+        glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+        GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+        GLboolean blend = glIsEnabled(GL_BLEND);
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_BLEND);
+        _sceneDepthHalf.bind();
+        glViewport(0, 0, half.w, half.h);
+        _ensureFullscreenTriangle();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, world->depthTexture());
+        depthhalfshader.use();
+        glUniform1i(depthhalfshader.uniformLocation("depthMap"), 0);
+        glUniform2i(depthhalfshader.uniformLocation("sourceOrigin"), viewport[0], viewport[1]);
+        _compositeBuffer.bind();
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        drawcalls++;
+        _compositeBuffer.unbind();
+        depthhalfshader.unuse();
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+        glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+        if (scissor)
+            glEnable(GL_SCISSOR_TEST);
+        if (blend)
+            glEnable(GL_BLEND);
+
+        _sceneDepthViewport = Recti(viewport[0], viewport[1], size.w, size.h);
+        _sceneDepthTexture = _sceneDepthHalf.colorTexture();
+        _sceneDepthCopied = true;
+        return;
+    }
     if (!_sceneDepth || _sceneDepthSize != size) {
         if (!_sceneDepth) {
             glGenTextures(1, &_sceneDepth);
@@ -3505,6 +3544,7 @@ void OpenGLRenderer::_copySceneDepth() {
         glEnable(GL_SCISSOR_TEST);
 
     _sceneDepthViewport = Recti(viewport[0], viewport[1], size.w, size.h);
+    _sceneDepthTexture = _sceneDepth;
     _sceneDepthCopied = true;
 }
 
@@ -3834,7 +3874,7 @@ void OpenGLRenderer::DrawBillboards() {
     bool soft = _sceneDepthCopied && worldSpaceBillboards();
     if (billbshader.hasDefine("LINEAR_PIPELINE")) {
         glActiveTexture(GL_TEXTURE0 + SCENE_DEPTH_TEXTURE_UNIT);
-        glBindTexture(GL_TEXTURE_2D, _sceneDepth);
+        glBindTexture(GL_TEXTURE_2D, _sceneDepthCopied ? _sceneDepthTexture : 0);
         glActiveTexture(GL_TEXTURE0);
         glUniform1i(billbshader.uniformLocation("sceneDepth"), SCENE_DEPTH_TEXTURE_UNIT);
         glUniform4f(billbshader.uniformLocation("sceneViewport"), _sceneDepthViewport.x, _sceneDepthViewport.y, _sceneDepthViewport.w, _sceneDepthViewport.h);
@@ -5597,6 +5637,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&contactshadowshader,    "glcontactshadow",  "Contact shadow",                   {}},
         {&aodepthshader,          "glaodepth",        "Ambient occlusion depth",          {}},
         {&aoshader,               "glao",             "Ambient occlusion",                {}},
+        {&depthhalfshader,        "gldepthhalf",      "Half resolution depth",            {}},
         {&aoblurshader,           "glao",             "Ambient occlusion blur",           aoBlurDefines}
     };
 
