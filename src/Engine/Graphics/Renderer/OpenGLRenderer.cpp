@@ -1447,6 +1447,19 @@ void OpenGLRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {
     glEnable(GL_SCISSOR_TEST);
 }
 
+void OpenGLRenderer::holdTexture(int slot, TextureRenderId colorTexture, Sizei size) {
+    OpenGLRenderTarget &held = _heldTextures[slot];
+    if (held.size() != size)
+        held.reset(size, RENDER_TARGET_FORMAT_RGBA8, false);
+    _copyTarget(*_externalTarget(colorTexture, size), held);
+}
+
+void OpenGLRenderer::restoreHeldTexture(int slot, TextureRenderId colorTexture) {
+    const OpenGLRenderTarget &held = _heldTextures[slot];
+    assert(held.size());
+    _copyTarget(held, *_externalTarget(colorTexture, held.size()));
+}
+
 void OpenGLRenderer::DrawProjectile(float srcX, float srcY, float srcworldview, float srcfovoworldview,
                                     float dstX, float dstY, float dstworldview, float dstfovoworldview,
                                     GraphicsImage *texture) {
@@ -2134,6 +2147,18 @@ OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture
     if (target->size() != size)
         target->resetExternal(static_cast<GLuint>(colorTexture.value()), size, true);
     return target.get();
+}
+
+void OpenGLRenderer::_copyTarget(const OpenGLRenderTarget &source, OpenGLRenderTarget &target) {
+    assert(source.size() == target.size());
+    Sizei size = source.size();
+    glDisable(GL_SCISSOR_TEST);
+    target.bind();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, source.framebuffer());
+    glBlitFramebuffer(0, 0, size.w, size.h, 0, 0, size.w, size.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    _bindUiTarget();
+    glEnable(GL_SCISSOR_TEST);
 }
 
 void OpenGLRenderer::_bindUiTarget() {

@@ -11,6 +11,7 @@
 #include <openxr/openxr.h> // NOLINT: not a C system header.
 
 #include "Engine/Graphics/WorldFrameViews.h"
+#include "Engine/MapEnums.h"
 
 #include "Library/Geometry/Point.h"
 #include "Library/Geometry/Size.h"
@@ -141,6 +142,21 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
      */
     bool drawEye(int index, const XrView &view, WorldFrame &frame);
 
+    /**
+     * Puts the last eye images drawn back into the eye swapchains, with the poses they were drawn at, so that the
+     * world stays where it was around the head on frames that don't draw it.
+     *
+     * @return                          Whether both eyes were put back.
+     */
+    bool restoreHeldWorld();
+
+    /**
+     * @param index                     Eye index, 0 is the left eye.
+     * @param view                      Eye view the image was drawn from.
+     * @param eye                       Swapchain the image is in.
+     */
+    void fillProjectionView(int index, const XrView &view, const Swapchain &eye);
+
     void shutdown();
 
     /**
@@ -179,6 +195,9 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     std::array<XrCompositionLayerProjectionView, 2> _projectionViews = {};
     std::array<XrView, 2> _views = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}};
     bool _viewsLocated = false; // This frame, by `locateViews`.
+    std::array<XrView, 2> _heldViews = {{{XR_TYPE_VIEW}, {XR_TYPE_VIEW}}}; // Of the last eye images drawn, kept by the renderer.
+    bool _heldValid = false; // Whether the renderer holds both eyes of one frame drawn from the current head origin.
+    MapId _heldMap = MAP_INVALID;
     std::optional<CullingCamera> _lastCullingCamera; // Of the last frame drawn, for picking.
     Vec3f _lastPickOrigin; // Mid-eye position of the last frame drawn.
     glm::quat _lastPickOrientation = glm::quat(1, 0, 0, 0); // VIEW space orientation of the last frame drawn.

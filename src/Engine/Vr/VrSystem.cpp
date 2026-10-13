@@ -26,6 +26,8 @@
 #include "Engine/Graphics/WorldFrame.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
 
+#include "GUI/GUIWindow.h"
+
 #include "Application/GameConfig.h"
 
 #include "Io/InputEnums.h"
@@ -300,6 +302,8 @@ bool VrSystem::drawViews(WorldFrame &frame) {
         return false;
     billboards[0] = render->worldBillboardsDrawn;
     _layerReady = drawEye(1, views[1], frame);
+    _heldValid = _layerReady;
+    _heldMap = engine->_currentLoadedMapId;
     billboards[1] = render->worldBillboardsDrawn;
     render->setExternalWorldTarget(TextureRenderId(), Sizei());
 
@@ -600,6 +604,10 @@ void VrSystem::endFrame() {
     if (!_frameBegun)
         return;
 
+    bool worldDrawn = _layerReady;
+    if (!_layerReady && _frameState.shouldRender && window_SpeakInHouse && _heldValid && _heldMap == engine->_currentLoadedMapId)
+        _layerReady = restoreHeldWorld(); // House screens stop the world being drawn.
+
     std::vector<const XrCompositionLayerBaseHeader *> layers;
     XrCompositionLayerProjection projection = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};
     if (_layerReady) {
@@ -619,7 +627,7 @@ void VrSystem::endFrame() {
     endInfo.layers = layers.empty() ? nullptr : layers.data();
     check(xrEndFrame(_session, &endInfo), "xrEndFrame");
 
-    if (_layerReady)
+    if (worldDrawn)
         _worldFrameCount++;
     if (_frameIndex < LOGGED_FRAME_COUNT || (_layerReady && _worldFrameCount <= LOGGED_FRAME_COUNT))
         MM_INFO("VR: frame {} ended with {} layer(s).", _frameIndex, endInfo.layerCount);
@@ -706,6 +714,7 @@ bool VrSystem::captureOrigin(XrTime time) {
     if (_space != XR_NULL_HANDLE)
         xrDestroySpace(_space);
     _space = space;
+    _heldValid = false;
 
     const XrVector3f &position = head.pose.position;
     MM_INFO("VR: head origin at ({:.3f}, {:.3f}, {:.3f}) m in the runtime's LOCAL space, turned {:.1f} degrees.",
@@ -733,16 +742,43 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
     if (index == 0)
         render->setViewportMirror(texture, eye.size);
 
+    render->holdTexture(index, texture, eye.size);
+    _heldViews[index] = view;
+
     XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     check(xrReleaseSwapchainImage(eye.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
 
+    fillProjectionView(index, view, eye);
+    return true;
+}
+
+bool VrSystem::restoreHeldWorld() {
+    for (size_t i = 0; i < _eyes.size(); i++) {
+        Swapchain &eye = _eyes[i];
+        uint32_t imageIndex = 0;
+        XrSwapchainImageAcquireInfo acquireInfo = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+        if (!check(xrAcquireSwapchainImage(eye.swapchain, &acquireInfo, &imageIndex), "xrAcquireSwapchainImage"))
+            return false;
+        XrSwapchainImageWaitInfo waitInfo = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+        waitInfo.timeout = XR_INFINITE_DURATION;
+        if (!check(xrWaitSwapchainImage(eye.swapchain, &waitInfo), "xrWaitSwapchainImage"))
+            return false;
+        render->restoreHeldTexture(static_cast<int>(i), TextureRenderId(eye.images[imageIndex]));
+        XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        check(xrReleaseSwapchainImage(eye.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
+
+        fillProjectionView(static_cast<int>(i), _heldViews[i], eye);
+    }
+    return true;
+}
+
+void VrSystem::fillProjectionView(int index, const XrView &view, const Swapchain &eye) {
     XrCompositionLayerProjectionView &projectionView = _projectionViews[index];
     projectionView = {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW};
     projectionView.pose = view.pose;
     projectionView.fov = view.fov;
     projectionView.subImage.swapchain = eye.swapchain;
     projectionView.subImage.imageRect.extent = {eye.size.w, eye.size.h};
-    return true;
 }
 
 void VrSystem::shutdown() {
