@@ -5,7 +5,8 @@ bitmaps, icons and sprites in the game's LOD files, with normal and roughness ma
 holds derivatives of the game's images, and the game has to be installed to use it.
 
 The steps run in order: `extract`, `upscale`, `maps`, then `pack`. The optional `regen` pass sits between `maps` and
-`pack`, and the optional `bake` adds baked lighting to a pack, before or after `pack`. Extract, upscale and regen skip what they already did, so a rerun only redoes what changed.
+`pack`, and the optional `bake` adds baked lighting to a pack after `pack`. Extract, upscale and regen skip what
+they already did, so a rerun only redoes what changed.
 
 ## Setup
 
@@ -136,8 +137,9 @@ size of each map, then the total, and exits with 1 if any map failed. Pass the e
 python -m texpipe bake --data ../../mm7 --out ../../mm7_hd/esrgan --engine <path to OpenEnroth>
 ```
 
-`pack` keeps the baked lighting already in the pack folder when it writes the manifest again, as long as the config's
-`[pack] gi` is on, which it is in both profiles. Turned off, `pack` removes it from the pack.
+Bake adds to the manifest `pack` wrote and refuses to run without one. A later `pack` keeps the baked lighting
+already in the pack folder when it writes the manifest again, as long as the config's `[pack] gi` is on, which it is
+in both profiles. Turned off, `pack` removes it from the pack.
 
 **verify** checks a pack against the installed game the way the engine loads it, for packs that came from elsewhere:
 every manifest entry against the CRC-32 of its LOD entry, every listed file present, color images at the LOD image's

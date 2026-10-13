@@ -29,7 +29,8 @@ MAGIC = b"OEGI"
 VERSION = 1
 LAYOUT_GRID = 0
 LAYOUT_TERRAIN = 1
-TIME_KEYS = {LAYOUT_GRID: 1, LAYOUT_TERRAIN: 7}
+LAYOUTS = (LAYOUT_GRID, LAYOUT_TERRAIN)
+MAX_TIME_KEYS = 24
 PROBE_SIZE = 12 * 2  # Three channels of four f16 spherical harmonics coefficients.
 FIXED_HEADER = struct.Struct("<4sII3f3f3II")  # Magic, version, layout, origin, spacing, dims, time key count.
 
@@ -64,15 +65,18 @@ def read_header(data: bytes) -> GiHeader:
         raise ValueError(f"magic {magic!r}, must be {MAGIC!r}")
     if version != VERSION:
         raise ValueError(f"version {version}, must be {VERSION}")
-    if layout not in TIME_KEYS:
+    if layout not in LAYOUTS:
         raise ValueError(
             f"layout {layout}, must be {LAYOUT_GRID} for a grid or {LAYOUT_TERRAIN} for layers over the terrain"
         )
-    if time_count != TIME_KEYS[layout]:
-        raise ValueError(f"{time_count} time keys, layout {layout} has {TIME_KEYS[layout]}")
+    if layout == LAYOUT_GRID and time_count != 1:
+        raise ValueError(f"{time_count} time keys, layout {layout} has 1")
+    if layout == LAYOUT_TERRAIN and not 2 <= time_count <= MAX_TIME_KEYS:
+        raise ValueError(f"{time_count} time keys, layout {layout} has 2 to {MAX_TIME_KEYS}")
     if min(dims) == 0:
         raise ValueError(f"dims {dims}, every one must be at least 1")
-    if not all(math.isfinite(value) for value in origin + spacing) or min(spacing) <= 0:
+    spaced = spacing if layout == LAYOUT_GRID else spacing[:2]  # The layer heights place the terrain layers.
+    if not all(math.isfinite(value) for value in origin + spacing) or min(spaced) <= 0:
         raise ValueError(f"origin {origin} and spacing {spacing} must be finite, with the spacing positive")
 
     layer_count = dims[2] if layout == LAYOUT_TERRAIN else 0
@@ -201,12 +205,13 @@ def run_bake(
 ) -> BakeResult:
     """Bakes every map of the game in `data`, or just `maps`, into the pack in `out` and updates its manifest.
 
-    A map that fails loses its probe file and manifest entry, so the engine never loads a half-written bake. Entries of
-    maps not baked this time stay as they were. `runner` runs one engine command and returns its exit code, the engine
-    itself by default, and
-    `progress` hears of every map baked with its seconds and bytes.
+    The pack step must have run already. A map that fails loses its probe file and manifest entry, so the engine never
+    loads a half-written bake. Entries of maps not baked this time stay as they were. `runner` runs one engine command
+    and returns its exit code, the engine itself by default, and `progress` hears of every map baked with its seconds
+    and bytes.
     """
     runner = runner or run_engine
+    manifest = read_manifest(out)
     archive = lod.Lod(find_lod(data, GAMES_LOD))
     available = map_names(archive)
     names = [name.lower() for name in maps] if maps else available
@@ -228,7 +233,6 @@ def run_bake(
         if progress:
             progress(name, seconds, size)
 
-    manifest = read_manifest(out)
     gi = {name: entry for name, entry in manifest.get("gi", {}).items() if name not in result.failures}
     gi.update(entries)
     manifest["gi"] = dict(sorted(gi.items()))
@@ -237,11 +241,11 @@ def run_bake(
 
 
 def read_manifest(out: Path) -> dict:
-    """The pack's manifest, or an empty one if the pack step hasn't run yet."""
+    """The manifest the pack step wrote into `out`."""
     path = out / "manifest.json"
-    if path.is_file():
-        return json.loads(path.read_text(encoding="utf-8"))
-    return {"format": 1, "colors": "raw"}
+    if not path.is_file():
+        raise FileNotFoundError(f"No manifest.json in {out}, run pack first.")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def verify_gi(pack: Path, data: Path, entries: dict[str, dict], failures: list[str]) -> int:
