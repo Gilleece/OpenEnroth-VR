@@ -38,6 +38,10 @@ class GiProbesReader {
         return _offset == _size;
     }
 
+    [[nodiscard]] size_t remaining() const {
+        return _size - _offset;
+    }
+
  private:
     const char *_data = nullptr;
     size_t _size = 0;
@@ -82,7 +86,11 @@ GiProbes readGiProbes(const Blob &blob) {
         reader.take(result.layerHeights.data(), result.dims.z * sizeof(float));
     }
 
-    result.coefficients.resize(static_cast<size_t>(timeCount) * result.probeCount() * GiProbes::COEFFICIENTS);
+    size_t coefficientCount = static_cast<size_t>(timeCount) * result.probeCount() * GiProbes::COEFFICIENTS;
+    if (reader.remaining() < coefficientCount * sizeof(uint16_t)) // Checked first, a corrupt header can ask for gigabytes.
+        throw Exception("Probe file is truncated, it has {} bytes of probes where its header needs {}.", reader.remaining(),
+                        coefficientCount * sizeof(uint16_t));
+    result.coefficients.resize(coefficientCount);
     reader.take(result.coefficients.data(), result.coefficients.size() * sizeof(uint16_t));
     if (!reader.atEnd())
         throw Exception("Probe file has data past its probes.");
