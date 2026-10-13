@@ -72,7 +72,11 @@ void Config::save(OutputStream *stream) const {
                 for (const std::string &line : wrapText(entry->description(), 78))
                     stream->write(fmt::format("; {}\n", line));
             stream->write(fmt::format("; Default is '{}'.\n", entry->defaultString()));
-            stream->write(fmt::format("{}{} = {}\n", entry->isExplicit() ? "" : "; ", entry->name(), entry->string()));
+            if (entry->isExplicit()) {
+                stream->write(fmt::format("{} = {}\n", entry->name(), entry->string()));
+            } else {
+                stream->write(fmt::format("; {} = {}\n", entry->name(), entry->defaultString()));
+            }
             stream->write("\n");
         }
 
