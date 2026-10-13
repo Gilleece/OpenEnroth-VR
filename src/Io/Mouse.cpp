@@ -202,6 +202,7 @@ void Io::Mouse::drawLayerCursor() {
         return; // Fullscreen movies hide the system cursor.
 
     render->BeginScene2D();
+    render->ResetUIClipRect();
     if (cursor_img) {
         render->DrawQuad2D(cursor_img, position() - cursor_img->size() / 2);
     } else {
