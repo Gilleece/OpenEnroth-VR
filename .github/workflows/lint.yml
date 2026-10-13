@@ -146,6 +146,12 @@ jobs:
                 ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
               done
             done
+            for shader in resources/shaders/glterrain.{vert,frag}; do
+              for defines in "TERRAIN_VARIATION LINEAR_PIPELINE" "TERRAIN_VARIATION LINEAR_PIPELINE MATERIAL_MAPS" "TERRAIN_VARIATION LINEAR_PIPELINE MATERIAL_MAPS SUN_SHADOWS AMBIENT_OCCLUSION"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
             for shader in resources/shaders/glao.{vert,frag}; do
               echo "Checking $shader with AO_BLUR against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" AO_BLUR

@@ -328,6 +328,28 @@ static GLuint createMaterialArray(std::span<const std::pair<GraphicsImage *, int
     return result;
 }
 
+/**
+ * @param value                         Grid coordinate.
+ * @return                              A hash bit of the coordinate.
+ */
+static int terrainHashBit(uint32_t value) {
+    uint32_t hash = value * 374761393u;
+    hash = (hash ^ (hash >> 13)) * 1274126177u;
+    return static_cast<int>((hash ^ (hash >> 16)) & 1);
+}
+
+/**
+ * @param x                             Terrain grid x of a square.
+ * @param y                             Terrain grid y of a square.
+ * @return                              Attribute bits 0x4 and 0x8 that mirror the square's texture along u and v in the
+ *                                      linear pipeline's terrain variation. The u mirror only depends on the column and
+ *                                      the v mirror only on the row, which keeps a tileable texture seamless: a mirror
+ *                                      across an edge is continuous, one along it is not.
+ */
+static int terrainMirrorBits(int x, int y) {
+    return (terrainHashBit(static_cast<uint32_t>(x)) << 2) | (terrainHashBit(static_cast<uint32_t>(y) + 0x9E3779B9u) << 3);
+}
+
 static int waterAnimationFrame() {
     // Water animation in vanilla was borked, or so it seems. Water has 7 frames, frame durations are:
     //
@@ -1441,6 +1463,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _sunShadows = config->graphics.SunShadows.value();
     _torchShadows = config->graphics.TorchShadows.value();
     _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
+    _terrainVariation = _linearPipeline && config->graphics.TerrainVariation.value();
 }
 
 void OpenGLRenderer::applyPipelineSettings() {
@@ -2335,7 +2358,10 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
                 // next calculate all vertices vertices
                 const auto &[norm, norm2] = pOutdoor->pTerrain.normalsByGridUnsafe({x, y});
 
-                GLfloat waterAttrib = isWater ? 0x1 : 0;
+                int attribs = isWater ? 0x1 : 0;
+                bool plain = !isWater && tile.variant >= TILE_VARIANT_BASE1 && tile.variant <= TILE_VARIANT_BASE4 && !(tile.flags & TILE_GENERATED_TRANSITION);
+                if (plain && _terrainVariation)
+                    attribs |= terrainMirrorBits(x, y);
 
                 // calc each vertex
                 // [0] - x,y        n1
@@ -2343,42 +2369,42 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
                 _terrainVertices[6 * (x + (127 * y))].texuv = Vec2f(0, 0);
                 _terrainVertices[6 * (x + (127 * y))].texturelayer = tilelayer;
                 _terrainVertices[6 * (x + (127 * y))].normal = norm;
-                _terrainVertices[6 * (x + (127 * y))].attribs = waterAttrib;
+                _terrainVertices[6 * (x + (127 * y))].attribs = static_cast<float>(attribs);
 
                 // [1] - x+1,y+1    n1
                 _terrainVertices[6 * (x + (127 * y)) + 1].pos = pTerrainVertices[(y + 1) * 128 + x + 1].vWorldPosition;
                 _terrainVertices[6 * (x + (127 * y)) + 1].texuv = Vec2f(1, 1);
                 _terrainVertices[6 * (x + (127 * y)) + 1].texturelayer = tilelayer;
                 _terrainVertices[6 * (x + (127 * y)) + 1].normal = norm;
-                _terrainVertices[6 * (x + (127 * y)) + 1].attribs = waterAttrib;
+                _terrainVertices[6 * (x + (127 * y)) + 1].attribs = static_cast<float>(attribs);
 
                 // [2] - x+1,y      n1
                 _terrainVertices[6 * (x + (127 * y)) + 2].pos = pTerrainVertices[y * 128 + x + 1].vWorldPosition;
                 _terrainVertices[6 * (x + (127 * y)) + 2].texuv = Vec2f(1, 0);
                 _terrainVertices[6 * (x + (127 * y)) + 2].texturelayer = tilelayer;
                 _terrainVertices[6 * (x + (127 * y)) + 2].normal = norm;
-                _terrainVertices[6 * (x + (127 * y)) + 2].attribs = waterAttrib;
+                _terrainVertices[6 * (x + (127 * y)) + 2].attribs = static_cast<float>(attribs);
 
                 // [3] - x,y        n2
                 _terrainVertices[6 * (x + (127 * y)) + 3].pos = pTerrainVertices[y * 128 + x].vWorldPosition;
                 _terrainVertices[6 * (x + (127 * y)) + 3].texuv = Vec2f(0, 0);
                 _terrainVertices[6 * (x + (127 * y)) + 3].texturelayer = tilelayer;
                 _terrainVertices[6 * (x + (127 * y)) + 3].normal = norm2;
-                _terrainVertices[6 * (x + (127 * y)) + 3].attribs = waterAttrib;
+                _terrainVertices[6 * (x + (127 * y)) + 3].attribs = static_cast<float>(attribs);
 
                 // [4] - x,y+1      n2
                 _terrainVertices[6 * (x + (127 * y)) + 4].pos = pTerrainVertices[(y + 1) * 128 + x].vWorldPosition;
                 _terrainVertices[6 * (x + (127 * y)) + 4].texuv = Vec2f(0, 1);
                 _terrainVertices[6 * (x + (127 * y)) + 4].texturelayer = tilelayer;
                 _terrainVertices[6 * (x + (127 * y)) + 4].normal = norm2;
-                _terrainVertices[6 * (x + (127 * y)) + 4].attribs = waterAttrib;
+                _terrainVertices[6 * (x + (127 * y)) + 4].attribs = static_cast<float>(attribs);
 
                 // [5] - x+1,y+1    n2
                 _terrainVertices[6 * (x + (127 * y)) + 5].pos = pTerrainVertices[(y + 1) * 128 + x + 1].vWorldPosition;
                 _terrainVertices[6 * (x + (127 * y)) + 5].texuv = Vec2f(1, 1);
                 _terrainVertices[6 * (x + (127 * y)) + 5].texturelayer = tilelayer;
                 _terrainVertices[6 * (x + (127 * y)) + 5].normal = norm2;
-                _terrainVertices[6 * (x + (127 * y)) + 5].attribs = waterAttrib;
+                _terrainVertices[6 * (x + (127 * y)) + 5].attribs = static_cast<float>(attribs);
             }
         }
 
@@ -5068,8 +5094,14 @@ bool OpenGLRenderer::ReloadShaders() {
         for (std::vector<std::string_view> *defines : {&outdoorLitDefines, &outdoorLitMaterialDefines, &indoorDefines, &indoorMaterialDefines})
             defines->push_back("AMBIENT_OCCLUSION");
     }
+    std::vector<std::string_view> terrainDefines = outdoorLitDefines;
+    std::vector<std::string_view> terrainMaterialDefines = outdoorLitMaterialDefines;
+    if (_terrainVariation) {
+        terrainDefines.push_back("TERRAIN_VARIATION");
+        terrainMaterialDefines.push_back("TERRAIN_VARIATION");
+    }
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
-        {&terrainshader,          "glterrain",        "Terrain",                          outdoorLitDefines},
+        {&terrainshader,          "glterrain",        "Terrain",                          terrainDefines},
         {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorLitDefines},
         {&bspshader,              "glbspshader",      "Indoor BSP",                       indoorDefines},
         {&textshader,             "gltextshader",     "Text",                             {}},
@@ -5086,7 +5118,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&vignetteshader,         "glvignette",       "Vignette",                         {}},
         {&shadowshader,           "glshadow",         "Shadow map",                       {}},
         {&shadowspriteshader,     "glshadow",         "Sprite shadow map",                spriteShadowDefines},
-        {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           outdoorLitMaterialDefines},
+        {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           terrainMaterialDefines},
         {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", outdoorLitMaterialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        indoorMaterialDefines},
         {&torchshadowshader,      "gltorchshadow",    "Torch shadow map",                 {}},

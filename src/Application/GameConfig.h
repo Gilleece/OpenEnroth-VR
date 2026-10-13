@@ -538,6 +538,9 @@ class GameConfig : public Config {
                              "Let the nearest wall torches and other lights indoors cast shadows. Takes effect on restart."};
         Int TorchShadowCount = {this, "torch_shadow_count", 4, &ValidateTorchShadowCount,
                                 "How many of the nearest indoor lights cast shadows, 1 to 8. Takes effect on restart."};
+        Bool TerrainVariation = {this, "terrain_variation", false,
+                                 "Break up the repetition of terrain tiles, with a mirror per tile and a slow variation in brightness across"
+                                 " the map. Only applies with linear_pipeline."};
         Bool AmbientOcclusion = {this, "ambient_occlusion", false,
                                  "Darken the ambient light and the point lights in corners, under stairs and behind pillars, with"
                                  " screen-space ambient occlusion. Only applies with linear_pipeline."};
