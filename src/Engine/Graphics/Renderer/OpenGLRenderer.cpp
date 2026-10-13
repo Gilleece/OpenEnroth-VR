@@ -70,6 +70,12 @@ static constexpr GLint PALETTE_TEXTURE_UNIT = 1;
 static constexpr GLint MATERIAL_TEXTURE_UNIT = 2; // The world shaders sample units 0 and 1 only.
 static constexpr int TERRAIN_TILE_TEXTURE_UNIT = 1; // The terrain shader samples tiles from unit 1 and water from unit 0.
 static constexpr GLint BLOOM_TEXTURE_UNIT = 3; // Not used by any other shader.
+static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
+static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
+static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
+static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
+static constexpr float SUN_SHADOW_SLOPE_BIAS = 2.0f;
+static constexpr float SUN_SHADOW_CONSTANT_BIAS = 4.0f;
 static constexpr int BLOOM_MAX_LEVELS = 6;
 static constexpr int BLOOM_MIN_LEVEL_SIZE = 8; // In pixels, on the shorter side.
 static constexpr float LINEAR_ADDITIVE_GAIN = 2.0f; // Additive billboards were made to add up in sRGB, where the sum is brighter than in linear.
@@ -676,6 +682,219 @@ void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size)
 
 void OpenGLRenderer::setExternalFramePacing(bool external) {
     _externalFramePacing = external;
+}
+
+/**
+ * @param time                          Party time.
+ * @param[out] fade                     How strong the sun's shadows are, from 0 below the horizon to 1 at
+ *                                      `SUN_SHADOW_FADE_ELEVATION` and above.
+ * @return                              Unit vector towards the sun. Same as `OutdoorLocation::UpdateSunlightVectors`,
+ *                                      but with the seconds too, so that shadows move smoothly instead of a step a
+ *                                      minute.
+ */
+static Vec3f sunDirection(Time time, float *fade) {
+    float minutes = (time.toSeconds() % 86400) / 60.0f - 5 * 60.0f; // The sun is up from 05:00 to 21:00.
+    if (minutes < 0 || minutes >= 960) {
+        *fade = 0;
+        return Vec3f(0, 0, 1);
+    }
+
+    float angle = minutes * static_cast<float>(M_PI) / 960.0f;
+    float elevation = std::min(angle, static_cast<float>(M_PI) - angle);
+    *fade = std::clamp(elevation / glm::radians(SUN_SHADOW_FADE_ELEVATION), 0.0f, 1.0f);
+    return Vec3f(std::cos(angle), 0, std::sin(angle));
+}
+
+void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels) {
+    _sunShadowFade = 0;
+    if (!_sunShadows || uCurrentlyLoadedLevelType != LEVEL_OUTDOOR)
+        return;
+
+    float fade = 0;
+    Vec3f sun = sunDirection(pParty->GetPlayingTime(), &fade);
+    if (fade <= 0 || pWeather->bNight)
+        return;
+
+    _ensureSunShadowResources();
+
+    CameraView view = CameraView::fromCamera3D(*pCamera3D, worldTargetViewport());
+    glm::mat4 viewToWorld = glm::inverse(view.viewMatrix);
+    float nearClip = view.projection.nearClip;
+    float farClip = std::min(static_cast<float>(config->graphics.ShadowDistance.value()), view.projection.farClip);
+    glm::mat4 lightRotation = glm::lookAtRH(glm::vec3(0), -glm::vec3(sun.x, sun.y, sun.z), glm::vec3(0, 1, 0)); // The sun never leaves the X-Z plane.
+    glm::mat4 textureSpace = glm::translate(glm::mat4(1), glm::vec3(0.5f)) * glm::scale(glm::mat4(1), glm::vec3(0.5f));
+
+    GLint framebuffer = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
+    std::array<GLint, 4> viewport;
+    glGetIntegerv(GL_VIEWPORT, viewport.data());
+    GLboolean cullFace = glIsEnabled(GL_CULL_FACE);
+    GLboolean blend = glIsEnabled(GL_BLEND);
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    GLboolean depthTest = glIsEnabled(GL_DEPTH_TEST);
+    GLboolean depthMask = GL_TRUE;
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+
+    glDisable(GL_CULL_FACE); // Terrain is a one-sided heightfield, it has to cast from its back too.
+    glDisable(GL_BLEND);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(SUN_SHADOW_SLOPE_BIAS, SUN_SHADOW_CONSTANT_BIAS);
+    glViewport(0, 0, _sunShadowMapSize, _sunShadowMapSize);
+    shadowshader.use();
+
+    float splitNear = nearClip;
+    for (int cascade = 0; cascade < SUN_SHADOW_CASCADES; cascade++) {
+        float part = (cascade + 1.0f) / SUN_SHADOW_CASCADES;
+        float logarithmic = nearClip * std::pow(farClip / nearClip, part);
+        float uniform = nearClip + (farClip - nearClip) * part;
+        float splitFar = SUN_SHADOW_SPLIT_LAMBDA * logarithmic + (1 - SUN_SHADOW_SPLIT_LAMBDA) * uniform;
+
+        // The slice of the view between the splits, in a sphere that doesn't change size as the view turns.
+        std::array<glm::vec3, 8> corners;
+        glm::vec3 centre(0);
+        for (int i = 0; i < 8; i++) {
+            float depth = (i & 4) ? splitFar : splitNear;
+            float x = ((i & 1) ? view.projection.tanRight : view.projection.tanLeft) * depth;
+            float y = ((i & 2) ? view.projection.tanUp : view.projection.tanDown) * depth;
+            corners[i] = glm::vec3(viewToWorld * glm::vec4(x, y, depth, 1));
+            centre += corners[i] / 8.0f;
+        }
+        float radius = 0;
+        for (const glm::vec3 &corner : corners)
+            radius = std::max(radius, glm::length(corner - centre));
+        radius = std::ceil(radius / 16.0f) * 16.0f;
+        float texel = 2 * radius / _sunShadowMapSize;
+
+        // Snapping the centre to whole texels keeps the shadow edges still as the camera moves.
+        glm::vec3 lightCentre = glm::vec3(lightRotation * glm::vec4(centre, 1));
+        lightCentre.x = std::floor(lightCentre.x / texel) * texel;
+        lightCentre.y = std::floor(lightCentre.y / texel) * texel;
+        float zNear = -lightCentre.z - radius - SUN_SHADOW_EXTRUSION;
+        float zFar = -lightCentre.z + radius;
+        glm::mat4 projection = glm::ortho(lightCentre.x - radius, lightCentre.x + radius, lightCentre.y - radius, lightCentre.y + radius, zNear, zFar);
+        glm::mat4 lightMatrix = projection * lightRotation;
+        _sunShadowMatrices[cascade] = textureSpace * lightMatrix;
+        _sunShadowTexels[cascade] = texel;
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _sunShadowFramebuffers[cascade]);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glUniformMatrix4fv(shadowshader.uniformLocation("lightMatrix"), 1, GL_FALSE, &lightMatrix[0][0]);
+
+        _sunShadowTerrainBuffer.bind();
+        glDrawArrays(GL_TRIANGLES, 0, 127 * 127 * 6);
+        drawcalls++;
+
+        _sunShadowBuildingBuffer.bind();
+        for (int modelId : casterModels) {
+            const BSPModel &model = pOutdoor->pBModels[modelId];
+            const auto &[first, count] = _sunShadowModelRanges[modelId];
+            glm::vec3 modelCentre = glm::vec3(lightRotation * glm::vec4(model.boundingCenter.x, model.boundingCenter.y, model.boundingCenter.z, 1));
+            float reach = radius + model.boundingRadius;
+            if (count == 0 || std::abs(modelCentre.x - lightCentre.x) > reach || std::abs(modelCentre.y - lightCentre.y) > reach)
+                continue;
+            if (-modelCentre.z + model.boundingRadius < zNear || -modelCentre.z - model.boundingRadius > zFar)
+                continue;
+            glDrawArrays(GL_TRIANGLES, first, count);
+            drawcalls++;
+        }
+
+        splitNear = splitFar;
+    }
+
+    _sunShadowBuildingBuffer.unbind();
+    shadowshader.unuse();
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glDepthMask(depthMask);
+    if (cullFace)
+        glEnable(GL_CULL_FACE);
+    if (blend)
+        glEnable(GL_BLEND);
+    if (scissor)
+        glEnable(GL_SCISSOR_TEST);
+    if (!depthTest)
+        glDisable(GL_DEPTH_TEST);
+
+    _sunShadowFade = fade;
+}
+
+void OpenGLRenderer::_ensureSunShadowResources() {
+    if (!_sunShadowMap) {
+        _sunShadowMapSize = config->graphics.ShadowMapSize.value();
+        glGenTextures(1, &_sunShadowMap);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, _sunShadowMap);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT32F, _sunShadowMapSize, _sunShadowMapSize, SUN_SHADOW_CASCADES, 0,
+                     GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+        GLenum none = GL_NONE;
+        glGenFramebuffers(SUN_SHADOW_CASCADES, _sunShadowFramebuffers.data());
+        for (int cascade = 0; cascade < SUN_SHADOW_CASCADES; cascade++) {
+            glBindFramebuffer(GL_FRAMEBUFFER, _sunShadowFramebuffers[cascade]);
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, _sunShadowMap, 0, cascade);
+            glDrawBuffers(1, &none);
+            glReadBuffer(GL_NONE);
+            if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+                MM_ERROR("Sun shadow framebuffer {} is incomplete.", cascade);
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    if (uCurrentlyLoadedLevelType != LEVEL_OUTDOOR || _sunShadowTerrainBuffer)
+        return;
+
+    std::vector<ShadowVertex> vertices;
+    vertices.reserve(127 * 127 * 6);
+    for (int y = 0; y < 127; y++) {
+        for (int x = 0; x < 127; x++) {
+            for (Pointi corner : {Pointi(x, y), Pointi(x + 1, y + 1), Pointi(x + 1, y), Pointi(x, y), Pointi(x, y + 1), Pointi(x + 1, y + 1)})
+                vertices.push_back({pOutdoor->pTerrain.vertexByGridUnsafe(corner).toFloat()});
+        }
+    }
+    _sunShadowTerrainBuffer.reset(GL_STATIC_DRAW, &ShadowVertex::pos);
+    _sunShadowTerrainBuffer.update(vertices);
+
+    vertices.clear();
+    _sunShadowModelRanges.clear();
+    for (const BSPModel &model : pOutdoor->pBModels) {
+        int first = static_cast<int>(vertices.size());
+        for (int faceId : model.faces) {
+            const BLVFace &face = pOutdoor->faces[faceId];
+            if (face.Invisible() || face.isFluid() || face.isPortal() || face.vertexIds.size() < 3)
+                continue;
+            for (int z = 0; z + 2 < static_cast<int>(face.vertexIds.size()); z++)
+                for (int i : {0, z + 1, z + 2})
+                    vertices.push_back({pOutdoor->vertices[face.vertexIds[i]]});
+        }
+        _sunShadowModelRanges.emplace_back(first, static_cast<int>(vertices.size()) - first);
+    }
+    _sunShadowBuildingBuffer.reset(GL_STATIC_DRAW, &ShadowVertex::pos);
+    if (!vertices.empty())
+        _sunShadowBuildingBuffer.update(vertices);
+}
+
+void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
+    if (!shader.hasDefine("SUN_SHADOWS"))
+        return;
+
+    _ensureSunShadowResources();
+    glActiveTexture(GL_TEXTURE0 + SUN_SHADOW_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, _sunShadowMap);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(shader.uniformLocation("sunShadowMap"), SUN_SHADOW_TEXTURE_UNIT);
+    glUniformMatrix4fv(shader.uniformLocation("sunShadowMatrices"), SUN_SHADOW_CASCADES, GL_FALSE, &_sunShadowMatrices[0][0][0]);
+    glUniform1fv(shader.uniformLocation("sunShadowTexels"), SUN_SHADOW_CASCADES, _sunShadowTexels.data());
+    glUniform1f(shader.uniformLocation("sunShadowFade"), _sunShadowFade);
 }
 
 bool OpenGLRenderer::worldSpaceBillboards() {
@@ -1747,6 +1966,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
 
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(shader);
+    _submitSunShadow(shader);
     if (tileMaterials) {
         glUniform1i(shader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
@@ -3310,10 +3530,12 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
 
     // remaining lights are default-initialized (type = 0)
     uniforms.submit(outbuildshader);
+    _submitSunShadow(outbuildshader);
     bool hasMaterials = std::ranges::any_of(outbuildmaterials, [](GLuint id) { return id != 0; });
     if (hasMaterials) {
         outbuildmaterialshader.use();
         uniforms.submit(outbuildmaterialshader);
+        _submitSunShadow(outbuildmaterialshader);
         glUniform1i(outbuildmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
     }
 
@@ -4001,6 +4223,7 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
 
     if (firstInit) {
         _linearPipeline = config->graphics.LinearPipeline.value() && !config->vr.Enabled.value();
+        _sunShadows = config->graphics.SunShadows.value();
         if (config->graphics.LinearPipeline.value() && !_linearPipeline)
             MM_INFO("The linear pipeline is not supported in VR yet, drawing the world without it.");
     }
@@ -4111,9 +4334,15 @@ bool OpenGLRenderer::ReloadShaders() {
         worldDefines.push_back("LINEAR_PIPELINE");
     std::vector<std::string_view> materialDefines = worldDefines;
     materialDefines.push_back("MATERIAL_MAPS");
+    std::vector<std::string_view> outdoorDefines = worldDefines;
+    std::vector<std::string_view> outdoorMaterialDefines = materialDefines;
+    if (_sunShadows) {
+        outdoorDefines.push_back("SUN_SHADOWS");
+        outdoorMaterialDefines.push_back("SUN_SHADOWS");
+    }
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
-        {&terrainshader,          "glterrain",        "Terrain",                          worldDefines},
-        {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                worldDefines},
+        {&terrainshader,          "glterrain",        "Terrain",                          outdoorDefines},
+        {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorDefines},
         {&bspshader,              "glbspshader",      "Indoor BSP",                       worldDefines},
         {&textshader,             "gltextshader",     "Text",                             {}},
         {&lineshader,             "gllinesshader",    "Lines",                            {}},
@@ -4126,8 +4355,9 @@ bool OpenGLRenderer::ReloadShaders() {
         {&bloomdownshader,        "glbloom",          "Bloom downsample",                 {}},
         {&bloomupshader,          "glbloom",          "Bloom upsample",                   bloomUpsampleDefines},
         {&fxaashader,             "glfxaa",           "FXAA",                             {}},
-        {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           materialDefines},
-        {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", materialDefines},
+        {&shadowshader,           "glshadow",         "Shadow map",                       {}},
+        {&terrainmaterialshader,  "glterrain",        "Terrain with materials",           outdoorMaterialDefines},
+        {&outbuildmaterialshader, "gloutbuild",       "Outdoor buildings with materials", outdoorMaterialDefines},
         {&bspmaterialshader,      "glbspshader",      "Indoor BSP with materials",        materialDefines}
     };
 
@@ -4159,6 +4389,10 @@ void OpenGLRenderer::endOverlays() {
 }
 
 void OpenGLRenderer::ReleaseTerrain() {
+    _sunShadowTerrainBuffer.reset();
+    _sunShadowBuildingBuffer.reset();
+    _sunShadowModelRanges.clear();
+
     /*GLuint terrainVBO, terrainVAO;
     GLuint terraintextures[8];
     unsigned numterraintexloaded[8];

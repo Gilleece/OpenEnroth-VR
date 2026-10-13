@@ -107,6 +107,10 @@ struct SkyVertex {
     float texid = 0;
 };
 
+struct ShadowVertex {
+    Vec3f pos;
+};
+
 struct CompositeVertex {
     Vec2f pos;
 };

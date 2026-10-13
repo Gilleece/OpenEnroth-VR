@@ -61,6 +61,8 @@ set(RESOURCE_SOURCES
         shaders/gllinesshader.vert
         shaders/gloutbuild.frag
         shaders/gloutbuild.vert
+        shaders/glshadow.frag
+        shaders/glshadow.vert
         shaders/glskyshader.frag
         shaders/glskyshader.vert
         shaders/glterrain.frag
@@ -71,7 +73,8 @@ set(RESOURCE_SOURCES
         shaders/gltwodshader.vert
         shaders/lighting.glsl
         shaders/material.glsl
-        shaders/precision.glsl)
+        shaders/precision.glsl
+        shaders/shadow.glsl)
 
 cmrc_add_resource_library(resources NAMESPACE openenroth ${RESOURCE_SOURCES})
 

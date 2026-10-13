@@ -514,6 +514,11 @@ class GameConfig : public Config {
         Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
         ConfigEntry<AntialiasingMode> Antialiasing = {this, "antialiasing", ANTIALIASING_OFF,
                                                       "Antialiasing of the 3D world, 'off' or 'fxaa'. Only applies with linear_pipeline."};
+        Bool SunShadows = {this, "sun_shadows", false, "Let terrain and buildings cast shadows from the sun outdoors. Takes effect on restart."};
+        Int ShadowDistance = {this, "shadow_distance", 8192, &ValidateShadowDistance,
+                              "Distance from the camera up to which the sun casts shadows, in world units."};
+        Int ShadowMapSize = {this, "shadow_map_size", 2048, &ValidateShadowMapSize,
+                             "Size of each of the four sun shadow maps, 1024 or 2048. Takes effect on restart."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
                                      "Draw sprites, particles, projectiles and the sky in world space through the camera matrices instead of in"
                                      " screen space. Always on in VR, where the screen space versions are wrong in stereo."};
@@ -568,6 +573,12 @@ class GameConfig : public Config {
         }
         static int ValidateWorldTargetFilter(int filter) {
             return std::clamp(filter, 1, 2);
+        }
+        static int ValidateShadowDistance(int distance) {
+            return std::clamp(distance, 1024, 16192);
+        }
+        static int ValidateShadowMapSize(int size) {
+            return size < 1536 ? 1024 : 2048;
         }
         static float ValidateExposure(float exposure) {
             return std::clamp(exposure, 0.0625f, 16.0f);

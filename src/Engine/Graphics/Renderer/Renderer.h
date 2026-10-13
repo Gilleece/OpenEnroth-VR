@@ -2,6 +2,7 @@
 
 #include <array>
 #include <memory>
+#include <span>
 #include <vector>
 
 #include "Library/Image/Image.h"
@@ -116,6 +117,15 @@ class Renderer {
      *                                  the frames.
      */
     virtual void setExternalFramePacing(bool external) = 0;
+
+    /**
+     * Draws the sun's shadow maps for the 3D passes of this frame. Does nothing unless sun shadows are enabled and an
+     * outdoor level is loaded. Call once per frame, between `WorldFrame::prepare` and the first draw.
+     *
+     * @param casterModels              Indices into `OutdoorLocation::pBModels` of the building models that can cast
+     *                                  shadows into the shadow distance.
+     */
+    virtual void drawSunShadows(std::span<const int> casterModels) = 0;
 
     /**
      * @return                          Whether the current 3D pass draws sprites, particles, projectiles and the sky in

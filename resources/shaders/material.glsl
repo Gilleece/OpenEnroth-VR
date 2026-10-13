@@ -21,6 +21,16 @@ vec3 CalcSunLightMaterial(Sunlight light, vec3 normal, vec3 viewDir, float shini
     return clamp(light.ambient + light.diffuse * diff + light.specular * spec, 0.0, 1.0);
 }
 
+#ifdef SUN_SHADOWS
+// CalcSunLightMaterial with the direct light scaled by the shadow, see CalcSunLightShadowed.
+vec3 CalcSunLightMaterialShadowed(Sunlight light, vec3 normal, vec3 viewDir, float shininess, float shadow) {
+    vec3 lightDir = normalize(light.direction);
+    float diff = max(dot(normal, lightDir), 0.0);
+    float spec = MaterialSpecular(normal, lightDir, viewDir, shininess);
+    return clamp(light.ambient + (light.diffuse * diff + light.specular * spec) * shadow, 0.0, 1.0);
+}
+#endif
+
 // The geometric normal decides whether the light reaches the face at all, the mapped normal only shades it.
 vec3 CalcPointLightMaterial(PointLight light, vec3 normal, vec3 geometricNormal, vec3 fragPos, vec3 viewDir, float shininess) {
     if (light.diffuse.r == 0.0 && light.diffuse.g == 0.0 && light.diffuse.b == 0.0)
@@ -73,7 +83,11 @@ vec3 CalcMaterialLighting(vec4 material, vec3 albedo, vec3 geometricNormal, vec3
     vec3 normal = normalize(mat3(tangent, bitangent, geometricNormal) * (material.rgb * 2.0 - 1.0));
     float shininess = MaterialShininess(material.a);
 
+#ifdef SUN_SHADOWS
+    vec3 result = CalcSunLightMaterialShadowed(sun, normal, viewDir, shininess, SunShadow(fragPos, geometricNormal));
+#else
     vec3 result = CalcSunLightMaterial(sun, normal, viewDir, shininess);
+#endif
     result = clamp(result, 0.0, 0.85);
 
     result += CalcPointLightMaterial(fspointlights[0], normal, geometricNormal, fragPos, viewDir, shininess);
