@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <fstream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -119,6 +121,7 @@ GAME_TEST(VrSmoke, Session) {
     auto restore = ScopeGuard([&] {
         detail::logger->setSink(warnings.next());
         engine->config->vr.HudLayout.setValue(VR_HUD_LAYOUT_CLASSIC);
+        engine->config->vr.UiFollow.setValue(VR_UI_FOLLOW_FIXED);
         if (vr) {
             vr->setHeadTurn(0, 0);
             vr->setHeadShift(Vec3f());
@@ -219,6 +222,32 @@ GAME_TEST(VrSmoke, Session) {
         EXPECT_GT(followed, 0);
     }
     phase("turning the head");
+
+    // A menu hangs where the head looked when it opened and stays there, or follows the head lazily.
+    if (vr) {
+        auto uiYaw = [&] {
+            std::optional<XrPosef> pose = vr->uiPose(); // Upright, only turned about the vertical.
+            return pose ? static_cast<float>(2 * std::atan2(pose->orientation.y, pose->orientation.w) * 180 / M_PI) : 1000.0f;
+        };
+        engine->config->vr.UiFollow.setValue(VR_UI_FOLLOW_FIXED);
+        vr->setHeadTurn(30, 0);
+        game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+        game.tick(5);
+        EXPECT_EQ(current_screen_type, SCREEN_MENU);
+        EXPECT_NEAR(uiYaw(), 30, 0.5);
+        vr->setHeadTurn(-30, 0);
+        game.tick(5);
+        EXPECT_NEAR(uiYaw(), 30, 0.5);
+        engine->config->vr.UiFollow.setValue(VR_UI_FOLLOW_LAZY);
+        game.tick(90); // Past the half second the lazy screen takes to ease back in front.
+        EXPECT_NEAR(uiYaw(), -30, 0.5);
+        engine->config->vr.UiFollow.setValue(VR_UI_FOLLOW_FIXED);
+        vr->setHeadTurn(0, 0);
+        game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+        game.tick(5);
+        EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    }
+    phase("a menu fixed in space");
 
     // Without position tracking, the way a headset that only tracks orientation runs.
     if (vr)
