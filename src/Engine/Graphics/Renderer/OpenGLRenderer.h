@@ -262,6 +262,26 @@ class OpenGLRenderer : public BaseRenderer {
     void _submitSunShadow(const OpenGLShader &shader);
 
     /**
+     * Sky and sun for the linear pipeline's sky and water, in linear colour.
+     */
+    struct SkyState {
+        Vec3f sunDirection; // Towards the sun.
+        float sunVisibility = 0; // 0 at night, indoors and in foggy weather, 1 with the sun clear of the horizon.
+        Colorf zenith;
+        Colorf horizon;
+    };
+
+    /**
+     * @return                          The sky and the sun at the current time, weather and sky texture.
+     */
+    SkyState _skyState();
+
+    /**
+     * Creates `_waterNormals` if it doesn't exist yet.
+     */
+    void _ensureWaterNormals();
+
+    /**
      * @return                          Internal format for the colour texture arrays of the world, sRGB with the
      *                                  linear pipeline so that sampling them decodes to linear.
      */
@@ -362,6 +382,11 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<glm::mat4, SUN_SHADOW_CASCADES> _sunShadowMatrices = {};
     std::array<float, SUN_SHADOW_CASCADES> _sunShadowTexels = {};
     float _sunShadowFade = 0;
+
+    // linear pipeline sky and water
+    GLuint _waterNormals = 0; // Tiling normal map of small waves.
+    GraphicsImage *_skyAverageTexture = nullptr;
+    Colorf _skyAverage; // Average colour of `_skyAverageTexture`.
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
     OpenGLRenderTarget _antialiasingTarget; // Tonemapped world at the size it's composited at, the input to FXAA.
     std::vector<SkyVertex> _skyVertices;

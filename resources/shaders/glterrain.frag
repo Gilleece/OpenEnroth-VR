@@ -31,6 +31,11 @@ uniform FogParam fog;
 #include "shadow.glsl"
 #endif
 
+#ifdef LINEAR_PIPELINE
+#include "sky.glsl"
+#include "water.glsl"
+#endif
+
 #ifdef MATERIAL_MAPS
 uniform sampler2DArray materialArray;
 #include "material.glsl"
@@ -52,6 +57,11 @@ void main() {
     vec4 material = texture(materialArray, vec3(texuv.x, texuv.y, olayer));
     if (fragcol.a == 0.0 || (vsAttrib & 0x1) > 0)
         material = vec4(0.0); // Water has no material.
+#endif
+
+#ifdef LINEAR_PIPELINE
+    bool water = fragcol.a == 0.0 || (vsAttrib & 0x1) > 0;
+    vec3 waternormal = WaterNormal(vsPos); // Outside the branch, texture lookups need uniform control flow.
 #endif
 
     // replace texture with water if alpha or a water tile (bit 0x1 in attribs)
@@ -107,6 +117,8 @@ void main() {
 
 #ifdef LINEAR_PIPELINE
     result = srgbToLinear(result);
+    if (water)
+        result = WaterSurface(result, waternormal, vsPos, fragviewdir);
 #endif
 
     vec3 clamps = result;
