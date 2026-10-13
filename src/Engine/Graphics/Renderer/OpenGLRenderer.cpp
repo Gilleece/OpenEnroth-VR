@@ -976,6 +976,17 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
     glUniform1i(shader.uniformLocation("sunShadowFilter"), config->graphics.ShadowFilter.value() == SHADOW_FILTER_PCF1);
 }
 
+void OpenGLRenderer::_readPipelineSettings() {
+    _linearPipeline = config->graphics.LinearPipeline.value();
+    _sunShadows = config->graphics.SunShadows.value();
+}
+
+void OpenGLRenderer::applyPipelineSettings() {
+    _readPipelineSettings();
+    ReloadShaders();
+    Reinitialize(false);
+}
+
 bool OpenGLRenderer::worldSpaceBillboards() {
     return _externalWorldTarget || config->graphics.WorldSpaceBillboards.value();
 }
@@ -4327,10 +4338,8 @@ void OpenGLRenderer::_initWaterTiles() {
 bool OpenGLRenderer::Reinitialize(bool firstInit) {
     BaseRenderer::Reinitialize(firstInit);
 
-    if (firstInit) {
-        _linearPipeline = config->graphics.LinearPipeline.value();
-        _sunShadows = config->graphics.SunShadows.value();
-    }
+    if (firstInit)
+        _readPipelineSettings();
 
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);       // Black Background
     glClearDepthf(1.0f);
@@ -4350,6 +4359,10 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
     if (_linearPipeline && (worldTargetWidth == 0 || worldTargetHeight == 0)) {
         worldTargetWidth = pViewport.w;
         worldTargetHeight = pViewport.h;
+        if (config->graphics.Enhanced.value()) { // The viewport's size in window pixels, which outputRender can be smaller than.
+            worldTargetWidth = pViewport.w * outputPresent.w / outputRender.w;
+            worldTargetHeight = pViewport.h * outputPresent.h / outputRender.h;
+        }
     }
     if (worldTargetWidth > 0 && worldTargetHeight > 0) {
         bool hdr = config->graphics.WorldTargetHdr.value() || _linearPipeline;

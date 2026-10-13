@@ -63,6 +63,8 @@ bool NullRenderer::worldSpaceBillboards() {
     return false;
 }
 
+void NullRenderer::applyPipelineSettings() {}
+
 void NullRenderer::drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) {}
 
 void NullRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) {}
