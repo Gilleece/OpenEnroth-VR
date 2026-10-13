@@ -101,3 +101,14 @@ exclude = []
 min_iou = 0.88
 max_color_delta = 10.0
 max_distance = 0.08
+
+# Sprite shape images from a monocular depth model, see the README. Sprites the [regen] exclude globs match stay flat.
+[depth]
+model = "depth-anything/Depth-Anything-V2-Small-hf"
+background = [128, 128, 128]  # What the model sees behind the sprite.
+percentiles = [0.02, 0.98]  # Of the opaque depths of an animation group, mapped to farthest and nearest.
+thickness_ratio = 0.6  # Front to back depth as a share of the group's median opaque width.
+min_thickness = 8.0  # Game units.
+max_thickness = 256.0
+blur = 1.0  # Gaussian sigma over the depth before the Sobel, in pack pixels.
+erode = 2  # Pack pixels of the silhouette that take their depth from further in, the model blurs them.

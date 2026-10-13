@@ -56,6 +56,7 @@ def test_pack_writes_images_manifest_and_readme(tmp_path):
         "maps": 0,
         "sprite images": 0,
         "generated": 0,
+        "shapes": 0,
     }
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["bitmaps"] == {"wall": {"crc32": "deadbeef"}}

@@ -70,7 +70,7 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
     retrace->set_help_flag("-h,--help", "Print help and exit."); // This places --help last in the command list.
 
     CLI::App *dumpSpritePalettes = app->add_subcommand("dump-sprite-palettes",
-        "Write which palettes each sprites.lod image is drawn with as JSON and exit.", result.subcommand, SUBCOMMAND_DUMP_SPRITE_PALETTES)->fallthrough();
+        "Write which palettes each sprites.lod image is drawn with, and which images animate together, as JSON and exit.", result.subcommand, SUBCOMMAND_DUMP_SPRITE_PALETTES)->fallthrough();
     dumpSpritePalettes->add_option(
         "OUTPUT", result.dumpSpritePalettes.output,
         "Path to the JSON file to write.")->required()->option_text(" ");

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from texpipe.depth import shape_entry, shape_path
 from texpipe.maps import MAPS, map_path
 from texpipe.regen import generated_image, record_path
 from texpipe.regen_icons import generated_icon
@@ -76,6 +77,7 @@ def run_pack(
         _copy(source, out / image.section / f"{image.name}.png")
         if image.section == "sprites":
             _add_sprite_image(entries["sprites"], image)
+            _add_sprite_shape(work, out, entries["sprites"], image.name.rsplit("/", 1)[0], size)
             continue
         entry = {"crc32": image.crc32}
         if image.section == "bitmaps" and all(map_path(work, kind, image.name).is_file() for kind in MAPS):
@@ -94,6 +96,7 @@ def run_pack(
     counts["maps"] = sum(1 for entry in entries["bitmaps"].values() if "maps" in entry)
     counts["sprite images"] = sum(len(entry["palettes"]) for entry in entries["sprites"].values())
     counts["generated"] = len(generated)
+    counts["shapes"] = sum(1 for entry in entries["sprites"].values() if "shape" in entry)
     return counts
 
 
@@ -104,6 +107,19 @@ def _add_sprite_image(sprites: dict[str, dict], image: WorkImage) -> None:
     if entry["crc32"] != image.crc32:
         raise ValueError(f"sprite {name} has images from different sprites.lod entries")
     entry["palettes"] = sorted([*entry["palettes"], int(palette_id)])
+
+
+def _add_sprite_shape(work: Path, out: Path, sprites: dict[str, dict], name: str, size: tuple[int, int]) -> None:
+    """Copies a sprite's shape image into the pack and adds `"shape": {"thickness": ...}` to its entry, once."""
+    entry = sprites[name]
+    if "shape" in entry:
+        return
+    shape = shape_entry(work, name)
+    if shape is None:
+        return
+    _check_size(shape_path(work, name), size)
+    _copy(shape_path(work, name), out / "shape" / "sprites" / f"{name}.png")
+    entry["shape"] = shape
 
 
 def _copy(source: Path, target: Path) -> None:

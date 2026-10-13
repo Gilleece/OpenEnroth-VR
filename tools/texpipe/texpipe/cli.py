@@ -2,12 +2,14 @@
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
 from texpipe import lodtool
 from texpipe.backends.realesrgan import resolve_binary
 from texpipe.config import SCALES, load_config
+from texpipe.depth import run_depth
 from texpipe.extract import run_extract
 from texpipe.maps import run_maps
 from texpipe.pack import COLORS, run_pack
@@ -17,6 +19,7 @@ from texpipe.upscale import BACKENDS, run_upscale
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MASK_TABLE = REPO_ROOT / "resources" / "data" / "resource_mask_table.json"
+DEPTH_PYTHON_ENV = "TEXPIPE_DEPTH_PYTHON"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -62,6 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
     regen.add_argument("--section", choices=("sprites", "icons"), default="sprites", help="What to regenerate.")
     regen.add_argument("--dry-run", action="store_true", help="List what would be sent and the cost, call nothing.")
 
+    depth = commands.add_parser("depth", help="Shape images with normals and depth for the upscaled sprites.")
+    depth.add_argument("--work", type=Path, required=True, help="Work folder with upscaled sprites.")
+    depth.add_argument("--palettes", type=Path, required=True, help="Output of 'OpenEnroth dump-sprite-palettes'.")
+    depth.add_argument(
+        "--python", type=Path, help=f"Python of the depth model's environment, defaults to ${DEPTH_PYTHON_ENV}."
+    )
+    depth.add_argument("--config", type=Path, help="Config file, defaults to the bundled default_config.toml.")
+    depth.add_argument("--force", action="store_true", help="Run the model again even where its output is up to date.")
+
     report = commands.add_parser("regen-report", help="Gate scores, frame consistency and a contact sheet of a run.")
     report.add_argument("--work", type=Path, required=True, help="Work folder of the run.")
     report.add_argument("--palettes", type=Path, required=True, help="Output of 'OpenEnroth dump-sprite-palettes'.")
@@ -70,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     for command in (extract, upscale):
         command.add_argument("--force", action="store_true", help="Redo everything, even what is up to date.")
-    for command in (extract, upscale, maps, pack, regen, report):
+    for command in (extract, upscale, maps, pack, regen, report, depth):
         command.add_argument(
             "--only", action="append", help="Only handle LOD entries matching this glob, e.g. 'ch1*'. Repeatable."
         )
@@ -111,6 +123,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             options = RegenOptions.from_config(config, args.model, args.max_cost)
             print(f"Regen {run_regen(args.work, args.palettes, options, args.only, dry=args.dry_run)}.")
+    elif args.command == "depth":
+        python = args.python or os.environ.get(DEPTH_PYTHON_ENV)
+        if not python:
+            raise SystemExit(f"Pass --python or set {DEPTH_PYTHON_ENV} to the Python of the depth model's environment.")
+        config = load_config(args.config)
+        print(f"Depth {run_depth(args.work, args.palettes, config, args.only, Path(python), args.force)}.")
     elif args.command == "regen-report":
         print(json.dumps(regen_report(args.work, args.palettes, args.model, args.only, args.sheet), indent=2))
     else:
