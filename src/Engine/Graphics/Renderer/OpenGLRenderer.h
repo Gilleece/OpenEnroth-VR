@@ -579,8 +579,8 @@ class OpenGLRenderer : public BaseRenderer {
     MapId _giMap = MAP_INVALID; // Map that `_giProbes` were looked up for.
     std::optional<GiProbes> _giProbes; // Baked indirect light of `_giMap`, empty if the texture pack has none.
     std::vector<float> _giKeys; // Coefficients of each time key as floats, laid out as `_giTexture` holds them.
-    int _giMinute = -1; // Minute of the day that `_giTexture` holds the light of.
-    Vec3f _giAverage; // Mean irradiance where the party walks, at that minute.
+    int _giBlend = -1; // Pair of time keys and step between them that `_giTexture` holds, -1 if none.
+    Vec3f _giAverage; // Mean irradiance where the party walks, at that step.
     GLuint _giTexture = 0;
     GLuint _giTerrainHeights = 0;
     bool _terrainVariation = false; // Same for the terrain shaders.
