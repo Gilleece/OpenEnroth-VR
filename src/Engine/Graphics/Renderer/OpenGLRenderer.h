@@ -55,7 +55,7 @@ class OpenGLRenderer : public BaseRenderer {
     virtual Sizei uiTargetSize() override;
     virtual void setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) override;
     virtual void setViewportMirror(TextureRenderId colorTexture, Sizei size) override;
-    virtual void setVignette(float strength, Vec2f center) override;
+    virtual void drawVignette(TextureRenderId colorTexture, Sizei size, float strength, Vec2f center) override;
     virtual void setExternalFramePacing(bool external) override;
     virtual bool worldSpaceBillboards() override;
     virtual void applyPipelineSettings() override;
@@ -262,11 +262,6 @@ class OpenGLRenderer : public BaseRenderer {
     GLuint _drawBloom(const OpenGLRenderTarget &source);
 
     void _ensureFullscreenTriangle();
-
-    /**
-     * Darkens the edges of the bound framebuffer as `setVignette` says.
-     */
-    void _drawVignette();
 
     /**
      * Reads the settings the world shaders are compiled for into `_linearPipeline` and `_sunShadows`.
@@ -537,8 +532,6 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<OpenGLRenderTarget, 2> _heldTextures; // Copies kept by `holdTexture`.
     bool _mirrorPending = false;
     bool _mirrorPresentPending = false; // The UI layer leaves the mirror for `flushAndScale`.
-    float _vignetteStrength = 0; // See `setVignette`.
-    Vec2f _vignetteCenter;
     bool _uiLayer = false;
     bool _linearPipeline = false; // Decided once at startup, the world shaders are compiled for it.
     bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.

@@ -479,8 +479,6 @@ void OpenGLRenderer::EndScene3D() {
     projmat = glm::ortho(float(pViewport.x), float(pViewport.x + pViewport.w), float(pViewport.y + pViewport.h), float(pViewport.y), float(-1), float(1));
     _set_ortho_modelview();
     DrawTwodVerts();
-    if (target == _externalOutput && _vignetteStrength > 0)
-        _drawVignette();
 
     _bindUiTarget();
     glEnable(GL_SCISSOR_TEST);
@@ -703,12 +701,12 @@ void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei 
     }
 }
 
-void OpenGLRenderer::setVignette(float strength, Vec2f center) {
-    _vignetteStrength = strength;
-    _vignetteCenter = center;
-}
+void OpenGLRenderer::drawVignette(TextureRenderId colorTexture, Sizei size, float strength, Vec2f center) {
+    if (strength <= 0)
+        return;
 
-void OpenGLRenderer::_drawVignette() {
+    _externalTarget(colorTexture, size)->bind();
+    glViewport(0, 0, size.w, size.h);
     _ensureFullscreenTriangle();
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_SCISSOR_TEST);
@@ -717,8 +715,8 @@ void OpenGLRenderer::_drawVignette() {
 
     vignetteshader.use();
     VignetteUniforms uniforms;
-    uniforms.strength = _vignetteStrength;
-    uniforms.center = _vignetteCenter;
+    uniforms.strength = strength;
+    uniforms.center = center;
     uniforms.submit(vignetteshader);
 
     _compositeBuffer.bind();
@@ -726,6 +724,10 @@ void OpenGLRenderer::_drawVignette() {
     drawcalls++;
     _compositeBuffer.unbind();
     vignetteshader.unuse();
+
+    _bindUiTarget();
+    glEnable(GL_SCISSOR_TEST);
+    _setUiViewport();
 }
 
 void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
