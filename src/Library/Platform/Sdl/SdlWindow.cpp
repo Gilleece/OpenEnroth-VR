@@ -153,7 +153,7 @@ void SdlWindow::setGrabsMouse(bool grabsMouse) {
 }
 
 bool SdlWindow::grabsMouse() const {
-    return SDL_GetWindowMouseGrab(_window);
+    return SDL_GetWindowFlags(_window) & SDL_WINDOW_MOUSE_GRABBED; // The setting, SDL_GetWindowMouseGrab needs the window in focus.
 }
 
 void SdlWindow::setMouseRelative(bool mouseRelative) {

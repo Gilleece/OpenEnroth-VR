@@ -20,6 +20,7 @@
 #include "Library/Geometry/Vec.h"
 #include "Library/Platform/Filters/PlatformEventFilter.h"
 #include "Library/Platform/Proxy/ProxyOpenGLContext.h"
+#include "Library/Platform/Proxy/ProxyWindow.h"
 
 struct CameraView;
 
@@ -35,8 +36,11 @@ struct CameraView;
  *
  * While the session runs the renderer draws the UI as a layer of its own, which goes to the headset as a quad locked to
  * the head, in front of the world.
+ *
+ * While the session runs the game window also grabs the mouse, so that a click can't land outside it. The window still
+ * reports the grab setting it had without VR, and goes back to it when the session stops.
  */
-class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public WorldFrameViews {
+class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private PlatformEventFilter, public WorldFrameViews {
  public:
     VrSystem();
     virtual ~VrSystem();
@@ -138,6 +142,8 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     };
 
     virtual void swapBuffers() override;
+    virtual void setGrabsMouse(bool grabsMouse) override;
+    virtual bool grabsMouse() const override;
     virtual bool keyPressEvent(const PlatformKeyEvent *event) override;
 
     /**
@@ -302,6 +308,7 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     std::optional<std::array<float, 5>> _hudPlacement; // Settings the spread HUD was last logged with.
     int64_t _swapchainFormat = 0;
     bool _running = false;
+    bool _grabsMouse = false; // Window's grab setting without VR, while the session runs.
     bool _focused = false;
     bool _recenterRequested = false;
     XrTime _localChangeTime = 0; // From when the runtime's last move of its LOCAL space shows in the poses it gives.
