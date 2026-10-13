@@ -8,7 +8,7 @@ from PIL import Image
 from texpipe import lod
 from texpipe.cli import main
 from texpipe.crc import crc32_hex
-from texpipe.pack import write_archive
+from texpipe.pack import write_archive, write_archive_parts
 from texpipe.verify import verify_pack
 
 
@@ -128,3 +128,26 @@ def test_verify_command_exits_non_zero_on_a_failure(tmp_path, capsys):
     (pack / "icons" / "frame.pcx.png").unlink()
     assert main(["verify", "--pack", str(pack), "--data", str(data)]) == 1
     assert "icons/frame.pcx.png: missing or not an image" in capsys.readouterr().out
+
+
+def test_archive_parts_stay_under_the_limit_and_list_each_other(tmp_path):
+    _, pack = make_game_and_pack(tmp_path)
+    for index in range(6):
+        (pack / "sprites" / f"big{index}.png").write_bytes(bytes(range(256)) * 40)  # 10 KiB that doesn't compress.
+    limit = 100 * 1024
+    parts = write_archive_parts(pack, tmp_path / "pack.zip", limit)
+    again = write_archive_parts(pack, tmp_path / "again" / "pack.zip", limit)
+    assert len(parts) > 1
+    assert [path.name for path, _ in parts] == [f"pack.part{index}.zip" for index in range(1, len(parts) + 1)]
+    assert all(size <= limit for _, size in parts)
+    assert [path.read_bytes() for path, _ in parts] == [path.read_bytes() for path, _ in again]
+    names = []
+    for index, (path, _) in enumerate(parts):
+        with zipfile.ZipFile(path) as archive:
+            part_names = archive.namelist()
+            assert archive.read("pack/parts.txt").decode().startswith(f"pack comes in {len(parts)} parts.")
+            assert part_names[0] == ("pack/README.txt" if index == 0 else "pack/parts.txt")
+            names += [name for name in part_names if name != "pack/parts.txt"]
+    write_archive(pack, tmp_path / "whole.zip")
+    with zipfile.ZipFile(tmp_path / "whole.zip") as whole:
+        assert names == whole.namelist()  # Together the parts hold every file once, in the same order.

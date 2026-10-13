@@ -12,7 +12,7 @@ texpipe = "texpipe.cli:main"
 include = ["texpipe*"]
 
 [tool.setuptools.package-data]
-texpipe = ["default_config.toml"]
+texpipe = ["default_config.toml", "lite_config.toml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

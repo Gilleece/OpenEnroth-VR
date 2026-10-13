@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_CONFIG = Path(__file__).with_name("default_config.toml")
+LITE_CONFIG = Path(__file__).with_name("lite_config.toml")
 SCALES = (2, 4)
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image
 
 from texpipe.depth import shape_entry, shape_path
-from texpipe.maps import MAPS, map_path
+from texpipe.maps import MAPS, MapOptions, map_path, normal_map, roughness_map, save_map
 from texpipe.regen import generated_image, record_path
 from texpipe.regen_icons import generated_icon
 from texpipe.workdir import (
@@ -49,13 +49,22 @@ def build_manifest(entries: dict[str, dict[str, dict]], colors: str) -> dict:
 
 
 def run_pack(
-    work: Path, out: Path, colors: str, only: list[str] | None, regen_from: str | None = None
+    work: Path,
+    out: Path,
+    colors: str,
+    only: list[str] | None,
+    regen_from: str | None = None,
+    config: dict | None = None,
 ) -> dict[str, int]:
     """Copies every upscaled image and its maps into the pack and writes the manifest and README.
 
-    With `regen_from`, a model whose regen outputs exist, sprites and icons come from those outputs that passed.
+    With `regen_from`, a model whose regen outputs exist, sprites and icons come from those outputs that passed. Images
+    upscaled past the config's `[pack] max_scale` are scaled down to it, and their maps made again at that size.
     Returns the number of entries per section, of bitmaps with maps, of sprite images, and of generated sprites.
     """
+    config = config or {}
+    max_scale = config.get("pack", {}).get("max_scale", 4)
+    map_options = MapOptions.from_config(config)
     entries: dict[str, dict[str, dict]] = {section: {} for section in SECTIONS}
     generated: set[str] = set()
     for image in load_image_infos(work, only):
@@ -75,16 +84,23 @@ def run_pack(
                 source = regenerated
                 generated.add(image.name)
         size = _check_scaled(source, (image.width, image.height), upscaled.scale)
-        _copy(source, out / image.section / f"{image.name}.png")
+        if upscaled.scale > max_scale:
+            size = (image.width * max_scale, image.height * max_scale)
+            _downscale(source, out / image.section / f"{image.name}.png", size)
+        else:
+            _copy(source, out / image.section / f"{image.name}.png")
         if image.section == "sprites":
             _add_sprite_image(entries["sprites"], image)
             _add_sprite_shape(work, out, entries["sprites"], image.name.rsplit("/", 1)[0], size)
             continue
         entry = {"crc32": image.crc32}
         if image.section == "bitmaps" and all(map_path(work, kind, image.name).is_file() for kind in MAPS):
-            for kind in MAPS:
-                _check_size(map_path(work, kind, image.name), size)
-                _copy(map_path(work, kind, image.name), out / kind / "bitmaps" / f"{image.name}.png")
+            if upscaled.scale > max_scale:
+                _remake_maps(out, image.name, upscaled.wraps, map_options)
+            else:
+                for kind in MAPS:
+                    _check_size(map_path(work, kind, image.name), size)
+                    _copy(map_path(work, kind, image.name), out / kind / "bitmaps" / f"{image.name}.png")
             entry["maps"] = list(MAPS)
         entries[image.section][image.name] = entry
     write_json(out / "manifest.json", build_manifest(entries, colors))
@@ -105,21 +121,77 @@ ARCHIVE_TIME = (1980, 1, 1, 0, 0, 0)  # The earliest a zip can hold, so the same
 STORED_SUFFIXES = (".png",)  # Already compressed, deflating them again only costs time.
 
 
-def write_archive(pack: Path, archive: Path) -> int:
-    """Zips the pack folder into `archive` under a folder of the pack's name, README.txt first and the rest sorted, with
-    fixed timestamps. Returns the archive's size in bytes."""
+PARTS_LISTING = "parts.txt"
+ENTRY_OVERHEAD = 200  # Bytes a zip adds per file besides the name twice, with room for zip64 fields.
+PART_RESERVE = 64 * 1024  # For the parts listing and the end of the archive.
+
+
+def _archive_files(pack: Path) -> list[Path]:
+    """The pack's files in archive order: README.txt first, the rest sorted by path."""
     files = sorted(
         (path for path in pack.rglob("*") if path.is_file()), key=lambda path: path.relative_to(pack).as_posix()
     )
     files.sort(key=lambda path: path.relative_to(pack).as_posix() != "README.txt")
+    return files
+
+
+def _write_entry(output: zipfile.ZipFile, name: str, data: bytes, stored: bool) -> None:
+    info = zipfile.ZipInfo(name, ARCHIVE_TIME)
+    info.compress_type = zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED
+    info.external_attr = 0o644 << 16
+    output.writestr(info, data)
+
+
+def write_archive(pack: Path, archive: Path) -> int:
+    """Zips the pack folder into `archive` under a folder of the pack's name, README.txt first and the rest sorted, with
+    fixed timestamps. Returns the archive's size in bytes."""
     archive.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive, "w") as output:
-        for path in files:
-            info = zipfile.ZipInfo(f"{pack.name}/{path.relative_to(pack).as_posix()}", ARCHIVE_TIME)
-            info.compress_type = zipfile.ZIP_STORED if path.suffix in STORED_SUFFIXES else zipfile.ZIP_DEFLATED
-            info.external_attr = 0o644 << 16
-            output.writestr(info, path.read_bytes())
+        for path in _archive_files(pack):
+            name = f"{pack.name}/{path.relative_to(pack).as_posix()}"
+            _write_entry(output, name, path.read_bytes(), path.suffix in STORED_SUFFIXES)
     return archive.stat().st_size
+
+
+def write_archive_parts(pack: Path, archive: Path, limit: int) -> list[tuple[Path, int]]:
+    """Zips the pack folder into numbered parts next to `archive`, each at most `limit` bytes, like `write_archive`.
+
+    Every part is a complete zip under the same folder name, so extracting them all into one place gives the pack.
+    README.txt opens the first part, and each part starts with the same parts.txt listing of all of them. Files are
+    never split, the PNGs are far below any sensible limit. Returns each part's path and size in bytes.
+    """
+    parts: list[list[Path]] = [[]]
+    used = PART_RESERVE
+    for path in _archive_files(pack):
+        name_size = len(f"{pack.name}/{path.relative_to(pack).as_posix()}".encode())
+        cost = path.stat().st_size + 2 * name_size + ENTRY_OVERHEAD  # Stored or deflated, never larger than this.
+        if cost + PART_RESERVE > limit:
+            raise ValueError(f"{path} alone doesn't fit in a part of {limit} bytes")
+        if parts[-1] and used + cost > limit:
+            parts.append([])
+            used = PART_RESERVE
+        parts[-1].append(path)
+        used += cost
+
+    paths = [archive.with_name(f"{archive.stem}.part{index}{archive.suffix}") for index in range(1, len(parts) + 1)]
+    listing = f"{pack.name} comes in {len(parts)} parts. Extract all of them into the same folder.\n\n" + "".join(
+        f"{path.name}: {len(files)} files\n" for path, files in zip(paths, parts, strict=True)
+    )
+    archive.parent.mkdir(parents=True, exist_ok=True)
+    result = []
+    for path, files in zip(paths, parts, strict=True):
+        with zipfile.ZipFile(path, "w") as output:
+            listed = False
+            for file in files:
+                relative = file.relative_to(pack).as_posix()
+                if relative != "README.txt" and not listed:
+                    _write_entry(output, f"{pack.name}/{PARTS_LISTING}", listing.encode(), False)
+                    listed = True
+                _write_entry(output, f"{pack.name}/{relative}", file.read_bytes(), file.suffix in STORED_SUFFIXES)
+            if not listed:
+                _write_entry(output, f"{pack.name}/{PARTS_LISTING}", listing.encode(), False)
+        result.append((path, path.stat().st_size))
+    return result
 
 
 def _add_sprite_image(sprites: dict[str, dict], image: WorkImage) -> None:
@@ -139,9 +211,31 @@ def _add_sprite_shape(work: Path, out: Path, sprites: dict[str, dict], name: str
     shape = shape_entry(work, name)
     if shape is None:
         return
-    _check_size(shape_path(work, name), size)
-    _copy(shape_path(work, name), out / "shape" / "sprites" / f"{name}.png")
+    target = out / "shape" / "sprites" / f"{name}.png"
+    with Image.open(shape_path(work, name)) as image:
+        shape_size = image.size
+    if shape_size == size:
+        _copy(shape_path(work, name), target)
+    elif shape_size[0] > size[0] and shape_size[0] * size[1] == shape_size[1] * size[0]:
+        _downscale(shape_path(work, name), target, size)  # The sprite's images were scaled down to `max_scale`.
+    else:
+        raise ValueError(f"{shape_path(work, name)} is {shape_size}, expected {size}")
     entry["shape"] = shape
+
+
+def _downscale(source: Path, target: Path, size: tuple[int, int]) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(source) as image:
+        image.resize(size, Image.Resampling.LANCZOS).save(target)
+
+
+def _remake_maps(out: Path, name: str, wraps: list[bool] | None, options: MapOptions) -> None:
+    """Makes the maps of a bitmap again from the scaled down color image already in the pack."""
+    with Image.open(out / "bitmaps" / f"{name}.png") as color:
+        color = color.convert("RGB")
+    edges = tuple(wraps) if wraps is not None else (True, True)
+    save_map(normal_map(color, options, edges), out / "normal" / "bitmaps" / f"{name}.png")
+    save_map(roughness_map(color, options, edges), out / "roughness" / "bitmaps" / f"{name}.png")
 
 
 def _copy(source: Path, target: Path) -> None:
