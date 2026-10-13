@@ -688,7 +688,7 @@ GLuint OpenGLRenderer::_drawBloom(const OpenGLRenderTarget &source) {
         _bloomTargets.clear();
         for (Sizei size = first; std::min(size.w, size.h) >= BLOOM_MIN_LEVEL_SIZE && _bloomTargets.size() < BLOOM_MAX_LEVELS; size = Sizei(size.w / 2, size.h / 2)) {
             _bloomTargets.push_back(std::make_unique<OpenGLRenderTarget>());
-            _bloomTargets.back()->reset(size, RENDER_TARGET_FORMAT_RGBA16F, false);
+            _bloomTargets.back()->reset(size, RENDER_TARGET_FORMAT_R11G11B10F, false);
         }
     }
     if (_bloomTargets.empty())
@@ -762,17 +762,17 @@ Sizei OpenGLRenderer::uiTargetSize() {
 }
 
 void OpenGLRenderer::setExternalWorldTarget(TextureRenderId colorTexture, Sizei size) {
-    _externalOutput = colorTexture ? _externalTarget(colorTexture, size, true) : nullptr;
+    _externalOutput = colorTexture ? _externalTarget(colorTexture, size, _externalTargetsHaveDepth()) : nullptr;
     _externalWorldTarget = _externalOutput;
     if (_externalOutput && _linearPipeline) {
         if (_externalLinearTarget.size() != size)
-            _externalLinearTarget.reset(size, RENDER_TARGET_FORMAT_RGBA16F, true);
+            _externalLinearTarget.reset(size, RENDER_TARGET_FORMAT_R11G11B10F, true);
         _externalWorldTarget = &_externalLinearTarget;
     }
 }
 
 void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size) {
-    OpenGLRenderTarget *source = _externalTarget(colorTexture, size, true);
+    OpenGLRenderTarget *source = _externalTarget(colorTexture, size, _externalTargetsHaveDepth());
     Sizei mirrorSize = _uiPixels(pViewport).size();
     if (_mirrorTarget.size() != mirrorSize)
         _mirrorTarget.reset(mirrorSize, RENDER_TARGET_FORMAT_RGBA8, false);
@@ -1708,13 +1708,13 @@ void OpenGLRenderer::holdTexture(int slot, TextureRenderId colorTexture, Sizei s
     OpenGLRenderTarget &held = _heldTextures[slot];
     if (held.size() != size)
         held.reset(size, RENDER_TARGET_FORMAT_RGBA8, false);
-    _copyTarget(*_externalTarget(colorTexture, size, true), held);
+    _copyTarget(*_externalTarget(colorTexture, size, _externalTargetsHaveDepth()), held);
 }
 
 void OpenGLRenderer::restoreHeldTexture(int slot, TextureRenderId colorTexture) {
     const OpenGLRenderTarget &held = _heldTextures[slot];
     assert(held.size());
-    _copyTarget(held, *_externalTarget(colorTexture, held.size(), true));
+    _copyTarget(held, *_externalTarget(colorTexture, held.size(), _externalTargetsHaveDepth()));
 }
 
 void OpenGLRenderer::forgetExternalTextures(std::span<const TextureRenderId> colorTextures) {
@@ -2416,11 +2416,15 @@ OpenGLRenderTarget *OpenGLRenderer::_currentWorldTarget() {
     return nullptr;
 }
 
+bool OpenGLRenderer::_externalTargetsHaveDepth() const {
+    return !_linearPipeline; // With the linear pipeline the world is drawn into `_externalLinearTarget` and composited.
+}
+
 OpenGLRenderTarget *OpenGLRenderer::_externalTarget(TextureRenderId colorTexture, Sizei size, bool withDepth) {
     std::unique_ptr<OpenGLRenderTarget> &target = _externalTargets[static_cast<GLuint>(colorTexture.value())];
     if (!target)
         target = std::make_unique<OpenGLRenderTarget>();
-    if (target->size() != size)
+    if (target->size() != size || target->hasDepth() != withDepth)
         target->resetExternal(static_cast<GLuint>(colorTexture.value()), size, withDepth);
     return target.get();
 }
@@ -5442,8 +5446,9 @@ bool OpenGLRenderer::Reinitialize(bool firstInit) {
         }
     }
     if (worldTargetWidth > 0 && worldTargetHeight > 0) {
-        bool hdr = config->graphics.WorldTargetHdr.value() || _linearPipeline;
-        RenderTargetFormat format = hdr ? RENDER_TARGET_FORMAT_RGBA16F : RENDER_TARGET_FORMAT_RGBA8;
+        RenderTargetFormat format = config->graphics.WorldTargetHdr.value() ? RENDER_TARGET_FORMAT_RGBA16F : RENDER_TARGET_FORMAT_RGBA8;
+        if (_linearPipeline)
+            format = RENDER_TARGET_FORMAT_R11G11B10F; // Nothing reads the world's alpha.
         _worldTarget.reset(Sizei(worldTargetWidth, worldTargetHeight), format, true);
     } else {
         _worldTarget.reset();

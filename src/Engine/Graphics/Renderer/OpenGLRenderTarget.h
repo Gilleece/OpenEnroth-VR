@@ -57,6 +57,10 @@ class OpenGLRenderTarget {
         return _colorTexture;
     }
 
+    [[nodiscard]] bool hasDepth() const {
+        return _depthTexture != 0;
+    }
+
     [[nodiscard]] Sizei size() const {
         return _size;
     }
