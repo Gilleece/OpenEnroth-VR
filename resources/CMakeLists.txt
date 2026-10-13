@@ -87,6 +87,7 @@ set(RESOURCE_SOURCES
         shaders/shadow.glsl
         shaders/sky.glsl
         shaders/softparticles.glsl
+        shaders/terrainvariation.glsl
         shaders/torchshadow.glsl
         shaders/water.glsl)
 

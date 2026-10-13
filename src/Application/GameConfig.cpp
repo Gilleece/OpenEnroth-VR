@@ -30,6 +30,7 @@ void GameConfig::updateEnhancedGraphics() {
     apply(graphics.SunShadows, true);
     apply(graphics.TorchShadows, true);
     apply(graphics.AmbientOcclusion, true);
+    apply(graphics.TerrainVariation, true);
     apply(graphics.WorldSpaceBillboards, true);
     apply(graphics.UiScale, 2);
 }

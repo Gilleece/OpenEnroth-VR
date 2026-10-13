@@ -44,6 +44,10 @@ uniform sampler2DArray materialArray;
 #include "material.glsl"
 #endif
 
+#ifdef TERRAIN_VARIATION
+#include "terrainvariation.glsl"
+#endif
+
 #ifdef AMBIENT_OCCLUSION
 #include "ao.glsl"
 #endif
@@ -61,10 +65,21 @@ void main() {
     vec4 fragcol = vec4(0);
 
     // get normal texture at point
+#ifdef TERRAIN_VARIATION
+    vec2 mirror = TerrainMirror(vsAttrib);
+    vec2 tileuv = TerrainMirroredUv(texuv, mirror);
+    fragcol = texture(textureArray1, vec3(tileuv, olayer));
+    fragcol.rgb *= TerrainBrightness(vsPos.xy);
+#else
     fragcol = texture(textureArray1, vec3(texuv.x,texuv.y,olayer));
+#endif
 
 #ifdef MATERIAL_MAPS
+#ifdef TERRAIN_VARIATION
+    vec4 material = texture(materialArray, vec3(tileuv, olayer));
+#else
     vec4 material = texture(materialArray, vec3(texuv.x, texuv.y, olayer));
+#endif
     if (fragcol.a == 0.0 || (vsAttrib & 0x1) > 0)
         material = vec4(0.0); // Water has no material.
 #endif
@@ -86,6 +101,10 @@ void main() {
     // Tile u runs east and v runs south, along grid x and y.
     vec3 tangent = normalize(vec3(1.0, 0.0, 0.0) - fragnorm * fragnorm.x);
     vec3 bitangent = cross(fragnorm, tangent);
+#ifdef TERRAIN_VARIATION
+    tangent *= mirror.x;
+    bitangent *= mirror.y;
+#endif
 
     vec3 lit;
     if (material.a > 0.0) {

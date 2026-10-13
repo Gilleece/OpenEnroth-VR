@@ -537,6 +537,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.
     bool _torchShadows = false; // Same for the indoor shaders.
     bool _ambientOcclusion = false; // Same for the lit world shaders.
+    bool _terrainVariation = false; // Same for the terrain shaders.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;
 };
