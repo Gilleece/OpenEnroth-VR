@@ -17,17 +17,28 @@
 #include "Engine/Components/Trace/EngineTraceStateAccessor.h"
 #include "Engine/Components/Trace/EngineTracePlayer.h"
 #include "Engine/Engine.h"
+#include "Engine/EngineGlobals.h"
+#include "Engine/Evt/Processor.h"
+#include "Engine/Graphics/GiBaker.h"
+#include "Engine/PartyPlacement.h"
+#include "Engine/Resources/LOD.h"
+#include "Engine/Tables/MapTable.h"
 
 #include "Core/Trace/EventTrace.h"
 
+#include "Library/Compression/Compression.h"
 #include "Library/Json/Json.h"
+#include "Library/Lod/LodReader.h"
 #include "Library/StackTrace/StackTraceOnCrash.h"
 #include "Library/Platform/Application/PlatformApplication.h"
 
+#include "Utility/Exception.h"
 #include "Utility/Streams/FileOutputStream.h"
 #include "Utility/String/Format.h"
 #include "Utility/UnicodeCrt.h"
+#include "Utility/String/Ascii.h"
 #include "Utility/String/Transformations.h"
+#include "Utility/System/Fs.h"
 
 #include "OpenEnrothOptions.h"
 #include "SpritePalettes.h"
@@ -119,6 +130,68 @@ int runDumpSpritePalettes(const OpenEnrothOptions &options) {
     return 0;
 }
 
+static void loadMap(EngineController *game, MapId map) {
+    if (engine->_currentLoadedMapId == map)
+        return;
+    engine->_pendingTransition = MapDestination(map, MAP_START_POINT_PARTY);
+    engineFlags |= ENGINE_SKIP_NEXT_WORLD_UPDATE;
+    uGameState = GAME_STATE_CHANGE_LOCATION;
+    onMapLeave();
+    game->tick();
+    game->skipLoadingScreen();
+}
+
+int runBakeGi(const OpenEnrothOptions &options) {
+    GameStarter starter(options);
+
+    int failures = 0;
+    starter.runInstrumented([&options, &failures] (EngineController *game) {
+        std::vector<std::string> maps;
+        for (const std::string &map : options.bakeGi.maps)
+            maps.push_back(ascii::toLower(map));
+        if (maps.empty())
+            for (const std::string &name : pGames_LOD->ls())
+                if (name.ends_with(".blv") || name.ends_with(".odm"))
+                    maps.push_back(name);
+
+        fs::mkdirs(options.bakeGi.out / "gi");
+        game->startNewGame();
+
+        Json baked = Json::object();
+        Json failed = Json::object();
+        for (const std::string &map : maps) {
+            auto startTime = std::chrono::steady_clock::now();
+            try {
+                if (!pGames_LOD->exists(map))
+                    throw Exception("Not in games.lod.");
+                MapId mapId = pMapTable->GetMapInfo(map);
+                if (mapId == MAP_INVALID)
+                    throw Exception("Not in the map table.");
+                loadMap(game, mapId);
+
+                GiProbes probes = bakeGiProbes();
+                std::string file = fmt::format("gi/{}.bin", map);
+                FileOutputStream(options.bakeGi.out / Path(file)).write(writeGiProbes(probes));
+                float seconds = std::chrono::duration<float>(std::chrono::steady_clock::now() - startTime).count();
+                std::string crc32 = fmt::format("{:08x}", zlib::crc32(pGames_LOD->read(map)));
+                baked[map] = {{"file", file}, {"crc32", crc32}, {"probes", probes.probeCount()}, {"seconds", seconds}};
+                fmt::println(stderr, "Baked '{}', {} probes in {:.1f}s.", map, probes.probeCount(), seconds);
+            } catch (const std::exception &e) {
+                failed[map] = e.what();
+                failures++;
+                fmt::println(stderr, "Failed to bake '{}': {}", map, e.what());
+            }
+        }
+
+        if (!options.bakeGi.report.isEmpty()) {
+            Json report = {{"maps", std::move(baked)}, {"failed", std::move(failed)}};
+            FileOutputStream(options.bakeGi.report).write(report.dump(2) + "\n");
+        }
+    });
+
+    return failures ? 1 : 0;
+}
+
 int runOpenEnroth(const OpenEnrothOptions &options) {
     GameStarter(options).run();
     return 0;
@@ -149,6 +222,7 @@ int openEnrothMain(int argc, char **argv) {
         case OpenEnrothOptions::SUBCOMMAND_PLAY: return runPlay(options);
         case OpenEnrothOptions::SUBCOMMAND_RETRACE: return runRetrace(options);
         case OpenEnrothOptions::SUBCOMMAND_DUMP_SPRITE_PALETTES: return runDumpSpritePalettes(options);
+        case OpenEnrothOptions::SUBCOMMAND_BAKE_GI: return runBakeGi(options);
         }
     } catch (const std::exception &e) {
         fmt::print(stderr, "{}\n", e.what());

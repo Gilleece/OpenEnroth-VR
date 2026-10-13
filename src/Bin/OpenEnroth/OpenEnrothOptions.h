@@ -15,7 +15,8 @@ struct OpenEnrothOptions : public GameStarterOptions {
         SUBCOMMAND_GAME,
         SUBCOMMAND_PLAY,
         SUBCOMMAND_RETRACE,
-        SUBCOMMAND_DUMP_SPRITE_PALETTES
+        SUBCOMMAND_DUMP_SPRITE_PALETTES,
+        SUBCOMMAND_BAKE_GI
     };
     using enum Subcommand;
 
@@ -25,6 +26,12 @@ struct OpenEnrothOptions : public GameStarterOptions {
 
     struct DumpSpritePalettesOptions {
         Path output;
+    };
+
+    struct BakeGiOptions {
+        Path out; // Texture pack folder, the probe files go into its `gi` folder.
+        std::vector<std::string> maps; // Map files in games.lod, all of them if empty.
+        Path report;
     };
 
     struct PlayOptions {
@@ -37,6 +44,7 @@ struct OpenEnrothOptions : public GameStarterOptions {
     RetraceOptions retrace;
     PlayOptions play;
     DumpSpritePalettesOptions dumpSpritePalettes;
+    BakeGiOptions bakeGi;
 
     /**
      * Parses OpenEnroth command line options.
