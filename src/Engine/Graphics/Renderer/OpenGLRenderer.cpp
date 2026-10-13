@@ -1230,14 +1230,18 @@ void OpenGLRenderer::_updateGlobalIllumination() {
         glBindTexture(GL_TEXTURE_3D, 0);
 
         if (probes.layout == GI_PROBES_TERRAIN_LAYERS) {
-            std::vector<float> heights;
-            for (int y = 0; y < probes.dims.y; y++)
-                for (int x = 0; x < probes.dims.x; x++)
-                    heights.push_back(pOutdoor->pTerrain.heightByPos(probes.origin + Vec3f(x * probes.spacing.x, y * probes.spacing.y, 0)));
+            std::vector<float> heights; // Terrain height and whether it's water, for each column of probes.
+            for (int y = 0; y < probes.dims.y; y++) {
+                for (int x = 0; x < probes.dims.x; x++) {
+                    Vec3f column = probes.origin + Vec3f(x * probes.spacing.x, y * probes.spacing.y, 0);
+                    heights.push_back(pOutdoor->pTerrain.heightByPos(column));
+                    heights.push_back(pOutdoor->pTerrain.isWaterByPos(column) ? 1.0f : 0.0f);
+                }
+            }
             if (!_giTerrainHeights)
                 glGenTextures(1, &_giTerrainHeights);
             glBindTexture(GL_TEXTURE_2D, _giTerrainHeights);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_R16F, probes.dims.x, probes.dims.y, 0, GL_RED, GL_FLOAT, heights.data());
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, probes.dims.x, probes.dims.y, 0, GL_RG, GL_FLOAT, heights.data());
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
