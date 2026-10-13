@@ -40,11 +40,19 @@ Pointi Io::Mouse::setPosition(Pointi position) {
     // and interaction hit-testing use the same point the player is aiming at.
     if (_mouseLook == MouseLookState::Enabled) {
         _position = pViewport.center();
+    } else if (_pinnedPosition) {
+        _position = *_pinnedPosition;
     } else {
         _position = position;
     }
 
     return _position;
+}
+
+void Io::Mouse::setPinnedPosition(std::optional<Pointi> position) {
+    _pinnedPosition = position;
+    if (position)
+        _position = *position;
 }
 
 void Io::Mouse::SetCursorBitmapFromItemID(ItemId uItemID) {

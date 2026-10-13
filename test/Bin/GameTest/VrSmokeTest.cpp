@@ -20,6 +20,7 @@
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Vr/VrSystem.h"
 
+#include "GUI/GUIButton.h"
 #include "GUI/GUIWindow.h"
 
 #include "Io/Mouse.h"
@@ -28,6 +29,7 @@
 #include "Library/Logger/Logger.h"
 #include "Library/Logger/LogSink.h"
 #include "Library/Platform/Application/PlatformApplication.h"
+#include "Library/Platform/Interface/PlatformEvents.h"
 #include "Library/Platform/Interface/PlatformWindow.h"
 
 #include "Utility/ScopeGuard.h"
@@ -85,6 +87,17 @@ static int64_t countFadeFrames(const VrSystem::FrameStats &stats) {
         if (kind.fade)
             result += count;
     return result;
+}
+
+static void moveMouseBy(EngineController &game, Pointi rel) {
+    // Motion as the window reports it in relative mode, with no position.
+    std::unique_ptr<PlatformMouseEvent> event = std::make_unique<PlatformMouseEvent>();
+    event->type = EVENT_MOUSE_MOVE;
+    event->window = application->window();
+    event->button = BUTTON_NONE;
+    event->buttons = BUTTON_NONE;
+    event->rel = rel;
+    game.postEvent(std::move(event));
 }
 
 static void checkFrames(VrSystem *vr, std::string_view phase) {
@@ -362,19 +375,24 @@ GAME_TEST(VrSmoke, Session) {
         EXPECT_GT(countFrames(vr->frameStats(), true, true), 0);
     }
 
-    // The cursor stays on the parts of the screen that the spread HUD shows, crossing the gaps between them.
-    game.moveMouse(300, 100);
-    game.tick(2);
-    game.moveMouse(467, 100); // On the frame between the viewport and the minimap.
-    game.tick(2);
-    if (vr)
-        EXPECT_EQ(mouse->position(), Pointi(469, 100));
-    game.moveMouse(300, 340);
-    game.tick(2);
-    game.moveMouse(300, 355); // On the frame between the viewport and the status bar.
-    game.tick(2);
-    if (vr)
-        EXPECT_EQ(mouse->position(), Pointi(300, 359));
+    // The spread HUD turns its cursor with the mouse over its parts around the head, across the gaps between them, and
+    // clicks land where it is.
+    if (vr) {
+        ASSERT_TRUE(vr->pointHudCursorAt(Pointi(450, 30))); // Near the viewport's upper right corner.
+        moveMouseBy(game, Pointi(100, -50)); // Up and right, into the gap before the minimap.
+        game.tick(2);
+        EXPECT_TRUE(Recti(469, 0, 171, 148).contains(mouse->position())) << mouse->position().x << ", " << mouse->position().y;
+        moveMouseBy(game, Pointi(5000, 0)); // Far past everything to the right.
+        game.tick(2);
+        EXPECT_TRUE(vr->hudShows(mouse->position())) << mouse->position().x << ", " << mouse->position().y;
+        ASSERT_TRUE(vr->pointHudCursorAt(pBtn_Rest->rect.center()));
+        game.pressAndReleaseButton(BUTTON_LEFT, 0, 0); // Where the event says doesn't matter, the cursor is pinned.
+        game.tick(5);
+        EXPECT_EQ(current_screen_type, SCREEN_REST);
+        game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
+        game.tick(5);
+        EXPECT_EQ(current_screen_type, SCREEN_GAME);
+    }
     phase("options and the spread HUD");
 
     // Quitting to the main menu.

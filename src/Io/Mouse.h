@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "Engine/Objects/ItemEnums.h"
@@ -20,6 +21,14 @@ class Mouse {
 
     Pointi position() const;
     Pointi setPosition(Pointi position);
+
+    /**
+     * Pins the cursor to a position that mouse events don't move it from, or frees it again. The VR HUD moves the
+     * cursor itself this way, and clicks land where it pins it.
+     *
+     * @param position                  Position in render coordinates, or none to free the cursor.
+     */
+    void setPinnedPosition(std::optional<Pointi> position);
     /**
      * Moves the mouse pointer.
      * @param position                  Position in render coordinates to move mouse pointer to.
@@ -69,6 +78,7 @@ class Mouse {
     void DoMouseLook(Pointi relChange);
     void RestoreMouseLook();
     MouseLookState _mouseLook = MouseLookState::Disabled;
+    std::optional<Pointi> _pinnedPosition; // Set by `setPinnedPosition`.
 
  private:
     bool _cursorDrawn = false; // Whether `DrawCursor` ran since the last `drawLayerCursor`.
