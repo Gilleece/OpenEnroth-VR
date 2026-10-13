@@ -76,6 +76,19 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
         "Path to the JSON file to write.")->required()->option_text(" ");
     dumpSpritePalettes->set_help_flag("-h,--help", "Print help and exit.");
 
+    CLI::App *bakeGi = app->add_subcommand("bake-gi",
+        "Bake the indirect light of maps into probe files for a texture pack and exit.", result.subcommand, SUBCOMMAND_BAKE_GI)->fallthrough();
+    bakeGi->add_option(
+        "--out", result.bakeGi.out,
+        "Texture pack folder to write 'gi/<map file>.bin' into.")->required()->option_text("PATH");
+    bakeGi->add_option(
+        "--map", result.bakeGi.maps,
+        "Map file in games.lod to bake, like 'd18.blv'. Can be repeated, default is every map.")->option_text("MAP");
+    bakeGi->add_option(
+        "--report", result.bakeGi.report,
+        "Path to a JSON file to write the CRC-32, probe count and bake time of each map into, and why maps failed.")->option_text("PATH");
+    bakeGi->set_help_flag("-h,--help", "Print help and exit.");
+
     app->parse(argc, argv, result.helpPrinted);
 
     if (!portable && fs::exists(".portable"))
@@ -99,6 +112,12 @@ OpenEnrothOptions OpenEnrothOptions::parse(int argc, char **argv) {
     }
 
     if (result.subcommand == SUBCOMMAND_DUMP_SPRITE_PALETTES) {
+        result.ramFsUserData = true;
+        result.quickStart = true;
+        result.headless = true;
+    }
+
+    if (result.subcommand == SUBCOMMAND_BAKE_GI) {
         result.ramFsUserData = true;
         result.quickStart = true;
         result.headless = true;
