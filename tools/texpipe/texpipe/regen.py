@@ -21,6 +21,7 @@ from PIL import Image
 
 from texpipe import gates, palettemap
 from texpipe.backends.imageedit import ImageEditClient, ImageEditError
+from texpipe.backends.localedit import is_local
 from texpipe.sprites import load_palette, load_sprite_palettes
 from texpipe.workdir import images_dir, read_json, upscaled_dir, write_json
 
@@ -52,9 +53,14 @@ class RegenOptions:
     def from_config(config: dict, model: str | None = None, max_cost: float | None = None) -> "RegenOptions":
         section = config.get("regen", {})
         thresholds = gates.Thresholds(**section.get("thresholds", {}))
+        model = model or section["model"]
+        prompt = section.get("prompt", DEFAULT_PROMPT)
+        if is_local(model):
+            # A diffusion model takes a description of the result, not an instruction.
+            prompt = section.get("local", {}).get("prompt", prompt)
         return RegenOptions(
-            model=model or section["model"],
-            prompt=section.get("prompt", DEFAULT_PROMPT),
+            model=model,
+            prompt=prompt,
             seed=section.get("seed", 7),
             temperature=section.get("temperature", 0.2),
             thresholds=thresholds,

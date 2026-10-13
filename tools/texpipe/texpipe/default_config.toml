@@ -95,6 +95,21 @@ max_distance = 0.06  # Mean luminance difference after a 2 px blur over the spri
 
 # The regen pass over icons: character portraits, NPC portraits and the UI frame. Few images, painted rather than
 # pre-rendered, so the prompt allows a little more change. The silhouette gate only applies to transparent icons.
+# The local backend, picked by a model name starting with "local/": SDXL image to image on this computer's GPU, with a
+# tile ControlNet holding the structure, in its own Python environment. See the README.
+[regen.local]
+base = "stabilityai/stable-diffusion-xl-base-1.0"
+controlnet = "xinsir/controlnet-tile-sdxl-1.0"
+vae = "madebyollin/sdxl-vae-fp16-fix"
+prompt = "a pre-rendered 3D fantasy game character sprite, highly detailed, sharp, clean, crisp edges, detailed textures, flat plain background"
+negative_prompt = "blurry, soft, noisy, jpeg artifacts, deformed, extra limbs, text, watermark, shadow, cropped"
+strength = 0.35  # How far from the input the model may go, lower holds the original closer.
+steps = 30
+guidance = 5.0
+control_scale = 0.8  # How tightly the ControlNet holds the input's structure.
+size = 1024  # Longest side the model works at, the result is scaled back.
+margin = 0  # Pixels around the drawing the model may change, the flat background beyond stays as it was.
+
 [regen.icons]
 temperature = 0.4
 include = ["pc*", "npc*", "ib-*"]

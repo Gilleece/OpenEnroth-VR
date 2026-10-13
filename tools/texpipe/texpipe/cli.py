@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 
 from texpipe import lodtool
+from texpipe.backends.localedit import PYTHON_ENV as REGEN_PYTHON_ENV
+from texpipe.backends.localedit import LocalEditClient, is_local
 from texpipe.backends.realesrgan import resolve_binary
 from texpipe.config import SCALES, load_config
 from texpipe.depth import run_depth
@@ -64,6 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     regen.add_argument("--section", choices=("sprites", "icons"), default="sprites", help="What to regenerate.")
     regen.add_argument("--dry-run", action="store_true", help="List what would be sent and the cost, call nothing.")
+    regen.add_argument(
+        "--python", type=Path, help=f"Python of the local model's environment, defaults to ${REGEN_PYTHON_ENV}."
+    )
 
     depth = commands.add_parser("depth", help="Shape images with normals and depth for the upscaled sprites.")
     depth.add_argument("--work", type=Path, required=True, help="Work folder with upscaled sprites.")
@@ -122,7 +127,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Regen {rescore(args.work, args.palettes, options, args.only)}.")
         else:
             options = RegenOptions.from_config(config, args.model, args.max_cost)
-            print(f"Regen {run_regen(args.work, args.palettes, options, args.only, dry=args.dry_run)}.")
+            client = None
+            if is_local(options.model) and not args.dry_run:
+                python = args.python or os.environ.get(REGEN_PYTHON_ENV)
+                if not python:
+                    raise SystemExit(
+                        f"Pass --python or set {REGEN_PYTHON_ENV} to the Python of the local model's environment."
+                    )
+                client = LocalEditClient(Path(python), config.get("regen", {}).get("local", {}))
+            try:
+                print(f"Regen {run_regen(args.work, args.palettes, options, args.only, client, args.dry_run)}.")
+            finally:
+                if client is not None:
+                    client.close()
     elif args.command == "depth":
         python = args.python or os.environ.get(DEPTH_PYTHON_ENV)
         if not python:
