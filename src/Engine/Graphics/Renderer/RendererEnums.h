@@ -21,6 +21,16 @@ using enum AntialiasingMode;
 MM_DECLARE_SERIALIZATION_FUNCTIONS(AntialiasingMode)
 
 /**
+ * How the UI quad of a headset follows the head.
+ */
+enum class VrUiFollow {
+    VR_UI_FOLLOW_LOCKED, // Fixed in front of the eyes.
+    VR_UI_FOLLOW_LAZY, // Stays put until the head turns or moves past a dead zone, then eases in front of it again.
+};
+using enum VrUiFollow;
+MM_DECLARE_SERIALIZATION_FUNCTIONS(VrUiFollow)
+
+/**
  * Filtering of sun shadow edges.
  */
 enum class ShadowFilterMode {

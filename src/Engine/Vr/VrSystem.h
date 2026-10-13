@@ -66,6 +66,15 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
         float nearClip = 0;
     };
 
+    /**
+     * Head pose that the lazy UI quad is placed in front of, in the head origin space.
+     */
+    struct UiAim {
+        glm::vec3 head = glm::vec3(0); // Position in metres.
+        float yaw = 0; // Radians around +y, of the direction the head looks along.
+        float pitch = 0; // Radians, positive looks up.
+    };
+
     struct Swapchain {
         XrSwapchain swapchain = XR_NULL_HANDLE;
         Sizei size;
@@ -122,6 +131,21 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
      * @return                          Whether there was a UI layer to copy.
      */
     bool copyUi(XrCompositionLayerQuad *layer);
+
+    /**
+     * Places the UI quad for this frame, fixed in front of the eyes or following the head lazily as `vr.ui_follow`
+     * says, and keeps its pose in the head origin space for picking.
+     *
+     * @param[out] layer                Quad layer to set the space and pose of.
+     * @param distance                  Distance of the quad from the head in metres.
+     */
+    void placeUi(XrCompositionLayerQuad *layer, float distance);
+
+    /**
+     * @param time                      Time to ease to.
+     * @return                          Head pose the lazy UI quad is aimed at, partway from `_uiAimFrom` to `_uiAim`.
+     */
+    UiAim easedUiAim(std::chrono::steady_clock::time_point time) const;
 
     /**
      * Locates the head in the runtime's LOCAL space and makes a reference space with its origin there, turned to the
@@ -184,6 +208,11 @@ class VrSystem : private ProxyOpenGLContext, private PlatformEventFilter, public
     std::array<Swapchain, 2> _eyes;
     Swapchain _ui;
     std::optional<Vec2f> _uiPlacement; // Width and distance of the UI quad last logged.
+    std::optional<UiAim> _uiAim; // Where the lazy UI quad goes, null until it's placed.
+    UiAim _uiAimFrom; // Where the lazy UI quad was when it started easing to `_uiAim`.
+    std::chrono::steady_clock::time_point _uiAimTime; // When it started.
+    std::optional<XrPosef> _uiPose; // Of the UI quad in the last frame, in the head origin space.
+    glm::vec3 _uiHead = glm::vec3(0); // Head position in the head origin space in that frame.
     int64_t _swapchainFormat = 0;
     bool _running = false;
     bool _focused = false;
