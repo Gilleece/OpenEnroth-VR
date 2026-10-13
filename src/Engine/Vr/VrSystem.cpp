@@ -346,6 +346,7 @@ bool VrSystem::drawViews(WorldFrame &frame) {
     _heldMap = engine->_currentLoadedMapId;
     billboards[1] = render->worldBillboardsDrawn;
     render->setExternalWorldTarget(TextureRenderId(), Sizei());
+    render->turnWorldSpritesTo(eyeView(head, _eyes[0].size).position); // Back to the culling camera that picking reads.
 
     if (_worldFrameCount < LOGGED_FRAME_COUNT) {
         MM_INFO("VR: frame {} billboards face {:.2f} degrees of yaw, the eyes look along {:.2f} and {:.2f}.", _frameIndex,
@@ -873,8 +874,10 @@ bool VrSystem::drawEye(int index, const XrView &view, WorldFrame &frame) {
         return false;
 
     TextureRenderId texture(eye.images[imageIndex]);
+    CameraView camera = eyeView(view, eye.size);
     render->setExternalWorldTarget(texture, eye.size);
-    render->BeginScene3D(eyeView(view, eye.size));
+    render->turnWorldSpritesTo(camera.position);
+    render->BeginScene3D(camera);
     frame.draw();
     render->EndScene3D();
     if (index == 0)

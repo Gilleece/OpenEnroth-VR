@@ -764,7 +764,7 @@ void OutdoorLocation::PrepareActorsDrawList() {
             billScale.y *= spell_fx_renderer->_4A806F_get_mass_distortion_value(&pActors[i]);
         }
 
-        if (render->AddBillboardIfVisible(frame->sprites[Sprite_Octant], frame->paletteId, posMod, billScale, flags, Pid(OBJECT_Actor, i), pActors[i].sectorId)) {
+        if (render->AddBillboardIfVisible(frame, Sprite_Octant, pActors[i].yawAngle, posMod, billScale, flags, Pid(OBJECT_Actor, i), pActors[i].sectorId)) {
             ++uNumSpritesDrawnThisFrame;
             pActors[i].attributes |= ACTOR_VISIBLE;
             // TODO(pskelton): drop tint color anyway?

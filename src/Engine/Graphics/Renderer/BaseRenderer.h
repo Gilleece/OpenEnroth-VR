@@ -3,6 +3,7 @@
 #include <array>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Renderer.h"
@@ -24,9 +25,11 @@ class BaseRenderer : public Renderer {
     virtual void resetBillboardRenderList() override;
     virtual void buildWorldBillboardQuads(const CameraView &view) override;
     virtual const WorldBillboard *builtWorldBillboard(int index) override;
+    virtual void turnWorldSpritesTo(const Vec3f &eye) override;
     virtual void sortBillboardRenderList() override;
     virtual void buildBloodsplatDecals() override;
-    virtual bool AddBillboardIfVisible(Sprite* spr, int palette, const Vec3f& pos, const Vec2f& scale, BillboardFlags flags, Pid id, int sector = 0) override;
+    virtual bool AddBillboardIfVisible(const SpriteFrame *frame, int octant, int yaw, const Vec3f &pos, const Vec2f &scale, BillboardFlags flags,
+                                       Pid id, int sector = 0) override;
 
     virtual void DrawSpriteObjects() override;
     virtual void PrepareDecorationsRenderList_ODM() override;
@@ -63,9 +66,12 @@ class BaseRenderer : public Renderer {
     std::array<WorldBillboard, MAX_BILLBOARDS_D3D> _worldBillboards;
     bool _worldBillboardQuadsBuilt = false; // This frame, by `buildWorldBillboardQuads`.
     Vec3f _worldBillboardEye; // Eye position of the view the quads were built for.
+    std::pair<Vec3f, Vec3f> _worldBillboardAxes; // Right and up axes of the quads that face the view they were built for.
+    Vec3f _worldSpriteRight; // Level right axis of that view, which upright sprites stand across.
 
  private:
     void updateRenderDimensions();
+    void buildWorldBillboardQuad(WorldBillboard *billboard);
     void buildTerrainBloodsplatDecals();
     void buildBuildingBloodsplatDecals();
     void buildIndoorBloodsplatDecals();

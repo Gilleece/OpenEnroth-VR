@@ -68,6 +68,10 @@ struct RenderBillboard {
     Vec2f screenspace_projection_factor;
     Vec2f scale; // World units per sprite pixel.
     Sprite* hwsprite = nullptr;
+    const SpriteFrame *frame = nullptr; // Frame `hwsprite` is one side of.
+    int octant = 0; // Index of `hwsprite` in `frame->sprites`.
+    int yaw = 0; // Facing of the object, which picks the side of `frame` that a view sees.
+    bool centered = false; // `worldPos` was lowered by half the sprite's height.
     int16_t uPaletteId = 0;
     int uIndoorSectorID = 0;
     BillboardFlags flags;
@@ -103,8 +107,9 @@ struct RenderBillboardD3D {
 
 /**
  * Billboard placed in the world, to be drawn through the view and projection matrices. Vertex `i` sits at
- * `pos + offsets[i] + right * facing[i].x + up * facing[i].y`, where `right` and `up` are the axes of the view it's
- * drawn from, with the roll taken out.
+ * `pos + offsets[i] + right * facing[i].x + up * facing[i].y`. For a sprite that stands on its bottom edge `up` is the
+ * world's up and `right` is level and across the view it's drawn from, so that the sprite stands upright. For the rest
+ * `right` and `up` are the axes of that view with the roll taken out.
  */
 struct WorldBillboard {
     GraphicsImage *texture = nullptr; // Null for the solid particle texture.
@@ -118,4 +123,9 @@ struct WorldBillboard {
     std::array<Color, 4> colors = {{}};
     std::array<Vec3f, 4> corners = {{}}; // World space vertices, set by `Renderer::buildWorldBillboardQuads`.
     float distance = 0; // Distance from the eye the quads were built for, for fog.
+    const SpriteFrame *frame = nullptr; // Set for sprites, see `RenderBillboard`.
+    int octant = 0;
+    int yaw = 0;
+    bool centered = false;
+    Vec2f scale; // World units per sprite pixel.
 };
