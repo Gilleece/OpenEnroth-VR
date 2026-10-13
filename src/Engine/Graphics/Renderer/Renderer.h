@@ -205,6 +205,23 @@ class Renderer {
     virtual void copyUiLayer(TextureRenderId colorTexture, Sizei size) = 0;
 
     /**
+     * Keeps a copy of a colour texture owned by the caller, for `restoreHeldTexture` to put back later.
+     *
+     * @param slot                      Which of the two copies to keep it in, 0 or 1.
+     * @param colorTexture              Texture to copy.
+     * @param size                      Size of the texture.
+     */
+    virtual void holdTexture(int slot, TextureRenderId colorTexture, Sizei size) = 0;
+
+    /**
+     * Copies what `holdTexture` kept in a slot into a colour texture owned by the caller.
+     *
+     * @param slot                      Copy to put back.
+     * @param colorTexture              Texture to copy into, the size the copy was kept at.
+     */
+    virtual void restoreHeldTexture(int slot, TextureRenderId colorTexture) = 0;
+
+    /**
      * Adds a billboard to this frame's list that has no screen space version, for 3D passes that draw world space
      * billboards. A pass that draws screen space billboards draws nothing for it.
      *

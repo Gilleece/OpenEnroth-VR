@@ -62,6 +62,8 @@ bool NullRenderer::uiLayer() {
 }
 
 void NullRenderer::copyUiLayer(TextureRenderId colorTexture, Sizei size) {}
+void NullRenderer::holdTexture(int slot, TextureRenderId colorTexture, Sizei size) {}
+void NullRenderer::restoreHeldTexture(int slot, TextureRenderId colorTexture) {}
 
 bool NullRenderer::worldSpaceBillboards() {
     return false;
