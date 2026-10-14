@@ -35,6 +35,7 @@ void GameConfig::updateEnhancedGraphics() {
     apply(graphics.AmbientOcclusion, true);
     apply(graphics.TerrainVariation, true);
     apply(graphics.GlobalIllumination, true);
+    apply(graphics.SkyAmbient, true);
     apply(graphics.WorldSpaceBillboards, true);
     apply(graphics.UiScale, 2);
 }
