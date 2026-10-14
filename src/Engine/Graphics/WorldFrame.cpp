@@ -1,8 +1,16 @@
 #include "WorldFrame.h"
 
+#include <algorithm>
 #include <cstdlib>
+#include <span>
+#include <tuple>
+#include <unordered_set>
+#include <vector>
 
+#include "Engine/AssetsManager.h"
 #include "Engine/Engine.h"
+#include "Engine/Graphics/Image.h"
+#include "Engine/Resources/ResourceManager.h"
 #include "Engine/SpellFxRenderer.h"
 #include "Engine/Graphics/DecalBuilder.h"
 #include "Engine/Graphics/Indoor.h"
@@ -13,8 +21,10 @@
 #include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Graphics/Camera.h"
 #include "Engine/Graphics/Sprites.h"
+#include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
 #include "Engine/Graphics/WindSway.h"
+#include "Engine/Graphics/WorldFrameViews.h"
 #include "Engine/Graphics/SpriteEnumFunctions.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Decoration.h"
@@ -29,6 +39,7 @@
 
 static constexpr float SUN_SHADOW_CASTER_REACH = 8192.0f; // How far past the shadow distance a building can still cast into it.
 static constexpr float SUN_SHADOW_SPRITE_REACH = 1024.0f; // Same for sprites.
+static constexpr size_t SPRITE_PRELOAD_BATCH = 16; // Images that `preloadSpritesStep` loads at once.
 
 void WorldFrame::prepare() {
     if (uCurrentlyLoadedLevelType == LEVEL_INDOOR) {
@@ -100,6 +111,46 @@ static int sunOctant(Vec3f pos, int yaw) {
     return ((TrigLUT.uIntegerPi + (TrigLUT.uIntegerPi >> 3) + yaw - angle) >> 8) & 7;
 }
 
+/**
+ * @param decoration                    Level decoration.
+ * @return                              The frame the decoration shows now, picked as PrepareDecorationsRenderList_ODM
+ *                                      picks it but without its side effects, or nullptr if it isn't drawn as a sprite.
+ */
+static SpriteFrame *decorationFrame(const LevelDecoration &decoration) {
+    if (decoration.uFlags & (LEVEL_DECORATION_OBELISK_CHEST | LEVEL_DECORATION_INVISIBLE))
+        return nullptr; // IsObeliskChestActive can reveal the chest, which only the view's own prepare may do.
+    const DecorationData *desc = pDecorationTable->decoration(decoration.uDecorationDescID);
+    if (desc->uFlags & (DECORATION_DATA_EMITS_FIRE | DECORATION_DATA_MARKER | DECORATION_DATA_DONT_DRAW))
+        return nullptr;
+
+    Duration time = animTimer->time() + Duration::fromTicks(std::abs(decoration.vPosition.x + decoration.vPosition.y));
+    SpriteFrame *frame = engine->config->graphics.SeasonsChange.value() ?
+        LevelDecorationChangeSeason(desc, time, pParty->uCurrentMonth) : pSpriteFrameTable->GetFrame(desc->uSpriteID, time);
+    return frame && frame->textureName != "null" ? frame : nullptr;
+}
+
+/**
+ * @param index                         Index of an actor in `pActors`.
+ * @return                              The frame the actor shows now, picked as PrepareActorsDrawList picks it but
+ *                                      without its side effects, or nullptr if it isn't drawn.
+ */
+static SpriteFrame *actorFrame(int index) {
+    const Actor &actor = pActors[index];
+    if (actor.aiState == Removed || actor.aiState == Disabled || actor.aiState == Summoned)
+        return nullptr;
+
+    Duration time = actor.currentActionTime;
+    if (actor.currentActionAnimation == ANIM_Walking)
+        time = index * 32_ticks + (pParty->bTurnBasedModeOn ? animTimer->time() : gameTimer->time());
+    if (actor.buffs[ACTOR_BUFF_STONED].Active() || actor.buffs[ACTOR_BUFF_PARALYZED].Active())
+        time = 0_ticks;
+
+    SpriteFrame *frame = actor.aiState == Resurrected ?
+        pSpriteFrameTable->GetFrameReversed(actor.spriteIds[actor.currentActionAnimation], time) :
+        pSpriteFrameTable->GetFrame(actor.spriteIds[actor.currentActionAnimation], time);
+    return frame && frame->spriteName != "null" ? frame : nullptr;
+}
+
 static void addSunShadowSprite(std::vector<SunShadowSprite> *sprites, SpriteFrame *frame, Vec3f pos, int yaw) {
     int octant = sunOctant(pos, yaw);
     Sprite *sprite = frame->sprites[octant];
@@ -136,16 +187,8 @@ void WorldFrame::prepareSunShadowCasters() {
     for (const LevelDecoration &decoration : pLevelDecorations) {
         if ((decoration.vPosition.xy() - camera).length() > spriteReach)
             continue;
-        if (decoration.uFlags & (LEVEL_DECORATION_OBELISK_CHEST | LEVEL_DECORATION_INVISIBLE))
-            continue; // IsObeliskChestActive can reveal the chest, which only the view's own prepare may do.
-        const DecorationData *desc = pDecorationTable->decoration(decoration.uDecorationDescID);
-        if (desc->uFlags & (DECORATION_DATA_EMITS_FIRE | DECORATION_DATA_MARKER | DECORATION_DATA_DONT_DRAW))
-            continue;
-
-        Duration time = animTimer->time() + Duration::fromTicks(std::abs(decoration.vPosition.x + decoration.vPosition.y));
-        SpriteFrame *frame = engine->config->graphics.SeasonsChange.value() ?
-            LevelDecorationChangeSeason(desc, time, pParty->uCurrentMonth) : pSpriteFrameTable->GetFrame(desc->uSpriteID, time);
-        if (!frame || frame->textureName == "null")
+        SpriteFrame *frame = decorationFrame(decoration);
+        if (!frame)
             continue;
         size_t count = _sunShadowSprites.size();
         addSunShadowSprite(&_sunShadowSprites, frame, decoration.vPosition, decoration._yawAngle);
@@ -156,25 +199,65 @@ void WorldFrame::prepareSunShadowCasters() {
     }
 
     for (int i = 0; i < static_cast<int>(pActors.size()); i++) {
-        const Actor &actor = pActors[i];
-        if (actor.aiState == Removed || actor.aiState == Disabled || actor.aiState == Summoned)
+        if ((pActors[i].pos.xy() - camera).length() > spriteReach)
             continue;
-        if ((actor.pos.xy() - camera).length() > spriteReach)
-            continue;
-
-        Duration time = actor.currentActionTime;
-        if (actor.currentActionAnimation == ANIM_Walking)
-            time = i * 32_ticks + (pParty->bTurnBasedModeOn ? animTimer->time() : gameTimer->time());
-        if (actor.buffs[ACTOR_BUFF_STONED].Active() || actor.buffs[ACTOR_BUFF_PARALYZED].Active())
-            time = 0_ticks;
-
-        SpriteFrame *frame = actor.aiState == Resurrected ?
-            pSpriteFrameTable->GetFrameReversed(actor.spriteIds[actor.currentActionAnimation], time) :
-            pSpriteFrameTable->GetFrame(actor.spriteIds[actor.currentActionAnimation], time);
-        if (!frame || frame->spriteName == "null")
-            continue;
-        addSunShadowSprite(&_sunShadowSprites, frame, actor.pos, actor.yawAngle);
+        if (SpriteFrame *frame = actorFrame(i))
+            addSunShadowSprite(&_sunShadowSprites, frame, pActors[i].pos, pActors[i].yawAngle);
     }
+}
+
+void WorldFrame::beginSpritePreload() {
+    _spritePreload.clear();
+    _spritePreloaded = 0;
+    if (!engine->resources()->hasTexturePack())
+        return;
+
+    // Culled from the camera that the first frame's prepare will cull from, and the camera put back as it was.
+    Camera3D savedCamera = *pCamera3D;
+    pCamera3D->updateFromParty();
+    if (engine->_worldFrameViews)
+        engine->_worldFrameViews->aimCullingCamera();
+    Vec3f eye(pCamera3D->vCameraPos.x, pCamera3D->vCameraPos.y, pCamera3D->vCameraPos.z);
+
+    bool sunShadows = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && engine->config->graphics.SunShadows.value();
+    float shadowReach = engine->config->graphics.ShadowDistance.value() + SUN_SHADOW_SPRITE_REACH;
+    std::vector<GraphicsImage *> images;
+    auto add = [&](const SpriteFrame *frame, Vec3f pos, int yaw, float radius) {
+        if (IsCylinderInFrustum(pos, radius))
+            render->addSpriteSideImages(frame, pos, yaw, eye, &images);
+        if (sunShadows && (pos.xy() - eye.xy()).length() <= shadowReach) {
+            const Sprite *sprite = frame->sprites[sunOctant(pos, yaw)];
+            if (sprite && sprite->texture && sprite->uWidth != 0 && sprite->uHeight != 0) {
+                GraphicsImage *variant = assets->getSpriteVariant(sprite->texture, frame->paletteId);
+                images.push_back(variant ? variant : sprite->texture);
+            }
+        }
+    };
+    for (const LevelDecoration &decoration : pLevelDecorations)
+        if (SpriteFrame *frame = decorationFrame(decoration))
+            add(frame, decoration.vPosition, decoration._yawAngle, 512.0f);
+    for (int i = 0; i < static_cast<int>(pActors.size()); i++)
+        if (SpriteFrame *frame = actorFrame(i))
+            add(frame, pActors[i].pos, pActors[i].yawAngle, pActors[i].radius);
+    *pCamera3D = savedCamera;
+
+    std::unordered_set<GraphicsImage *> seen;
+    for (GraphicsImage *image : images)
+        if (seen.insert(image).second)
+            _spritePreload.push_back(image);
+}
+
+bool WorldFrame::preloadSpritesStep() {
+    if (_spritePreloaded == _spritePreload.size())
+        return false;
+
+    size_t count = std::min(SPRITE_PRELOAD_BATCH, _spritePreload.size() - _spritePreloaded);
+    std::span<GraphicsImage *const> batch = std::span(_spritePreload).subspan(_spritePreloaded, count);
+    GraphicsImage::loadReplacements(batch);
+    for (GraphicsImage *image : batch)
+        std::ignore = image->renderId(); // Uploads it.
+    _spritePreloaded += count;
+    return true;
 }
 
 //----- (00441BD4) --------------------------------------------------------

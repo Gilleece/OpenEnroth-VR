@@ -146,6 +146,12 @@ void NullRenderer::DrawIndoorFaces() {}
 void NullRenderer::ReleaseTerrain() {}
 void NullRenderer::ReleaseBSP() {}
 
+bool NullRenderer::prepareLevelStep() {
+    return false;
+}
+
+void NullRenderer::presentHeldFrame() {}
+
 void NullRenderer::DrawTwodVerts() {}
 
 bool NullRenderer::ReloadShaders() { return true; }

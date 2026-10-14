@@ -5,6 +5,8 @@
 #include "Engine/Graphics/LightsStack.h"
 #include "Engine/Graphics/RenderEntities.h"
 
+class GraphicsImage;
+
 /**
  * The 3D world part of a frame, split into a `prepare` step that updates all the engine state the frame needs and a
  * `draw` step that only reads it.
@@ -47,6 +49,21 @@ class WorldFrame {
         return _prepared;
     }
 
+    /**
+     * Picks the texture pack images of the decorations and actors that the first frame drawn in the loaded level will
+     * draw, for `preloadSpritesStep` to load: the sprite sides that face its culling camera within that camera's view,
+     * with their shapes and crossfade sides, and the sides that face the sun of those that cast sun shadows. Picks none
+     * without a texture pack.
+     */
+    void beginSpritePreload();
+
+    /**
+     * Loads the next few of the images that `beginSpritePreload` picked.
+     *
+     * @return                          Whether there were images left to load.
+     */
+    bool preloadSpritesStep();
+
  private:
     void prepareOutdoor();
     void prepareIndoor();
@@ -59,5 +76,7 @@ class WorldFrame {
     LightsSnapshot _staticGeometryLights;
     std::vector<int> _sunShadowModels; // Building models that can cast sun shadows, culled by distance only.
     std::vector<SunShadowSprite> _sunShadowSprites; // Same for decorations and actors.
+    std::vector<GraphicsImage *> _spritePreload;
+    size_t _spritePreloaded = 0; // How many of `_spritePreload` are loaded.
     bool _prepared = false;
 };

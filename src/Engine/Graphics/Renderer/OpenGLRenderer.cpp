@@ -97,6 +97,7 @@ static constexpr double CLOUD_CELL = 2500.0; // World units per noise cell, as g
 static constexpr double CLOUD_SPEED = 2.0; // World units the clouds drift per game second.
 static constexpr double CLOUD_NOISE_PERIOD = 256.0; // Cells after which the cloud noise repeats.
 static constexpr int TORCH_SHADOW_SIZE = 512;
+static constexpr size_t LEVEL_DECODE_BATCH = 8; // Texture pack images of the level's texture arrays decoded in one step of its build.
 static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
 static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
@@ -298,20 +299,19 @@ static void uploadArrayLayer(GraphicsImage *texture, int layer, int width, int h
 }
 
 /**
- * Loads the texture pack replacements of the bitmaps that texture arrays are built from all at once, on several
- * threads. Does nothing without a texture pack.
- *
  * @param textures                      Texture array map, by bitmap name.
+ * @return                              The bitmaps that the texture arrays are built from and that have texture pack
+ *                                      replacements to load, none without a texture pack.
  */
-static void loadPackReplacements(const std::map<std::string, int> &textures) {
-    if (!engine->resources()->hasTexturePack())
-        return;
-
+static std::vector<GraphicsImage *> packReplacements(const std::map<std::string, int> &textures) {
     std::vector<GraphicsImage *> images;
+    if (!engine->resources()->hasTexturePack())
+        return images;
+
     for (const auto &[name, comb] : textures)
         if (!name.starts_with("generated")) // Generated tiles aren't in the pack.
             images.push_back(assets->getBitmap(name));
-    GraphicsImage::loadReplacements(images);
+    return images;
 }
 
 /**
@@ -2765,190 +2765,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _set_3d_projection_matrix();
     _set_3d_modelview_matrix();
 
-    // TODO(pskelton): move this to map loading
-    // generate array and populate data
-    if (!_terrainBuffer) {
-        std::vector<RenderVertexSoft> pTerrainVertices(128 * 128);
-
-        // generate vertex locations
-        for (int y = 0; y < 128; ++y)
-            for (int x = 0; x < 128; ++x)
-                pTerrainVertices[y * 128 + x].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({x, y}).toFloat();
-
-        // reserve first 7 layers for water tiles in unit 0
-        auto wtrtexture = this->hd_water_tile_anim[0];
-        terraintexturesizes[0] = wtrtexture->width();
-
-        for (int buff = 0; buff < 7; buff++) {
-            std::string container_name = fmt::format("HDWTR{:03}", buff);
-            terraintexmap.insert(std::make_pair(container_name, terraintexmap.size()));
-            numterraintexloaded[0]++;
-        }
-
-        for (int y = 0; y < 127; ++y) {
-            for (int x = 0; x < 127; ++x) {
-                // map is 127 x 127 squares - each square has two triangles - each tri has 3 verts
-
-                // first find all required textures for terrain and add to map
-                const auto &tile = pOutdoor->pTerrain.tileDataByGrid({x, y});
-                int tileunit = 0;
-                int tilelayer = 0;
-                bool isWater = (tile.textureName == "wtrtyl");
-
-                // check if tile->name is already in list
-                auto mapiter = terraintexmap.find(tile.textureName);
-                if (mapiter != terraintexmap.end()) {
-                    // if so, extract unit and layer
-                    int unitlayer = mapiter->second;
-                    tilelayer = unitlayer & 0xFF;
-                    tileunit = (unitlayer & 0xFF00) >> 8;
-                } else if (isWater) {
-                    // water tile
-                    tilelayer = 0;
-                } else {
-                    // else need to add it
-                    auto thistexture = assets->getBitmap(tile.textureName, tile.flags & TILE_GENERATED_TRANSITION);
-                    int width = thistexture->width();
-                    // check size to see what unit it needs
-                    int i;
-                    for (i = 0; i < 8; i++) {
-                        if (terraintexturesizes[i] == width || terraintexturesizes[i] == 0) break;
-                    }
-
-                    if (i == 8) {
-                        MM_WARNING("Texture unit full - draw terrain!");
-                        tileunit = 0;
-                        tilelayer = 0;
-                    } else {
-                        if (terraintexturesizes[i] == 0) terraintexturesizes[i] = width;
-                        tileunit = i;
-                        tilelayer = numterraintexloaded[i];
-
-                        // encode unit and layer together
-                        int encode = (tileunit << 8) | tilelayer;
-
-                        if (numterraintexloaded[i] < 256) {
-                            // intsert into tex map
-                            terraintexmap.insert(std::make_pair(tile.textureName, encode));
-                            numterraintexloaded[i]++;
-                        } else {
-                            MM_WARNING("Texture layer full - draw terrain!");
-                            tileunit = 0;
-                            tilelayer = 0;
-                        }
-                    }
-                }
-
-                // next calculate all vertices vertices
-                const auto &[norm, norm2] = pOutdoor->pTerrain.normalsByGridUnsafe({x, y});
-
-                int attribs = isWater ? 0x1 : 0;
-                bool plain = !isWater && tile.variant >= TILE_VARIANT_BASE1 && tile.variant <= TILE_VARIANT_BASE4 && !(tile.flags & TILE_GENERATED_TRANSITION);
-                if (plain && _terrainVariation)
-                    attribs |= terrainMirrorBits(x, y);
-
-                // calc each vertex
-                // [0] - x,y        n1
-                _terrainVertices[6 * (x + (127 * y))].pos = pTerrainVertices[y * 128 + x].vWorldPosition;
-                _terrainVertices[6 * (x + (127 * y))].texuv = Vec2f(0, 0);
-                _terrainVertices[6 * (x + (127 * y))].texturelayer = tilelayer;
-                _terrainVertices[6 * (x + (127 * y))].normal = norm;
-                _terrainVertices[6 * (x + (127 * y))].attribs = static_cast<float>(attribs);
-
-                // [1] - x+1,y+1    n1
-                _terrainVertices[6 * (x + (127 * y)) + 1].pos = pTerrainVertices[(y + 1) * 128 + x + 1].vWorldPosition;
-                _terrainVertices[6 * (x + (127 * y)) + 1].texuv = Vec2f(1, 1);
-                _terrainVertices[6 * (x + (127 * y)) + 1].texturelayer = tilelayer;
-                _terrainVertices[6 * (x + (127 * y)) + 1].normal = norm;
-                _terrainVertices[6 * (x + (127 * y)) + 1].attribs = static_cast<float>(attribs);
-
-                // [2] - x+1,y      n1
-                _terrainVertices[6 * (x + (127 * y)) + 2].pos = pTerrainVertices[y * 128 + x + 1].vWorldPosition;
-                _terrainVertices[6 * (x + (127 * y)) + 2].texuv = Vec2f(1, 0);
-                _terrainVertices[6 * (x + (127 * y)) + 2].texturelayer = tilelayer;
-                _terrainVertices[6 * (x + (127 * y)) + 2].normal = norm;
-                _terrainVertices[6 * (x + (127 * y)) + 2].attribs = static_cast<float>(attribs);
-
-                // [3] - x,y        n2
-                _terrainVertices[6 * (x + (127 * y)) + 3].pos = pTerrainVertices[y * 128 + x].vWorldPosition;
-                _terrainVertices[6 * (x + (127 * y)) + 3].texuv = Vec2f(0, 0);
-                _terrainVertices[6 * (x + (127 * y)) + 3].texturelayer = tilelayer;
-                _terrainVertices[6 * (x + (127 * y)) + 3].normal = norm2;
-                _terrainVertices[6 * (x + (127 * y)) + 3].attribs = static_cast<float>(attribs);
-
-                // [4] - x,y+1      n2
-                _terrainVertices[6 * (x + (127 * y)) + 4].pos = pTerrainVertices[(y + 1) * 128 + x].vWorldPosition;
-                _terrainVertices[6 * (x + (127 * y)) + 4].texuv = Vec2f(0, 1);
-                _terrainVertices[6 * (x + (127 * y)) + 4].texturelayer = tilelayer;
-                _terrainVertices[6 * (x + (127 * y)) + 4].normal = norm2;
-                _terrainVertices[6 * (x + (127 * y)) + 4].attribs = static_cast<float>(attribs);
-
-                // [5] - x+1,y+1    n2
-                _terrainVertices[6 * (x + (127 * y)) + 5].pos = pTerrainVertices[(y + 1) * 128 + x + 1].vWorldPosition;
-                _terrainVertices[6 * (x + (127 * y)) + 5].texuv = Vec2f(1, 1);
-                _terrainVertices[6 * (x + (127 * y)) + 5].texturelayer = tilelayer;
-                _terrainVertices[6 * (x + (127 * y)) + 5].normal = norm2;
-                _terrainVertices[6 * (x + (127 * y)) + 5].attribs = static_cast<float>(attribs);
-            }
-        }
-
-        // generate VAO/VBO
-        _terrainBuffer.reset(GL_STATIC_DRAW,
-            &ShaderVertex::pos, &ShaderVertex::texuv, &ShaderVertex::texturelayer,
-            &ShaderVertex::normal, &ShaderVertex::attribs);
-        _terrainBuffer.update(_terrainVertices);
-
-        // texture set up - load in all previously found
-        loadPackReplacements(terraintexmap);
-        for (int unit = 0; unit < 8; unit++) {
-            assert(numterraintexloaded[unit] <= 256);
-            // skip if textures are empty
-            if (numterraintexloaded[unit] == 0) continue;
-
-            glGenTextures(1, &terraintextures[unit]);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, terraintextures[unit]);
-
-            int scale = 1;
-            for (const auto &[name, comb] : terraintexmap)
-                if (((comb & 0xFF00) >> 8) == unit)
-                    scale = std::max(scale, assets->getBitmap(name, name.starts_with("generated"))->textureScale());
-
-            // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), terraintexturesizes[unit] * scale, terraintexturesizes[unit] * scale, numterraintexloaded[unit],
-                         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-
-            // loop through texture map
-            std::vector<std::pair<GraphicsImage *, int>> layers;
-            std::map<std::string, int>::iterator it = terraintexmap.begin();
-            while (it != terraintexmap.end()) {
-                int comb = it->second;
-                int tlayer = comb & 0xFF;
-                int tunit = (comb & 0xFF00) >> 8;
-
-                if (tunit == unit) {
-                    // get texture
-                    auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
-                    // send texture data to gpu
-                    uploadArrayLayer(texture, tlayer, terraintexturesizes[unit], terraintexturesizes[unit], scale);
-                    layers.emplace_back(texture, tlayer);
-                }
-
-                it++;
-            }
-
-            // last texture setups
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
-            if (scale > 1)
-                setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
-
-            terrainmaterials[unit] = createMaterialArray(layers, numterraintexloaded[unit], terraintexturesizes[unit], terraintexturesizes[unit], scale, GL_CLAMP_TO_EDGE);
-        }
-    }
+    while (_buildTerrainStep()) {}
 
 /////////////////////////////////////////////////////
     // actual drawing
@@ -4655,218 +4472,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
     _set_3d_projection_matrix();
     _set_3d_modelview_matrix();
 
-    if (!_outbuildBuffers[0]) {
-        // initialize vertex vectors
-        for (int i = 0; i < 16; i++) {
-            _outbuildVertices[i].clear();
-        }
-
-        // reserve first 7 layers for water tiles in unit 0
-        auto wtrtexture = this->hd_water_tile_anim[0];
-        //terraintexmap.insert(std::make_pair("wtrtyl", terraintexmap.size()));
-        //numterraintexloaded[0]++;
-        outbuildtexturewidths[0] = wtrtexture->width();
-        outbuildtextureheights[0] = wtrtexture->height();
-
-        for (int buff = 0; buff < 7; buff++) {
-            std::string container_name = fmt::format("HDWTR{:03}", buff);
-            outbuildtexmap.insert(std::make_pair(container_name, outbuildtexmap.size()));
-            numoutbuildtexloaded[0]++;
-        }
-
-
-
-
-
-        for (BSPModel &model : pOutdoor->pBModels) {
-            //int reachable;
-            //if (IsBModelVisible(&model, &reachable)) {
-            if (!model.faces.empty()) {
-                for (int faceId : model.faces) {
-                    BLVFace &face = pOutdoor->faces[faceId];
-                    if (!face.Invisible()) {
-                        // TODO(pskelton): Same as indoors. When ODM and BLV face is combined - seperate out function
-
-                        // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
-                        if (!face.GetTexture()) continue;
-                        GraphicsImage *tex = face.GetTexture();
-
-                        std::string texname = tex->name();
-
-                        Duration animLength;
-                        Duration frame;
-                        if (face.IsAnimated()) {
-                            tex = pTextureFrameTable->animationFrame(face.animationId, frame);
-                            animLength = pTextureFrameTable->animationLength(face.animationId);
-                            texname = tex->name();
-                        }
-                        // gather up all texture and shaderverts data
-
-                        //auto tile = pOutdoor->getTileDescByGrid(x, y);
-
-                        int texunit = 0;
-                        int texlayer = 0;
-                        int attribflags = 0;
-
-                        if (face.attributes & FACE_IsFluid)
-                            attribflags |= 2;
-                        if (face.attributes & FACE_INDOOR_SKY)
-                            attribflags |= 0x400;
-
-                        if (face.attributes & FACE_FlowDown)
-                            attribflags |= 0x400;
-                        else if (face.attributes & FACE_FlowUp)
-                            attribflags |= 0x800;
-
-                        if (face.attributes & FACE_FlowRight)
-                            attribflags |= 0x2000;
-                        else if (face.attributes & FACE_FlowLeft)
-                            attribflags |= 0x1000;
-
-                        if (face.attributes & FACE_IsLava)
-                            attribflags |= 0x4000;
-
-                        // loop while running down animlength with frame animtimes
-                        do {
-                            // check if tile->name is already in list
-                            auto mapiter = outbuildtexmap.find(texname);
-                            if (mapiter != outbuildtexmap.end()) {
-                                // if so, extract unit and layer
-                                int unitlayer = mapiter->second;
-                                texlayer = unitlayer & 0xFF;
-                                texunit = (unitlayer & 0xFF00) >> 8;
-                            } else if (texname == "wtrtyl") {
-                                // water tile
-                                texunit = 0;
-                                texlayer = 0;
-                            } else {
-                                // else need to add it
-                                auto thistexture = assets->getBitmap(texname);
-                                int width = thistexture->width();
-                                int height = thistexture->height();
-                                // check size to see what unit it needs
-                                int i;
-                                for (i = 0; i < 16; i++) {
-                                    if ((outbuildtexturewidths[i] == width && outbuildtextureheights[i] == height) || outbuildtexturewidths[i] == 0) break;
-                                }
-
-                                if (i == 16) {
-                                    MM_WARNING("Texture unit full - draw building!");
-                                    texunit = 0;
-                                    texlayer = 0;
-                                } else {
-                                    if (outbuildtexturewidths[i] == 0) {
-                                        outbuildtexturewidths[i] = width;
-                                        outbuildtextureheights[i] = height;
-                                    }
-
-                                    texunit = i;
-                                    texlayer = numoutbuildtexloaded[i];
-
-                                    // encode unit and layer together
-                                    int encode = (texunit << 8) | texlayer;
-
-                                    if (numoutbuildtexloaded[i] < 256) {
-                                        // intsert into tex map
-                                        outbuildtexmap.insert(std::make_pair(texname, encode));
-                                        numoutbuildtexloaded[i]++;
-                                    } else {
-                                        MM_WARNING("Texture layer full - draw building!");
-                                        texunit = 0;
-                                        texlayer = 0;
-                                    }
-                                }
-                            }
-
-                            if (face.IsAnimated()) {
-                                // TODO(pskelton): any instances where animTime is not consistent would need checking
-                                frame += pTextureFrameTable->animationFrameLength(face.animationId);
-                                tex = pTextureFrameTable->animationFrame(face.animationId, frame);
-                                if (!tex) break;
-                                texname = tex->name();
-                            }
-                        } while (animLength > frame);
-
-                        face.texunit = texunit;
-                        face.texlayer = texlayer;
-                    }
-                }
-            }
-            //}
-        }
-
-        for (int l = 0; l < 16; l++) {
-            _outbuildBuffers[l].reset(GL_DYNAMIC_DRAW,
-                &ShaderVertex::pos, &ShaderVertex::texuv, &ShaderVertex::texturelayer,
-                &ShaderVertex::normal, &ShaderVertex::attribs);
-        }
-
-        // texture set up
-
-        // loop over all units
-        loadPackReplacements(outbuildtexmap);
-        for (int unit = 0; unit < 16; unit++) {
-            assert(numoutbuildtexloaded[unit] <= 256);
-            // skip if textures are empty
-            if (numoutbuildtexloaded[unit] == 0) continue;
-
-            glGenTextures(1, &outbuildtextures[unit]);
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildtextures[unit]);
-
-            int scale = 1;
-            for (const auto &[name, comb] : outbuildtexmap)
-                if (((comb & 0xFF00) >> 8) == unit)
-                    scale = std::max(scale, assets->getBitmap(name)->textureScale());
-
-            // create blank memory for later texture submission
-            glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), outbuildtexturewidths[unit] * scale, outbuildtextureheights[unit] * scale, numoutbuildtexloaded[unit],
-                         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-            std::vector<std::pair<GraphicsImage *, int>> layers;
-            std::map<std::string, int>::iterator it = outbuildtexmap.begin();
-            while (it != outbuildtexmap.end()) {
-                // skip if wtrtyl
-                //if ((it->first).substr(0, 6) == "wtrtyl") {
-                //    std::cout << "skipped  " << it->first << std::endl;
-                 //   it++;
-                 //   continue;
-                //}
-
-                int comb = it->second;
-                int tlayer = comb & 0xFF;
-                int tunit = (comb & 0xFF00) >> 8;
-
-                if (tunit == unit) {
-                    // get texture
-                    auto texture = assets->getBitmap(it->first);
-
-                    uploadArrayLayer(texture, tlayer, outbuildtexturewidths[unit], outbuildtextureheights[unit], scale);
-                    layers.emplace_back(texture, tlayer);
-                }
-
-                it++;
-            }
-
-            //iterate through terrain tex map
-            //ignore wtrtyl
-            //laod in
-
-            //auto tile = pOutdoor->getTileDescByGrid(0, 0);
-            //bool border = tile->IsWaterBorderTile();
-
-
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-            glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
-            if (scale > 1)
-                setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
-
-            outbuildmaterials[unit] = createMaterialArray(layers, numoutbuildtexloaded[unit], outbuildtexturewidths[unit], outbuildtextureheights[unit], scale, GL_REPEAT);
-        }
-    }
+    while (_buildOutdoorBuildingsStep()) {}
 
         // else update verts - blank store
         for (int i = 0; i < 16; i++) {
@@ -5134,179 +4740,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
         _set_3d_projection_matrix();
         _set_3d_modelview_matrix();
 
-        if (!_bspBuffers[0]) {
-            // initialize vertex vectors
-            for (int i = 0; i < 16; i++) {
-                _bspVertices[i].clear();
-            }
-
-
-            // reserve first 7 layers for water tiles in unit 0
-            auto wtrtexture = this->hd_water_tile_anim[0];
-            //terraintexmap.insert(std::make_pair("wtrtyl", terraintexmap.size()));
-            //numterraintexloaded[0]++;
-            bsptexturewidths[0] = wtrtexture->width();
-            bsptextureheights[0] = wtrtexture->height();
-
-            for (int buff = 0; buff < 7; buff++) {
-                std::string container_name = fmt::format("HDWTR{:03}", buff);
-                bsptexmap.insert(std::make_pair(container_name, bsptexmap.size()));
-                bsptexloaded[0]++;
-            }
-
-
-            for (int test = 0; test < pIndoor->faces.size(); test++) {
-                BLVFace *face = &pIndoor->faces[test];
-
-                if (face->isPortal())
-                    continue;
-                // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
-                if (!face->GetTexture())
-                    continue;
-
-                // TODO(pskelton): Same as outdoors. When ODM and BLV face is combined - seperate out function
-                GraphicsImage *tex = face->GetTexture();
-                std::string texname = tex->name();
-
-                Duration animLength;
-                Duration frame;
-                if (face->IsAnimated()) {
-                    tex = pTextureFrameTable->animationFrame(face->animationId, frame);
-                    animLength = pTextureFrameTable->animationLength(face->animationId);
-                    texname = tex->name();
-                }
-
-                int texunit = 0;
-                int texlayer = 0;
-
-                // loop while running down animlength with frame animtimes
-                do {
-                    // check if tile->name is already in list
-                    auto mapiter = bsptexmap.find(texname);
-                    if (mapiter != bsptexmap.end()) {
-                        // if so, extract unit and layer
-                        int unitlayer = mapiter->second;
-                        // TODO(pskelton): make this a pair/struct rather than encoding
-                        texlayer = unitlayer & 0xFF;
-                        texunit = (unitlayer & 0xFF00) >> 8;
-                    } else if (texname == "wtrtyl") {
-                        // water tile
-                        texunit = 0;
-                        texlayer = 0;
-                    } else {
-                        // else need to add it
-                        auto thistexture = assets->getBitmap(texname);
-                        int width = thistexture->width();
-                        int height = thistexture->height();
-                        // check size to see what unit it needs
-                        int i;
-                        for (i = 0; i < 16; i++) {
-                            if ((bsptexturewidths[i] == width && bsptextureheights[i] == height) || bsptexturewidths[i] == 0) break;
-                        }
-
-                        if (i == 16) {
-                            MM_WARNING("Texture unit full - draw Indoor faces!");
-                            texunit = 0;
-                            texlayer = 0;
-                        } else {
-                            if (bsptexturewidths[i] == 0) {
-                                bsptexturewidths[i] = width;
-                                bsptextureheights[i] = height;
-                            }
-
-                            texunit = i;
-                            texlayer = bsptexloaded[i];
-
-                            // encode unit and layer together
-                            int encode = (texunit << 8) | texlayer;
-
-                            if (bsptexloaded[i] < 256) {
-                                // intsert into tex map
-                                bsptexmap.insert(std::make_pair(texname, encode));
-                                bsptexloaded[i]++;
-                            } else {
-                                MM_WARNING("Texture layer full - draw indoor faces!");
-                                texunit = 0;
-                                texlayer = 0;
-                            }
-                        }
-                    }
-
-                    if (face->IsAnimated()) {
-                        // TODO(pskelton): any instances where animTime is not consistent would need checking
-                        frame += pTextureFrameTable->animationFrameLength(face->animationId);
-                        tex = pTextureFrameTable->animationFrame(face->animationId, frame);
-                        if (!tex) break;
-                        texname = tex->name();
-                    }
-                } while (animLength > frame);
-
-                face->texunit = texunit;
-                face->texlayer = texlayer;
-            }
-
-            for (int l = 0; l < 16; l++) {
-                _bspBuffers[l].reset(GL_DYNAMIC_DRAW,
-                    &ShaderVertex::pos, &ShaderVertex::texuv, &ShaderVertex::texturelayer,
-                    &ShaderVertex::normal, &ShaderVertex::attribs);
-            }
-
-            // texture set up
-
-            // loop over all units
-            loadPackReplacements(bsptexmap);
-            for (int unit = 0; unit < 16; unit++) {
-                assert(bsptexloaded[unit] <= 256);
-                // skip if textures are empty
-                if (bsptexloaded[unit] == 0) continue;
-
-                glGenTextures(1, &bsptextures[unit]);
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
-
-                int scale = 1;
-                for (const auto &[name, comb] : bsptexmap)
-                    if (((comb & 0xFF00) >> 8) == unit)
-                        scale = std::max(scale, assets->getBitmap(name)->textureScale());
-
-                glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), bsptexturewidths[unit] * scale, bsptextureheights[unit] * scale, bsptexloaded[unit],
-                             0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-
-                std::vector<std::pair<GraphicsImage *, int>> layers;
-                std::map<std::string, int>::iterator it = bsptexmap.begin();
-                while (it != bsptexmap.end()) {
-                    int comb = it->second;
-                    int tlayer = comb & 0xFF;
-                    int tunit = (comb & 0xFF00) >> 8;
-
-                    if (tunit == unit) {
-                        // get texture
-                        auto texture = assets->getBitmap(it->first);
-
-                        uploadArrayLayer(texture, tlayer, bsptexturewidths[unit], bsptextureheights[unit], scale);
-                        layers.emplace_back(texture, tlayer);
-
-                        //numterraintexloaded[0]++;
-                    }
-
-                    it++;
-                }
-
-
-
-
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-                glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
-                if (scale > 1)
-                    setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
-
-                bspmaterials[unit] = createMaterialArray(layers, bsptexloaded[unit], bsptexturewidths[unit], bsptextureheights[unit], scale, GL_REPEAT);
-            }
-        }
+        while (_buildIndoorFacesStep()) {}
 
 
             // update verts - blank store
@@ -6025,6 +5459,7 @@ void OpenGLRenderer::ReleaseTerrain() {
     std::map<std::string, int> terraintexmap;*/
 
     terraintexmap.clear();
+    _terrainBuild = {};
 
     for (int i = 0; i < 8; i++) {
         glDeleteTextures(1, &terraintextures[i]);
@@ -6045,6 +5480,7 @@ void OpenGLRenderer::ReleaseTerrain() {
     std::map<std::string, int> outbuildtexmap;*/
 
     outbuildtexmap.clear();
+    _outbuildBuild = {};
 
     for (int i = 0; i < 16; i++) {
         glDeleteTextures(1, &outbuildtextures[i]);
@@ -6068,6 +5504,7 @@ void OpenGLRenderer::ReleaseBSP() {
     std::map<std::string, int> bsptexmap;*/
 
     bsptexmap.clear();
+    _bspBuild = {};
     _torchShadowDrawnLights.clear();
     _aoIndoorBuffer.reset();
 
@@ -6082,6 +5519,613 @@ void OpenGLRenderer::ReleaseBSP() {
         _bspBuffers[i].reset();
         _bspVertices[i].clear();
     }
+}
+
+void OpenGLRenderer::_gatherTerrain() {
+    std::vector<RenderVertexSoft> pTerrainVertices(128 * 128);
+
+    // generate vertex locations
+    for (int y = 0; y < 128; ++y)
+        for (int x = 0; x < 128; ++x)
+            pTerrainVertices[y * 128 + x].vWorldPosition = pOutdoor->pTerrain.vertexByGridUnsafe({x, y}).toFloat();
+
+    // reserve first 7 layers for water tiles in unit 0
+    auto wtrtexture = this->hd_water_tile_anim[0];
+    terraintexturesizes[0] = wtrtexture->width();
+
+    for (int buff = 0; buff < 7; buff++) {
+        std::string container_name = fmt::format("HDWTR{:03}", buff);
+        terraintexmap.insert(std::make_pair(container_name, terraintexmap.size()));
+        numterraintexloaded[0]++;
+    }
+
+    for (int y = 0; y < 127; ++y) {
+        for (int x = 0; x < 127; ++x) {
+            // map is 127 x 127 squares - each square has two triangles - each tri has 3 verts
+
+            // first find all required textures for terrain and add to map
+            const auto &tile = pOutdoor->pTerrain.tileDataByGrid({x, y});
+            int tileunit = 0;
+            int tilelayer = 0;
+            bool isWater = (tile.textureName == "wtrtyl");
+
+            // check if tile->name is already in list
+            auto mapiter = terraintexmap.find(tile.textureName);
+            if (mapiter != terraintexmap.end()) {
+                // if so, extract unit and layer
+                int unitlayer = mapiter->second;
+                tilelayer = unitlayer & 0xFF;
+                tileunit = (unitlayer & 0xFF00) >> 8;
+            } else if (isWater) {
+                // water tile
+                tilelayer = 0;
+            } else {
+                // else need to add it
+                auto thistexture = assets->getBitmap(tile.textureName, tile.flags & TILE_GENERATED_TRANSITION);
+                int width = thistexture->width();
+                // check size to see what unit it needs
+                int i;
+                for (i = 0; i < 8; i++) {
+                    if (terraintexturesizes[i] == width || terraintexturesizes[i] == 0) break;
+                }
+
+                if (i == 8) {
+                    MM_WARNING("Texture unit full - draw terrain!");
+                    tileunit = 0;
+                    tilelayer = 0;
+                } else {
+                    if (terraintexturesizes[i] == 0) terraintexturesizes[i] = width;
+                    tileunit = i;
+                    tilelayer = numterraintexloaded[i];
+
+                    // encode unit and layer together
+                    int encode = (tileunit << 8) | tilelayer;
+
+                    if (numterraintexloaded[i] < 256) {
+                        // intsert into tex map
+                        terraintexmap.insert(std::make_pair(tile.textureName, encode));
+                        numterraintexloaded[i]++;
+                    } else {
+                        MM_WARNING("Texture layer full - draw terrain!");
+                        tileunit = 0;
+                        tilelayer = 0;
+                    }
+                }
+            }
+
+            // next calculate all vertices vertices
+            const auto &[norm, norm2] = pOutdoor->pTerrain.normalsByGridUnsafe({x, y});
+
+            int attribs = isWater ? 0x1 : 0;
+            bool plain = !isWater && tile.variant >= TILE_VARIANT_BASE1 && tile.variant <= TILE_VARIANT_BASE4 && !(tile.flags & TILE_GENERATED_TRANSITION);
+            if (plain && _terrainVariation)
+                attribs |= terrainMirrorBits(x, y);
+
+            // calc each vertex
+            // [0] - x,y        n1
+            _terrainVertices[6 * (x + (127 * y))].pos = pTerrainVertices[y * 128 + x].vWorldPosition;
+            _terrainVertices[6 * (x + (127 * y))].texuv = Vec2f(0, 0);
+            _terrainVertices[6 * (x + (127 * y))].texturelayer = tilelayer;
+            _terrainVertices[6 * (x + (127 * y))].normal = norm;
+            _terrainVertices[6 * (x + (127 * y))].attribs = static_cast<float>(attribs);
+
+            // [1] - x+1,y+1    n1
+            _terrainVertices[6 * (x + (127 * y)) + 1].pos = pTerrainVertices[(y + 1) * 128 + x + 1].vWorldPosition;
+            _terrainVertices[6 * (x + (127 * y)) + 1].texuv = Vec2f(1, 1);
+            _terrainVertices[6 * (x + (127 * y)) + 1].texturelayer = tilelayer;
+            _terrainVertices[6 * (x + (127 * y)) + 1].normal = norm;
+            _terrainVertices[6 * (x + (127 * y)) + 1].attribs = static_cast<float>(attribs);
+
+            // [2] - x+1,y      n1
+            _terrainVertices[6 * (x + (127 * y)) + 2].pos = pTerrainVertices[y * 128 + x + 1].vWorldPosition;
+            _terrainVertices[6 * (x + (127 * y)) + 2].texuv = Vec2f(1, 0);
+            _terrainVertices[6 * (x + (127 * y)) + 2].texturelayer = tilelayer;
+            _terrainVertices[6 * (x + (127 * y)) + 2].normal = norm;
+            _terrainVertices[6 * (x + (127 * y)) + 2].attribs = static_cast<float>(attribs);
+
+            // [3] - x,y        n2
+            _terrainVertices[6 * (x + (127 * y)) + 3].pos = pTerrainVertices[y * 128 + x].vWorldPosition;
+            _terrainVertices[6 * (x + (127 * y)) + 3].texuv = Vec2f(0, 0);
+            _terrainVertices[6 * (x + (127 * y)) + 3].texturelayer = tilelayer;
+            _terrainVertices[6 * (x + (127 * y)) + 3].normal = norm2;
+            _terrainVertices[6 * (x + (127 * y)) + 3].attribs = static_cast<float>(attribs);
+
+            // [4] - x,y+1      n2
+            _terrainVertices[6 * (x + (127 * y)) + 4].pos = pTerrainVertices[(y + 1) * 128 + x].vWorldPosition;
+            _terrainVertices[6 * (x + (127 * y)) + 4].texuv = Vec2f(0, 1);
+            _terrainVertices[6 * (x + (127 * y)) + 4].texturelayer = tilelayer;
+            _terrainVertices[6 * (x + (127 * y)) + 4].normal = norm2;
+            _terrainVertices[6 * (x + (127 * y)) + 4].attribs = static_cast<float>(attribs);
+
+            // [5] - x+1,y+1    n2
+            _terrainVertices[6 * (x + (127 * y)) + 5].pos = pTerrainVertices[(y + 1) * 128 + x + 1].vWorldPosition;
+            _terrainVertices[6 * (x + (127 * y)) + 5].texuv = Vec2f(1, 1);
+            _terrainVertices[6 * (x + (127 * y)) + 5].texturelayer = tilelayer;
+            _terrainVertices[6 * (x + (127 * y)) + 5].normal = norm2;
+            _terrainVertices[6 * (x + (127 * y)) + 5].attribs = static_cast<float>(attribs);
+        }
+    }
+
+    // generate VAO/VBO
+    _terrainBuffer.reset(GL_STATIC_DRAW,
+        &ShaderVertex::pos, &ShaderVertex::texuv, &ShaderVertex::texturelayer,
+        &ShaderVertex::normal, &ShaderVertex::attribs);
+    _terrainBuffer.update(_terrainVertices);
+}
+
+void OpenGLRenderer::_buildTerrainArray(int unit) {
+    glGenTextures(1, &terraintextures[unit]);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, terraintextures[unit]);
+
+    int scale = 1;
+    for (const auto &[name, comb] : terraintexmap)
+        if (((comb & 0xFF00) >> 8) == unit)
+            scale = std::max(scale, assets->getBitmap(name, name.starts_with("generated"))->textureScale());
+
+    // create blank memory for later texture submission
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), terraintexturesizes[unit] * scale, terraintexturesizes[unit] * scale, numterraintexloaded[unit],
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    // loop through texture map
+    std::vector<std::pair<GraphicsImage *, int>> layers;
+    std::map<std::string, int>::iterator it = terraintexmap.begin();
+    while (it != terraintexmap.end()) {
+        int comb = it->second;
+        int tlayer = comb & 0xFF;
+        int tunit = (comb & 0xFF00) >> 8;
+
+        if (tunit == unit) {
+            // get texture
+            auto texture = assets->getBitmap(it->first, it->first.starts_with("generated")); // TODO(captainurist): terrible, terrible hack, redo this.
+            // send texture data to gpu
+            uploadArrayLayer(texture, tlayer, terraintexturesizes[unit], terraintexturesizes[unit], scale);
+            layers.emplace_back(texture, tlayer);
+        }
+
+        it++;
+    }
+
+    // last texture setups
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    if (scale > 1)
+        setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
+
+    terrainmaterials[unit] = createMaterialArray(layers, numterraintexloaded[unit], terraintexturesizes[unit], terraintexturesizes[unit], scale, GL_CLAMP_TO_EDGE);
+}
+
+bool OpenGLRenderer::_buildTerrainStep() {
+    if (!_terrainBuffer) {
+        _gatherTerrain();
+        _terrainBuild = {packReplacements(terraintexmap)};
+        return true;
+    }
+    return _buildArraysStep(&_terrainBuild, numterraintexloaded, [this](int unit) { _buildTerrainArray(unit); });
+}
+
+void OpenGLRenderer::_gatherOutdoorBuildings() {
+    // initialize vertex vectors
+    for (int i = 0; i < 16; i++) {
+        _outbuildVertices[i].clear();
+    }
+
+    // reserve first 7 layers for water tiles in unit 0
+    auto wtrtexture = this->hd_water_tile_anim[0];
+    //terraintexmap.insert(std::make_pair("wtrtyl", terraintexmap.size()));
+    //numterraintexloaded[0]++;
+    outbuildtexturewidths[0] = wtrtexture->width();
+    outbuildtextureheights[0] = wtrtexture->height();
+
+    for (int buff = 0; buff < 7; buff++) {
+        std::string container_name = fmt::format("HDWTR{:03}", buff);
+        outbuildtexmap.insert(std::make_pair(container_name, outbuildtexmap.size()));
+        numoutbuildtexloaded[0]++;
+    }
+
+
+
+
+
+    for (BSPModel &model : pOutdoor->pBModels) {
+        //int reachable;
+        //if (IsBModelVisible(&model, &reachable)) {
+        if (!model.faces.empty()) {
+            for (int faceId : model.faces) {
+                BLVFace &face = pOutdoor->faces[faceId];
+                if (!face.Invisible()) {
+                    // TODO(pskelton): Same as indoors. When ODM and BLV face is combined - seperate out function
+
+                    // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
+                    if (!face.GetTexture()) continue;
+                    GraphicsImage *tex = face.GetTexture();
+
+                    std::string texname = tex->name();
+
+                    Duration animLength;
+                    Duration frame;
+                    if (face.IsAnimated()) {
+                        tex = pTextureFrameTable->animationFrame(face.animationId, frame);
+                        animLength = pTextureFrameTable->animationLength(face.animationId);
+                        texname = tex->name();
+                    }
+                    // gather up all texture and shaderverts data
+
+                    //auto tile = pOutdoor->getTileDescByGrid(x, y);
+
+                    int texunit = 0;
+                    int texlayer = 0;
+                    int attribflags = 0;
+
+                    if (face.attributes & FACE_IsFluid)
+                        attribflags |= 2;
+                    if (face.attributes & FACE_INDOOR_SKY)
+                        attribflags |= 0x400;
+
+                    if (face.attributes & FACE_FlowDown)
+                        attribflags |= 0x400;
+                    else if (face.attributes & FACE_FlowUp)
+                        attribflags |= 0x800;
+
+                    if (face.attributes & FACE_FlowRight)
+                        attribflags |= 0x2000;
+                    else if (face.attributes & FACE_FlowLeft)
+                        attribflags |= 0x1000;
+
+                    if (face.attributes & FACE_IsLava)
+                        attribflags |= 0x4000;
+
+                    // loop while running down animlength with frame animtimes
+                    do {
+                        // check if tile->name is already in list
+                        auto mapiter = outbuildtexmap.find(texname);
+                        if (mapiter != outbuildtexmap.end()) {
+                            // if so, extract unit and layer
+                            int unitlayer = mapiter->second;
+                            texlayer = unitlayer & 0xFF;
+                            texunit = (unitlayer & 0xFF00) >> 8;
+                        } else if (texname == "wtrtyl") {
+                            // water tile
+                            texunit = 0;
+                            texlayer = 0;
+                        } else {
+                            // else need to add it
+                            auto thistexture = assets->getBitmap(texname);
+                            int width = thistexture->width();
+                            int height = thistexture->height();
+                            // check size to see what unit it needs
+                            int i;
+                            for (i = 0; i < 16; i++) {
+                                if ((outbuildtexturewidths[i] == width && outbuildtextureheights[i] == height) || outbuildtexturewidths[i] == 0) break;
+                            }
+
+                            if (i == 16) {
+                                MM_WARNING("Texture unit full - draw building!");
+                                texunit = 0;
+                                texlayer = 0;
+                            } else {
+                                if (outbuildtexturewidths[i] == 0) {
+                                    outbuildtexturewidths[i] = width;
+                                    outbuildtextureheights[i] = height;
+                                }
+
+                                texunit = i;
+                                texlayer = numoutbuildtexloaded[i];
+
+                                // encode unit and layer together
+                                int encode = (texunit << 8) | texlayer;
+
+                                if (numoutbuildtexloaded[i] < 256) {
+                                    // intsert into tex map
+                                    outbuildtexmap.insert(std::make_pair(texname, encode));
+                                    numoutbuildtexloaded[i]++;
+                                } else {
+                                    MM_WARNING("Texture layer full - draw building!");
+                                    texunit = 0;
+                                    texlayer = 0;
+                                }
+                            }
+                        }
+
+                        if (face.IsAnimated()) {
+                            // TODO(pskelton): any instances where animTime is not consistent would need checking
+                            frame += pTextureFrameTable->animationFrameLength(face.animationId);
+                            tex = pTextureFrameTable->animationFrame(face.animationId, frame);
+                            if (!tex) break;
+                            texname = tex->name();
+                        }
+                    } while (animLength > frame);
+
+                    face.texunit = texunit;
+                    face.texlayer = texlayer;
+                }
+            }
+        }
+        //}
+    }
+
+    for (int l = 0; l < 16; l++) {
+        _outbuildBuffers[l].reset(GL_DYNAMIC_DRAW,
+            &ShaderVertex::pos, &ShaderVertex::texuv, &ShaderVertex::texturelayer,
+            &ShaderVertex::normal, &ShaderVertex::attribs);
+    }
+}
+
+void OpenGLRenderer::_buildOutdoorBuildingsArray(int unit) {
+    glGenTextures(1, &outbuildtextures[unit]);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, outbuildtextures[unit]);
+
+    int scale = 1;
+    for (const auto &[name, comb] : outbuildtexmap)
+        if (((comb & 0xFF00) >> 8) == unit)
+            scale = std::max(scale, assets->getBitmap(name)->textureScale());
+
+    // create blank memory for later texture submission
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), outbuildtexturewidths[unit] * scale, outbuildtextureheights[unit] * scale, numoutbuildtexloaded[unit],
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    std::vector<std::pair<GraphicsImage *, int>> layers;
+    std::map<std::string, int>::iterator it = outbuildtexmap.begin();
+    while (it != outbuildtexmap.end()) {
+        // skip if wtrtyl
+        //if ((it->first).substr(0, 6) == "wtrtyl") {
+        //    std::cout << "skipped  " << it->first << std::endl;
+         //   it++;
+         //   continue;
+        //}
+
+        int comb = it->second;
+        int tlayer = comb & 0xFF;
+        int tunit = (comb & 0xFF00) >> 8;
+
+        if (tunit == unit) {
+            // get texture
+            auto texture = assets->getBitmap(it->first);
+
+            uploadArrayLayer(texture, tlayer, outbuildtexturewidths[unit], outbuildtextureheights[unit], scale);
+            layers.emplace_back(texture, tlayer);
+        }
+
+        it++;
+    }
+
+    //iterate through terrain tex map
+    //ignore wtrtyl
+    //laod in
+
+    //auto tile = pOutdoor->getTileDescByGrid(0, 0);
+    //bool border = tile->IsWaterBorderTile();
+
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    if (scale > 1)
+        setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
+
+    outbuildmaterials[unit] = createMaterialArray(layers, numoutbuildtexloaded[unit], outbuildtexturewidths[unit], outbuildtextureheights[unit], scale, GL_REPEAT);
+}
+
+bool OpenGLRenderer::_buildOutdoorBuildingsStep() {
+    if (!_outbuildBuffers[0]) {
+        _gatherOutdoorBuildings();
+        _outbuildBuild = {packReplacements(outbuildtexmap)};
+        return true;
+    }
+    return _buildArraysStep(&_outbuildBuild, numoutbuildtexloaded, [this](int unit) { _buildOutdoorBuildingsArray(unit); });
+}
+
+void OpenGLRenderer::_gatherIndoorFaces() {
+    // initialize vertex vectors
+    for (int i = 0; i < 16; i++) {
+        _bspVertices[i].clear();
+    }
+
+
+    // reserve first 7 layers for water tiles in unit 0
+    auto wtrtexture = this->hd_water_tile_anim[0];
+    //terraintexmap.insert(std::make_pair("wtrtyl", terraintexmap.size()));
+    //numterraintexloaded[0]++;
+    bsptexturewidths[0] = wtrtexture->width();
+    bsptextureheights[0] = wtrtexture->height();
+
+    for (int buff = 0; buff < 7; buff++) {
+        std::string container_name = fmt::format("HDWTR{:03}", buff);
+        bsptexmap.insert(std::make_pair(container_name, bsptexmap.size()));
+        bsptexloaded[0]++;
+    }
+
+
+    for (int test = 0; test < pIndoor->faces.size(); test++) {
+        BLVFace *face = &pIndoor->faces[test];
+
+        if (face->isPortal())
+            continue;
+        // TODO(yoctozepto, pskelton): we should probably try to handle these faces as they are otherwise marked as visible (see also BSPRenderer)
+        if (!face->GetTexture())
+            continue;
+
+        // TODO(pskelton): Same as outdoors. When ODM and BLV face is combined - seperate out function
+        GraphicsImage *tex = face->GetTexture();
+        std::string texname = tex->name();
+
+        Duration animLength;
+        Duration frame;
+        if (face->IsAnimated()) {
+            tex = pTextureFrameTable->animationFrame(face->animationId, frame);
+            animLength = pTextureFrameTable->animationLength(face->animationId);
+            texname = tex->name();
+        }
+
+        int texunit = 0;
+        int texlayer = 0;
+
+        // loop while running down animlength with frame animtimes
+        do {
+            // check if tile->name is already in list
+            auto mapiter = bsptexmap.find(texname);
+            if (mapiter != bsptexmap.end()) {
+                // if so, extract unit and layer
+                int unitlayer = mapiter->second;
+                // TODO(pskelton): make this a pair/struct rather than encoding
+                texlayer = unitlayer & 0xFF;
+                texunit = (unitlayer & 0xFF00) >> 8;
+            } else if (texname == "wtrtyl") {
+                // water tile
+                texunit = 0;
+                texlayer = 0;
+            } else {
+                // else need to add it
+                auto thistexture = assets->getBitmap(texname);
+                int width = thistexture->width();
+                int height = thistexture->height();
+                // check size to see what unit it needs
+                int i;
+                for (i = 0; i < 16; i++) {
+                    if ((bsptexturewidths[i] == width && bsptextureheights[i] == height) || bsptexturewidths[i] == 0) break;
+                }
+
+                if (i == 16) {
+                    MM_WARNING("Texture unit full - draw Indoor faces!");
+                    texunit = 0;
+                    texlayer = 0;
+                } else {
+                    if (bsptexturewidths[i] == 0) {
+                        bsptexturewidths[i] = width;
+                        bsptextureheights[i] = height;
+                    }
+
+                    texunit = i;
+                    texlayer = bsptexloaded[i];
+
+                    // encode unit and layer together
+                    int encode = (texunit << 8) | texlayer;
+
+                    if (bsptexloaded[i] < 256) {
+                        // intsert into tex map
+                        bsptexmap.insert(std::make_pair(texname, encode));
+                        bsptexloaded[i]++;
+                    } else {
+                        MM_WARNING("Texture layer full - draw indoor faces!");
+                        texunit = 0;
+                        texlayer = 0;
+                    }
+                }
+            }
+
+            if (face->IsAnimated()) {
+                // TODO(pskelton): any instances where animTime is not consistent would need checking
+                frame += pTextureFrameTable->animationFrameLength(face->animationId);
+                tex = pTextureFrameTable->animationFrame(face->animationId, frame);
+                if (!tex) break;
+                texname = tex->name();
+            }
+        } while (animLength > frame);
+
+        face->texunit = texunit;
+        face->texlayer = texlayer;
+    }
+
+    for (int l = 0; l < 16; l++) {
+        _bspBuffers[l].reset(GL_DYNAMIC_DRAW,
+            &ShaderVertex::pos, &ShaderVertex::texuv, &ShaderVertex::texturelayer,
+            &ShaderVertex::normal, &ShaderVertex::attribs);
+    }
+}
+
+void OpenGLRenderer::_buildIndoorFacesArray(int unit) {
+    glGenTextures(1, &bsptextures[unit]);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, bsptextures[unit]);
+
+    int scale = 1;
+    for (const auto &[name, comb] : bsptexmap)
+        if (((comb & 0xFF00) >> 8) == unit)
+            scale = std::max(scale, assets->getBitmap(name)->textureScale());
+
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, _colorArrayFormat(), bsptexturewidths[unit] * scale, bsptextureheights[unit] * scale, bsptexloaded[unit],
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+    std::vector<std::pair<GraphicsImage *, int>> layers;
+    std::map<std::string, int>::iterator it = bsptexmap.begin();
+    while (it != bsptexmap.end()) {
+        int comb = it->second;
+        int tlayer = comb & 0xFF;
+        int tunit = (comb & 0xFF00) >> 8;
+
+        if (tunit == unit) {
+            // get texture
+            auto texture = assets->getBitmap(it->first);
+
+            uploadArrayLayer(texture, tlayer, bsptexturewidths[unit], bsptextureheights[unit], scale);
+            layers.emplace_back(texture, tlayer);
+
+            //numterraintexloaded[0]++;
+        }
+
+        it++;
+    }
+
+
+
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    if (scale > 1)
+        setMipmappedFilter(GL_TEXTURE_2D_ARRAY);
+
+    bspmaterials[unit] = createMaterialArray(layers, bsptexloaded[unit], bsptexturewidths[unit], bsptextureheights[unit], scale, GL_REPEAT);
+}
+
+bool OpenGLRenderer::_buildIndoorFacesStep() {
+    if (!_bspBuffers[0]) {
+        _gatherIndoorFaces();
+        _bspBuild = {packReplacements(bsptexmap)};
+        return true;
+    }
+    return _buildArraysStep(&_bspBuild, bsptexloaded, [this](int unit) { _buildIndoorFacesArray(unit); });
+}
+
+bool OpenGLRenderer::_buildArraysStep(LevelArraysBuild *build, std::span<const unsigned> layerCounts, const std::function<void(int)> &buildArray) {
+    if (build->decoded < build->decodes.size()) {
+        size_t count = std::min(LEVEL_DECODE_BATCH, build->decodes.size() - build->decoded);
+        GraphicsImage::loadReplacements(std::span(build->decodes).subspan(build->decoded, count));
+        build->decoded += count;
+        return true;
+    }
+
+    int arrayCount = static_cast<int>(layerCounts.size());
+    while (build->nextArray < arrayCount && layerCounts[build->nextArray] == 0)
+        build->nextArray++;
+    if (build->nextArray == arrayCount)
+        return false;
+    assert(layerCounts[build->nextArray] <= 256);
+    buildArray(build->nextArray++);
+    return true;
+}
+
+bool OpenGLRenderer::prepareLevelStep() {
+    _initWaterTiles();
+    if (uCurrentlyLoadedLevelType == LEVEL_OUTDOOR)
+        return _buildTerrainStep() || _buildOutdoorBuildingsStep();
+    if (uCurrentlyLoadedLevelType == LEVEL_INDOOR)
+        return _buildIndoorFacesStep();
+    return false;
+}
+
+void OpenGLRenderer::presentHeldFrame() {
+    if (_externalFramePacing)
+        Present();
 }
 
 

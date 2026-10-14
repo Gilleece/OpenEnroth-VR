@@ -162,6 +162,30 @@ static int angleIntoSide(int angle, int octant) {
     return ((angle - octant * SPRITE_SIDE_ANGLE + 1024) & 2047) - 1024;
 }
 
+void BaseRenderer::addSpriteSideImages(const SpriteFrame *frame, Vec3f pos, int yaw, Vec3f eye, std::vector<GraphicsImage *> *images) {
+    bool centered = frame->flags & SPRITE_FRAME_CENTER;
+    auto add = [&](int octant) {
+        const Sprite *sprite = frame->sprites[octant];
+        if (!sprite || !sprite->texture || sprite->texture->width() == 0 || sprite->texture->height() == 0)
+            return;
+        GraphicsImage *variant = assets->getSpriteVariant(sprite->texture, frame->paletteId);
+        images->push_back(variant ? variant : sprite->texture);
+        if (spriteShapes() && !centered)
+            if (GraphicsImage *shape = assets->getSpriteShape(sprite->texture))
+                images->push_back(shape);
+    };
+
+    int angle = spriteAngle(yaw, pos, eye);
+    int octant = angle / SPRITE_SIDE_ANGLE;
+    add(octant);
+    if (!config->graphics.SpriteCrossfade.value() || centered)
+        return;
+
+    float position = angleIntoSide(angle, octant) / static_cast<float>(SPRITE_SIDE_ANGLE);
+    if (std::min(position, 1.0f - position) < SPRITE_CROSSFADE_BAND)
+        add(position < 0.5f ? (octant + 7) & 7 : (octant + 1) & 7);
+}
+
 void BaseRenderer::crossfadeSpriteSides(WorldBillboard *billboard, const Vec3f &eye) {
     billboard->crossfadeTexture = nullptr;
     billboard->crossfade = 0;
