@@ -39,6 +39,16 @@ uniform FogParam fog;
 #include "water.glsl"
 #endif
 
+#ifdef WATER_SHADER
+uniform sampler2D waterShore; // Square root of the distance from the shore over WATER_SHORE_RANGE, 64 world units a texel.
+const float WATER_SHORE_RANGE = 2048.0;
+
+float WaterShoreDistance(vec3 pos) {
+    float root = texture(waterShore, vec2(pos.x + 32768.0, 32768.0 - pos.y) / 65536.0).r;
+    return root * root * WATER_SHORE_RANGE;
+}
+#endif
+
 #ifdef MATERIAL_MAPS
 uniform sampler2DArray materialArray;
 #include "material.glsl"
@@ -104,7 +114,12 @@ void main() {
 #ifdef SKY_AMBIENT
     hemisphereLight = mix(hemisphereLight, vec3(1.0), waterAmount);
 #endif
+#ifdef WATER_SHADER
+    vec3 waternormal = WaterNormalLayers(vsPos, length(viewspace)); // Outside the branch, texture lookups need uniform control flow.
+    watercol.rgb = WaterBody(WaterAverage(float(waterframe)), watercol.rgb, WATER_DETAIL, WaterShoreDistance(vsPos), 1.0, waternormal);
+#else
     vec3 waternormal = WaterNormal(vsPos); // Outside the branch, texture lookups need uniform control flow.
+#endif
     fragcol = vec4(mix(fragcol.rgb, watercol.rgb, waterAmount), mix(fragcol.a, watercol.a, waterAmount));
 #else
     // replace texture with water if alpha or a water tile (bit 0x1 in attribs)

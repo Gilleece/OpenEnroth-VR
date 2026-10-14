@@ -129,6 +129,12 @@ void main() {
             fragcol = watercol;
         }
     }
+#ifdef WATER_SHADER
+    if (water) {
+        float layer = ((watertiles == 1) && (olayer == 0.0)) ? (((vsAttrib & 0x3C00) != 0) ? 0.0 : float(waterframe)) : olayer;
+        fragcol.rgb = WaterBody(WaterAverage(layer), fragcol.rgb, WATER_POOL_DETAIL, WATER_POOL_SHORE, 0.0, waternormal);
+    }
+#endif
 
 #ifdef MATERIAL_MAPS
     float materiallayer = olayer;
@@ -200,6 +206,10 @@ void main() {
     FragColour.rgb = srgbToLinear(FragColour.rgb);
     if (water)
         FragColour.rgb = WaterSurface(FragColour.rgb, waternormal, vsPos, fragviewdir);
+#ifdef WATER_SHADER
+    if (water)
+        FragColour.rgb += WaterLightGlints(waternormal, vsPos, fragviewdir);
+#endif
 #endif
 
 #ifndef LINEAR_PIPELINE
