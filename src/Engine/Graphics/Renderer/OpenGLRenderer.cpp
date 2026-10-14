@@ -3980,6 +3980,7 @@ void OpenGLRenderer::_submitSkyDetails(const SkyState &sky) {
         return;
 
     bool fog = GetLevelFogColor() != Color();
+    bool snow = pWeather->bRenderSnow && config->graphics.Snow.value(); // The flag is set without the snow drawn.
     if (skyshader.hasDefine("SKY_CLOUDS")) {
         // Drift in noise cells along each axis, each wrapped on its own so the tileable noise shows no seam.
         double gameSeconds = static_cast<double>(pParty->GetPlayingTime().ticks()) * Duration::GAME_SECONDS_IN_REALTIME_SECOND /
@@ -3988,7 +3989,7 @@ void OpenGLRenderer::_submitSkyDetails(const SkyState &sky) {
         glUniform2f(skyshader.uniformLocation("cloudOffset"), static_cast<float>(std::fmod(drift * WIND_DIRECTION.x, CLOUD_NOISE_PERIOD)),
                     static_cast<float>(std::fmod(drift * WIND_DIRECTION.y, CLOUD_NOISE_PERIOD)));
         glUniform3f(skyshader.uniformLocation("skyClear"), _skyClear.r, _skyClear.g, _skyClear.b);
-        glUniform1f(skyshader.uniformLocation("cloudCoverage"), pWeather->bRenderSnow ? 0.8f : fog ? 0.7f : 0.3f);
+        glUniform1f(skyshader.uniformLocation("cloudCoverage"), snow ? 0.8f : fog ? 0.7f : 0.3f);
     }
 
     if (skyshader.hasDefine("NIGHT_SKY")) {
