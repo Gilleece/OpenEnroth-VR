@@ -364,6 +364,12 @@ class OpenGLRenderer : public BaseRenderer {
     void _submitSunShadow(const OpenGLShader &shader);
 
     /**
+     * Takes the sampler that soft shadows read the sun shadow map's depths with off its unit, after the terrain or the
+     * buildings are drawn.
+     */
+    void _unbindSunShadowDepths();
+
+    /**
      * Sets the uniforms `heightfog.glsl` reads. Does nothing for programs compiled without `LINEAR_PIPELINE`.
      *
      * @param shader                    Program in use.
@@ -540,6 +546,8 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<glm::mat4, SUN_SHADOW_CASCADES> _sunShadowMatrices = {};
     std::array<float, SUN_SHADOW_CASCADES> _sunShadowTexels = {};
     float _sunShadowFade = 0;
+    GLuint _sunShadowDepthSampler = 0; // Reads `_sunShadowMap` as depths, without the comparison.
+    float _sunShadowDepthSpan = 0; // World distance across the nearest cascade's depth range.
 
     // ambient occlusion
     OpenGLRenderTarget _aoDepthTarget; // Half resolution, the distance along the view axis in r.
@@ -645,6 +653,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _uiLayer = false;
     bool _linearPipeline = false; // Decided once at startup, the world shaders are compiled for it.
     bool _sunShadows = false; // Decided once at startup, the outdoor shaders are compiled for it.
+    bool _softShadows = false; // Same for the terrain and the buildings.
     bool _torchShadows = false; // Same for the indoor shaders.
     bool _ambientOcclusion = false; // Same for the lit world shaders.
     bool _globalIllumination = false; // Same for the lit world shaders and the billboards.
