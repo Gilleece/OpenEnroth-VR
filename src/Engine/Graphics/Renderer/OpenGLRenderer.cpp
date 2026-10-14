@@ -4022,6 +4022,7 @@ void OpenGLRenderer::_prepareFireParticles() {
     if (_fireParticleFrame == _frameNumber)
         return;
     _fireParticleFrame = _frameNumber;
+    _fireParticleTime = static_cast<float>(platform->tickCount() % FIRE_PARTICLE_PERIOD_MS) / 1000.0f;
     _fireParticles.clear();
     _fireSmokeCount = 0;
     if (!_gpuParticles || (uCurrentlyLoadedLevelType != LEVEL_OUTDOOR && uCurrentlyLoadedLevelType != LEVEL_INDOOR))
@@ -4104,7 +4105,7 @@ void OpenGLRenderer::_drawFireParticles() {
     fireparticleshader.use();
     glUniformMatrix4fv(fireparticleshader.uniformLocation("view"), 1, GL_FALSE, &viewmat[0][0]);
     glUniformMatrix4fv(fireparticleshader.uniformLocation("projection"), 1, GL_FALSE, &projmat[0][0]);
-    glUniform1f(fireparticleshader.uniformLocation("time"), static_cast<float>(platform->tickCount() % FIRE_PARTICLE_PERIOD_MS) / 1000.0f);
+    glUniform1f(fireparticleshader.uniformLocation("time"), _fireParticleTime);
     glUniform2f(fireparticleshader.uniformLocation("windDirection"), WIND_DIRECTION.x, WIND_DIRECTION.y);
     float ambient = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR ? 0.15f + 0.75f * _skyState().daylight : 0.12f;
     glUniform3f(fireparticleshader.uniformLocation("smokeAmbient"), ambient, ambient, ambient);

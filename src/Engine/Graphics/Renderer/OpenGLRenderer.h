@@ -705,6 +705,7 @@ class OpenGLRenderer : public BaseRenderer {
     std::vector<FireParticle> _fireParticles; // Smoke first, then the flames and sparks.
     int _fireSmokeCount = 0;
     uint64_t _fireParticleFrame = UINT64_MAX; // Frame `_fireParticles` were gathered in.
+    float _fireParticleTime = 0; // Seconds on the particles' clock, taken once a frame so that both eyes see the same particles.
     GLuint _fireParticleVao = 0;
     GLuint _fireParticleVbo = 0;
     GLuint _waterShore = 0; // Distance from the shore of every point of the map's water, `WATER_SHORE_CELLS` texels a tile.
