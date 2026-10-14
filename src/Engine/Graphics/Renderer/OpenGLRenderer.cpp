@@ -84,6 +84,7 @@ static constexpr GLint SPRITE_SHAPE_TEXTURE_UNIT = 6;
 static constexpr GLint SCENE_DEPTH_TEXTURE_UNIT = 4; // The billboards sample units 0 and 1 only, and 8 in the vertex shader.
 static constexpr float SOFT_PARTICLE_DISTANCE = 64.0f; // World units in front of the level over which additive billboards fade out.
 static constexpr GLint SUN_SHADOW_TEXTURE_UNIT = 8; // The terrain pass binds its arrays to units 0 to 7.
+static constexpr GLint SUN_SHADOW_DEPTH_TEXTURE_UNIT = 10; // The same map without comparison, for soft shadows.
 static constexpr GLint TORCH_SHADOW_TEXTURE_UNIT = 16; // The indoor pass binds its arrays to units 0 to 15.
 static constexpr GLint AMBIENT_OCCLUSION_TEXTURE_UNIT = 17;
 static constexpr GLint GI_PROBES_TEXTURE_UNIT = 18;
@@ -1556,6 +1557,8 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
         glm::mat4 lightMatrix = projection * lightRotation;
         _sunShadowMatrices[cascade] = textureSpace * lightMatrix;
         _sunShadowTexels[cascade] = texel;
+        if (cascade == 0)
+            _sunShadowDepthSpan = zFar - zNear;
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _sunShadowFramebuffers[cascade]);
         glClear(GL_DEPTH_BUFFER_BIT);
@@ -1631,6 +1634,13 @@ void OpenGLRenderer::_ensureSunShadowResources() {
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
         glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
         glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+
+        glGenSamplers(1, &_sunShadowDepthSampler);
+        glSamplerParameteri(_sunShadowDepthSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glSamplerParameteri(_sunShadowDepthSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glSamplerParameteri(_sunShadowDepthSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(_sunShadowDepthSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(_sunShadowDepthSampler, GL_TEXTURE_COMPARE_MODE, GL_NONE);
 
         GLenum none = GL_NONE;
         glGenFramebuffers(SUN_SHADOW_CASCADES, _sunShadowFramebuffers.data());
@@ -1823,11 +1833,26 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
     glUniform1f(shader.uniformLocation("sunShadowStrength"), config->graphics.ShadowStrength.value());
     bool pcf1 = _externalWorldTarget || config->graphics.ShadowFilter.value() == SHADOW_FILTER_PCF1; // The 3x3 filter costs too much at the size of a headset's eye images.
     glUniform1i(shader.uniformLocation("sunShadowFilter"), pcf1);
+
+    if (shader.hasDefine("SOFT_SHADOWS")) {
+        glActiveTexture(GL_TEXTURE0 + SUN_SHADOW_DEPTH_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, _sunShadowMap);
+        glBindSampler(SUN_SHADOW_DEPTH_TEXTURE_UNIT, _sunShadowDepthSampler);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(shader.uniformLocation("sunShadowDepths"), SUN_SHADOW_DEPTH_TEXTURE_UNIT);
+        glUniform1f(shader.uniformLocation("sunShadowDepthSpan"), _sunShadowDepthSpan);
+    }
+}
+
+void OpenGLRenderer::_unbindSunShadowDepths() {
+    if (_softShadows)
+        glBindSampler(SUN_SHADOW_DEPTH_TEXTURE_UNIT, 0); // A bound sampler overrides the state of any texture later put on its unit.
 }
 
 void OpenGLRenderer::_readPipelineSettings() {
     _linearPipeline = config->graphics.LinearPipeline.value();
     _sunShadows = config->graphics.SunShadows.value();
+    _softShadows = _sunShadows && config->graphics.SoftShadows.value();
     _torchShadows = config->graphics.TorchShadows.value();
     _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
     _globalIllumination = _linearPipeline && config->graphics.GlobalIllumination.value();
@@ -3079,6 +3104,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     // actually draw the whole terrain
     glDrawArrays(GL_TRIANGLES, 0, (127 * 127 * 6));
     drawcalls++;
+    _unbindSunShadowDepths();
 
     // unload
     shader.unuse();
@@ -5108,6 +5134,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
 
     // unload
     outbuildshader.unuse();
+    _unbindSunShadowDepths();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -5930,6 +5957,10 @@ bool OpenGLRenderer::ReloadShaders() {
     if (_skyAmbient) {
         outdoorLitDefines.push_back("SKY_AMBIENT");
         outdoorLitMaterialDefines.push_back("SKY_AMBIENT");
+    }
+    if (_softShadows) {
+        outdoorLitDefines.push_back("SOFT_SHADOWS");
+        outdoorLitMaterialDefines.push_back("SOFT_SHADOWS");
     }
     std::vector<std::string_view> terrainDefines = outdoorLitDefines;
     std::vector<std::string_view> terrainMaterialDefines = outdoorLitMaterialDefines;
