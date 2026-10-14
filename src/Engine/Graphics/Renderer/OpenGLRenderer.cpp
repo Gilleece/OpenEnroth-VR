@@ -1922,7 +1922,7 @@ void OpenGLRenderer::_ensureWaterShore() {
     float cellSize = 512.0f / WATER_SHORE_CELLS;
     std::vector<uint8_t> field(SIZE * SIZE);
     for (int i = 0; i < SIZE * SIZE; i++)
-        field[i] = static_cast<uint8_t>(std::sqrt(std::min(distance[i] * cellSize / WATER_SHORE_RANGE, 1.0f)) * 255.0f + 0.5f);
+        field[i] = static_cast<uint8_t>(std::lround(std::sqrt(std::min(distance[i] * cellSize / WATER_SHORE_RANGE, 1.0f)) * 255.0f));
 
     glGenTextures(1, &_waterShore);
     glBindTexture(GL_TEXTURE_2D, _waterShore);
