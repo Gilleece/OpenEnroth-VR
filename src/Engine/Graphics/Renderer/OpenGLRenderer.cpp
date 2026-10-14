@@ -1830,9 +1830,10 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
     glUniform1fv(shader.uniformLocation("sunShadowTexels"), SUN_SHADOW_CASCADES, _sunShadowTexels.data());
     glUniform1f(shader.uniformLocation("sunShadowFade"), _sunShadowFade);
     glUniform1f(shader.uniformLocation("sunShadowStrength"), config->graphics.ShadowStrength.value());
-    bool pcf1 = config->graphics.ShadowFilter.value() == SHADOW_FILTER_PCF1 ||
-                (_externalWorldTarget && config->vr.ShadowFilter.value() == SHADOW_FILTER_PCF1);
-    glUniform1i(shader.uniformLocation("sunShadowFilter"), pcf1);
+    ShadowFilterMode filter = _externalWorldTarget ? config->vr.ShadowFilter.value() : config->graphics.ShadowFilter.value();
+    if (filter == SHADOW_FILTER_SOFT && !_softShadows)
+        filter = SHADOW_FILTER_PCF3X3; // The shaders were compiled before the setting changed.
+    glUniform1i(shader.uniformLocation("sunShadowFilter"), filter == SHADOW_FILTER_PCF1 ? 1 : filter == SHADOW_FILTER_SOFT ? 2 : 0);
 
     if (shader.hasDefine("SOFT_SHADOWS")) {
         glActiveTexture(GL_TEXTURE0 + SUN_SHADOW_DEPTH_TEXTURE_UNIT);
@@ -1852,7 +1853,7 @@ void OpenGLRenderer::_unbindSunShadowDepths() {
 void OpenGLRenderer::_readPipelineSettings() {
     _linearPipeline = config->graphics.LinearPipeline.value();
     _sunShadows = config->graphics.SunShadows.value();
-    _softShadows = _sunShadows && config->graphics.SoftShadows.value();
+    _softShadows = _sunShadows && (config->graphics.ShadowFilter.value() == SHADOW_FILTER_SOFT || config->vr.ShadowFilter.value() == SHADOW_FILTER_SOFT);
     _torchShadows = config->graphics.TorchShadows.value();
     _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
     _globalIllumination = _linearPipeline && config->graphics.GlobalIllumination.value();

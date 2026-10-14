@@ -587,11 +587,9 @@ class GameConfig : public Config {
         Float ShadowStrength = {this, "shadow_strength", 0.0f, &ValidateShadowStrength,
                                 "Part of the ambient light that sun shadows take away too. At 0 a shadow only takes the sun's direct light."};
         ConfigEntry<ShadowFilterMode> ShadowFilter = {this, "shadow_filter", SHADOW_FILTER_PCF3X3,
-                                                      "Filtering of sun shadow edges, 'pcf3x3' or the cheaper 'pcf1'. vr.shadow_filter can make the"
-                                                      " headset take pcf1 on its own."};
-        Bool SoftShadows = {this, "soft_shadows", false,
-                            "Soften the sun shadows with a penumbra that widens with the distance from what casts them, sharp at"
-                            " a tree's foot and soft at its crown. Only applies with the pcf3x3 shadow_filter."};
+                                                      "Filtering of sun shadow edges: 'pcf3x3', the cheaper 'pcf1', or 'soft', whose penumbra widens"
+                                                      " with the distance from what casts the shadow, sharp at a tree's foot and soft at its crown."
+                                                      " vr.shadow_filter sets it for the headset."};
         Int ShadowMapSize = {this, "shadow_map_size", 2048, &ValidateShadowMapSize,
                              "Size of each of the four sun shadow maps, 1024 or 2048. Takes effect on restart."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,
@@ -877,8 +875,8 @@ class GameConfig : public Config {
             "of a frame grows with the number of pixels, which goes with the square of this."};
 
         ConfigEntry<ShadowFilterMode> ShadowFilter = {this, "shadow_filter", SHADOW_FILTER_PCF3X3,
-            "Filtering of sun shadow edges in the headset. 'pcf3x3' filters them as graphics.shadow_filter and "
-            "graphics.soft_shadows do on the screen, 'pcf1' takes the single cheaper tap for slower cards."};
+            "Filtering of sun shadow edges in the headset, as graphics.shadow_filter does on the screen: 'pcf3x3', 'soft' "
+            "or the cheaper 'pcf1' for slower cards."};
 
         Int Msaa = {this, "msaa", 4, &ValidateMsaa,
             "Samples per pixel of multisample antialiasing in the headset, 0, 2, 4 or 8, in place of graphics.msaa. "

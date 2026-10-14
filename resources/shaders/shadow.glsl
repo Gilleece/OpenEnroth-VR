@@ -7,7 +7,7 @@ uniform mat4 sunShadowMatrices[SUN_SHADOW_CASCADES]; // World to shadow map text
 uniform float sunShadowTexels[SUN_SHADOW_CASCADES]; // World size of a shadow map texel in each cascade.
 uniform float sunShadowFade; // 0 when the sun casts no shadows, 1 when they're at full strength.
 uniform float sunShadowStrength; // Part of the ambient light that a shadow takes away too.
-uniform int sunShadowFilter; // 0 for 3x3 taps, 1 for a single tap.
+uniform int sunShadowFilter; // 0 for 3x3 taps, 1 for a single tap, 2 for soft shadows.
 
 const float SUN_SHADOW_BLEND = 0.1; // Part of each cascade, at its border, that blends into the next one.
 
@@ -27,7 +27,7 @@ float SunShadowSample(int cascade, vec3 pos, vec3 normal) {
     vec2 base = floor(coord.xy * size - 0.5); // Lower left of the 2x2 texels a bilinear tap reads.
     vec2 f = coord.xy * size - 0.5 - base;
     vec2 corner = (base + 1.0) * texel; // Gathering at the corner the four texels share picks them whatever the rounding.
-    if (sunShadowFilter != 0)
+    if (sunShadowFilter == 1)
         return dot(textureGather(sunShadowMap, vec3(corner, float(cascade)), coord.z), SunShadowGatherWeights(vec2(1.0 - f.x, f.x), vec2(1.0 - f.y, f.y)));
 
     vec2 lowX = vec2(1.0 - f.x, 1.0), highX = vec2(1.0, f.x);
@@ -106,7 +106,7 @@ float SunShadowSoft(int cascade, vec3 pos, vec3 normal) {
 // The shadow from a cascade with the filter in use.
 float SunShadowFiltered(int cascade, vec3 pos, vec3 normal) {
 #ifdef SOFT_SHADOWS
-    if (sunShadowFilter == 0 && cascade < SUN_SOFT_CASCADES)
+    if (sunShadowFilter == 2 && cascade < SUN_SOFT_CASCADES)
         return SunShadowSoft(cascade, pos, normal);
 #endif
     return SunShadowSample(cascade, pos, normal);
