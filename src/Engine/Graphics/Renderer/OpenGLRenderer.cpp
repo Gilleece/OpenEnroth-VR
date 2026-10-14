@@ -43,6 +43,7 @@
 #include "Engine/Graphics/Viewport.h"
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
+#include "Engine/Graphics/WindSway.h"
 #include "Engine/Graphics/WorldFrame.h"
 #include "Engine/Tables/TileTable.h"
 #include "Engine/Party.h"
@@ -824,6 +825,14 @@ void OpenGLRenderer::_updateEyeAdaptation(const OpenGLRenderTarget &source) {
     _adaptationIndex = next;
 }
 
+float OpenGLRenderer::_windSeconds() {
+    if (_windFrame != _frameNumber) {
+        _windFrame = _frameNumber;
+        _windTime = static_cast<float>(platform->tickCount() % static_cast<int64_t>(WIND_PERIOD * 1000)) / 1000.0f;
+    }
+    return _windTime;
+}
+
 void OpenGLRenderer::_ensureFullscreenTriangle() {
     if (_compositeBuffer)
         return;
@@ -1472,11 +1481,16 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
         float halfWidth = caster.sprite->uWidth / 2.0f * caster.scale;
         float height = caster.sprite->uHeight * caster.scale;
         float left = caster.mirrored ? 1.0f : 0.0f;
+        Vec3f top = caster.pos + Vec3f(0, 0, height);
+        if (_windSway && caster.swayRatio > 0) {
+            float sway = windSway(_windSeconds(), caster.swayPhase) * caster.swayRatio * height;
+            top += Vec3f(WIND_DIRECTION.x * sway, WIND_DIRECTION.y * sway, 0);
+        }
         std::array<ShadowSpriteVertex, 4> corners = {{
-            {caster.pos - right * halfWidth + Vec3f(0, 0, height), Vec2f(left, 0), static_cast<float>(paletteId)},
+            {top - right * halfWidth, Vec2f(left, 0), static_cast<float>(paletteId)},
             {caster.pos - right * halfWidth, Vec2f(left, 1), static_cast<float>(paletteId)},
             {caster.pos + right * halfWidth, Vec2f(1 - left, 1), static_cast<float>(paletteId)},
-            {caster.pos + right * halfWidth + Vec3f(0, 0, height), Vec2f(1 - left, 0), static_cast<float>(paletteId)}
+            {top + right * halfWidth, Vec2f(1 - left, 0), static_cast<float>(paletteId)}
         }};
         if (spriteBatches.empty() || spriteBatches.back().texture != texture)
             spriteBatches.push_back({texture, paletteId != 0, static_cast<int>(_sunShadowSpriteVertices.size()), 0});
@@ -1802,6 +1816,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _spriteCrossfade = config->graphics.SpriteCrossfade.value();
     _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
     _spriteLighting = _spriteDepth && config->graphics.SpriteLighting.value();
+    _windSway = config->graphics.WindSway.value();
     _filmicTonemap = _linearPipeline && config->graphics.FilmicTonemap.value();
     _eyeAdaptation = _filmicTonemap && config->graphics.EyeAdaptation.value();
 }
@@ -3752,9 +3767,22 @@ void OpenGLRenderer::drawWorldBillboards() {
         int crossfadePaletteId = billboard.paletteId;
         float crossfadeTexid = billboard.crossfadeTexture ? billboardTextureId(billboard.crossfadeTexture, &crossfadePaletteId) : texid;
 
+        // Decorations sway about their bottom edge, so the vertices move by their height above it.
+        float swayRatio = 0;
+        float swayPhase = 0;
+        float bottom = 0;
+        if (_windSway && uCurrentlyLoadedLevelType == LEVEL_OUTDOOR && billboard.id.type() == OBJECT_Decoration) {
+            const LevelDecoration &decoration = pLevelDecorations[billboard.id.id()];
+            swayRatio = decorationSwayRatio(decoration.uDecorationDescID);
+            swayPhase = windSwayPhase(decoration.vPosition);
+            bottom = std::min({billboard.facing[0].y, billboard.facing[1].y, billboard.facing[2].y, billboard.facing[3].y});
+        }
+
         auto addVertex = [&](int j) {
             BillboardVertex &vertex = _billboardVertices.emplace_back();
             vertex.pos = billboard.corners[j];
+            if (swayRatio > 0)
+                vertex.sway = Vec2f(swayRatio * (billboard.facing[j].y - bottom), swayPhase);
             if (billboard.crossfadeTexture) {
                 vertex.texuv = billboard.texcoords[j]; // The shader cuts each side off outside its own image.
                 vertex.crossfadeTexuv = billboard.crossfadeTexcoords[j];
@@ -4030,7 +4058,8 @@ void OpenGLRenderer::DrawBillboards() {
             &BillboardVertex::crossfadePaletteId,
             &BillboardVertex::shapeRight,
             &BillboardVertex::shapeSize,
-            &BillboardVertex::shapeThickness);
+            &BillboardVertex::shapeThickness,
+            &BillboardVertex::sway);
     }
 
     ensurePaletteTexture();
@@ -4056,6 +4085,10 @@ void OpenGLRenderer::DrawBillboards() {
     _submitHeightFog(billbshader, worldSpaceBillboards());
     _submitGlobalIllumination(billbshader);
     _submitSkyAmbient(billbshader);
+    if (billbshader.hasDefine("WIND_SWAY")) {
+        glUniform1f(billbshader.uniformLocation("windTime"), _windSeconds());
+        glUniform2f(billbshader.uniformLocation("windDirection"), WIND_DIRECTION.x, WIND_DIRECTION.y);
+    }
     bool soft = _sceneDepthCopied && worldSpaceBillboards();
     if (billbshader.hasDefine("LINEAR_PIPELINE")) {
         glActiveTexture(GL_TEXTURE0 + SCENE_DEPTH_TEXTURE_UNIT);
@@ -5810,6 +5843,8 @@ bool OpenGLRenderer::ReloadShaders() {
         billboardDefines.push_back("SPRITE_DEPTH");
     if (_spriteLighting)
         billboardDefines.push_back("SPRITE_LIGHTING");
+    if (_windSway)
+        billboardDefines.push_back("WIND_SWAY");
     if (_globalIllumination)
         billboardDefines.push_back("GLOBAL_ILLUMINATION");
     if (_skyAmbient)

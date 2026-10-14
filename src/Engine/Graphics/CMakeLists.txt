@@ -27,6 +27,7 @@ set(ENGINE_GRAPHICS_SOURCES
         Viewport.cpp
         Vis.cpp
         Weather.cpp
+        WindSway.cpp
         WorldFrame.cpp)
 
 set(ENGINE_GRAPHICS_HEADERS
@@ -60,6 +61,7 @@ set(ENGINE_GRAPHICS_HEADERS
         Viewport.h
         Vis.h
         Weather.h
+        WindSway.h
         WorldFrame.h
         WorldFrameViews.h
         OutdoorTerrain.h

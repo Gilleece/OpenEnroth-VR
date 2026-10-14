@@ -14,6 +14,7 @@
 #include "Engine/Graphics/Camera.h"
 #include "Engine/Graphics/Sprites.h"
 #include "Engine/Graphics/Weather.h"
+#include "Engine/Graphics/WindSway.h"
 #include "Engine/Graphics/SpriteEnumFunctions.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Decoration.h"
@@ -146,7 +147,12 @@ void WorldFrame::prepareSunShadowCasters() {
             LevelDecorationChangeSeason(desc, time, pParty->uCurrentMonth) : pSpriteFrameTable->GetFrame(desc->uSpriteID, time);
         if (!frame || frame->textureName == "null")
             continue;
+        size_t count = _sunShadowSprites.size();
         addSunShadowSprite(&_sunShadowSprites, frame, decoration.vPosition, decoration._yawAngle);
+        if (_sunShadowSprites.size() > count) {
+            _sunShadowSprites.back().swayRatio = decorationSwayRatio(decoration.uDecorationDescID);
+            _sunShadowSprites.back().swayPhase = windSwayPhase(decoration.vPosition);
+        }
     }
 
     for (int i = 0; i < static_cast<int>(pActors.size()); i++) {
