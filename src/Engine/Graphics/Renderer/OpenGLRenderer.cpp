@@ -1557,8 +1557,7 @@ void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span
         glm::mat4 lightMatrix = projection * lightRotation;
         _sunShadowMatrices[cascade] = textureSpace * lightMatrix;
         _sunShadowTexels[cascade] = texel;
-        if (cascade == 0)
-            _sunShadowDepthSpan = zFar - zNear;
+        _sunShadowDepthSpans[cascade] = zFar - zNear;
 
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _sunShadowFramebuffers[cascade]);
         glClear(GL_DEPTH_BUFFER_BIT);
@@ -1841,7 +1840,7 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
         glBindSampler(SUN_SHADOW_DEPTH_TEXTURE_UNIT, _sunShadowDepthSampler);
         glActiveTexture(GL_TEXTURE0);
         glUniform1i(shader.uniformLocation("sunShadowDepths"), SUN_SHADOW_DEPTH_TEXTURE_UNIT);
-        glUniform1f(shader.uniformLocation("sunShadowDepthSpan"), _sunShadowDepthSpan);
+        glUniform1fv(shader.uniformLocation("sunShadowDepthSpans"), SUN_SHADOW_CASCADES, _sunShadowDepthSpans.data());
     }
 }
 

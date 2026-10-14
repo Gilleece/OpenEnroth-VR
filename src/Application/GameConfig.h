@@ -590,8 +590,8 @@ class GameConfig : public Config {
                                                       "Filtering of sun shadow edges, 'pcf3x3' or the cheaper 'pcf1'. vr.shadow_filter can make the"
                                                       " headset take pcf1 on its own."};
         Bool SoftShadows = {this, "soft_shadows", false,
-                            "Soften the sun shadows near the camera with a penumbra that widens with the distance from what casts"
-                            " them, sharp at a tree's foot and soft at its crown. Only applies with the pcf3x3 shadow_filter."};
+                            "Soften the sun shadows with a penumbra that widens with the distance from what casts them, sharp at"
+                            " a tree's foot and soft at its crown. Only applies with the pcf3x3 shadow_filter."};
         Int ShadowMapSize = {this, "shadow_map_size", 2048, &ValidateShadowMapSize,
                              "Size of each of the four sun shadow maps, 1024 or 2048. Takes effect on restart."};
         Bool WorldSpaceBillboards = {this, "world_space_billboards", false,

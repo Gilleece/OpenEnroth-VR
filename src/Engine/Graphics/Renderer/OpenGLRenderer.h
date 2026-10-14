@@ -547,7 +547,7 @@ class OpenGLRenderer : public BaseRenderer {
     std::array<float, SUN_SHADOW_CASCADES> _sunShadowTexels = {};
     float _sunShadowFade = 0;
     GLuint _sunShadowDepthSampler = 0; // Reads `_sunShadowMap` as depths, without the comparison.
-    float _sunShadowDepthSpan = 0; // World distance across the nearest cascade's depth range.
+    std::array<float, SUN_SHADOW_CASCADES> _sunShadowDepthSpans = {}; // World distance across each cascade's depth range.
 
     // ambient occlusion
     OpenGLRenderTarget _aoDepthTarget; // Half resolution, the distance along the view axis in r.
