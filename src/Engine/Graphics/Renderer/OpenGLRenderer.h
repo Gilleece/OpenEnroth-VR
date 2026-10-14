@@ -503,6 +503,20 @@ class OpenGLRenderer : public BaseRenderer {
     void _ensureWaterNormals();
 
     /**
+     * Binds a texture array a second time with a sampler that reads its mip levels, for the average colour of the water
+     * textures in it. Does nothing for programs compiled without `WATER_SHADER`.
+     *
+     * @param shader                    Program in use.
+     * @param array                     Texture array the program's water faces are drawn from.
+     */
+    void _bindWaterAverages(const OpenGLShader &shader, GLuint array);
+
+    /**
+     * Builds `_waterShore` for the loaded outdoor map if it isn't built yet.
+     */
+    void _ensureWaterShore();
+
+    /**
      * Binds the torch shadow maps and sets the uniforms `torchshadow.glsl` reads. Does nothing for programs compiled
      * without `TORCH_SHADOWS`.
      *
@@ -658,6 +672,8 @@ class OpenGLRenderer : public BaseRenderer {
 
     // linear pipeline sky and water
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
+    GLuint _waterShore = 0; // Distance from the shore of every point of the map's water, `WATER_SHORE_CELLS` texels a tile.
+    GLuint _waterAverageSampler = 0; // Reads the smallest mip level of a texture array that has its mip levels off.
     GraphicsImage *_skyAverageTexture = nullptr;
     Colorf _skyAverage; // Average colour of `_skyAverageTexture`.
     Colorf _skyClear; // Average colour of its texels darker than the average, the open sky between the painted clouds.
@@ -767,6 +783,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _windSway = false; // Same for the billboards, and decides whether sprite shadows sway.
     bool _skyClouds = false; // Same for the sky shader.
     bool _nightSky = false; // Same.
+    bool _waterShader = false; // Same for the terrain, building and indoor shaders.
     uint64_t _windFrame = UINT64_MAX; // Frame `_windTime` was taken in.
     float _windTime = 0;
     bool _filmicTonemap = false; // Same for the composite shader.

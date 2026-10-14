@@ -115,6 +115,10 @@ static constexpr float CONTACT_SHADOW_NO_HEIGHT = 96.0f; // Height above the flo
 static constexpr float CONTACT_SHADOW_PROBE_HEIGHT = 40.0f; // How far above a point the floor under it is looked for.
 static constexpr float CONTACT_SHADOW_LIFT = 6.0f; // World units above the floor, on top of the polygon offset.
 static constexpr GLint WATER_NORMALS_TEXTURE_UNIT = 9; // After the terrain arrays, the material array and the sun shadow map.
+static constexpr GLint WATER_SHORE_TEXTURE_UNIT = 11; // After the sun shadow depths, outdoors only.
+static constexpr GLint WATER_AVERAGE_TEXTURE_UNIT = 20; // Past the indoor arrays on 0 to 15 and the units after them.
+static constexpr int WATER_SHORE_CELLS = 8; // Cells of the shore distance field along each side of a terrain tile.
+static constexpr float WATER_SHORE_RANGE = 2048.0f; // Distance from the shore where the field stops, as glterrain.frag has it.
 static constexpr int WATER_NORMALS_SIZE = 256;
 static constexpr float INDOOR_WATER_REFLECTION = 0.25f; // Brightness of the walls in the ambient light, which indoor water reflects.
 static constexpr float FOG_HEIGHT_FALLOFF = 1.0f / 1536.0f; // The fog thins by a factor of e every 1536 units above the eye.
@@ -1844,6 +1848,94 @@ void OpenGLRenderer::_submitWater(const OpenGLShader &shader, const Colorf *refl
     glUniform1f(shader.uniformLocation("sunVisibility"), sky.sunVisibility);
 }
 
+void OpenGLRenderer::_bindWaterAverages(const OpenGLShader &shader, GLuint array) {
+    if (!shader.hasDefine("WATER_SHADER"))
+        return;
+
+    if (!_waterAverageSampler) {
+        glGenSamplers(1, &_waterAverageSampler);
+        glSamplerParameteri(_waterAverageSampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_NEAREST);
+        glSamplerParameteri(_waterAverageSampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+    glActiveTexture(GL_TEXTURE0 + WATER_AVERAGE_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, array);
+    glBindSampler(WATER_AVERAGE_TEXTURE_UNIT, _waterAverageSampler);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(shader.uniformLocation("waterAverages"), WATER_AVERAGE_TEXTURE_UNIT);
+}
+
+void OpenGLRenderer::_ensureWaterShore() {
+    if (_waterShore)
+        return;
+
+    // Which cells are water: all of a water tile, and the transparent parts of the shore tiles drawn over the water.
+    static constexpr int SIZE = 128 * WATER_SHORE_CELLS;
+    static constexpr float INFINITE = 1e9f;
+    std::vector<float> distance(SIZE * SIZE, INFINITE);
+    std::map<GraphicsImage *, std::array<bool, WATER_SHORE_CELLS * WATER_SHORE_CELLS>> transparency;
+    for (int y = 0; y < 127; y++) {
+        for (int x = 0; x < 127; x++) {
+            const auto &tile = pOutdoor->pTerrain.tileDataByGrid({x, y});
+            if (tile.textureName == "wtrtyl")
+                continue;
+            GraphicsImage *image = assets->getBitmap(tile.textureName, tile.flags & TILE_GENERATED_TRANSITION);
+            auto [pos, added] = transparency.try_emplace(image);
+            if (added) {
+                const RgbaImage &pixels = image->rgba();
+                for (int v = 0; v < WATER_SHORE_CELLS; v++)
+                    for (int u = 0; u < WATER_SHORE_CELLS; u++)
+                        pos->second[v * WATER_SHORE_CELLS + u] = pixels.width() > 0 &&
+                            pixels[(2 * v + 1) * pixels.height() / (2 * WATER_SHORE_CELLS)][(2 * u + 1) * pixels.width() / (2 * WATER_SHORE_CELLS)].a < 128;
+            }
+            for (int v = 0; v < WATER_SHORE_CELLS; v++)
+                for (int u = 0; u < WATER_SHORE_CELLS; u++)
+                    if (!pos->second[v * WATER_SHORE_CELLS + u])
+                        distance[(y * WATER_SHORE_CELLS + v) * SIZE + x * WATER_SHORE_CELLS + u] = 0;
+        }
+    }
+
+    // Chamfer distance transform, in cells, a pass down and right and a pass up and left.
+    static constexpr float DIAGONAL = 1.41421356f;
+    auto relax = [&](int x, int y, int dx, int dy, float step) {
+        int nx = x + dx, ny = y + dy;
+        if (nx >= 0 && nx < SIZE && ny >= 0 && ny < SIZE)
+            distance[y * SIZE + x] = std::min(distance[y * SIZE + x], distance[ny * SIZE + nx] + step);
+    };
+    for (int y = 0; y < SIZE; y++) {
+        for (int x = 0; x < SIZE; x++) {
+            relax(x, y, -1, 0, 1);
+            relax(x, y, 0, -1, 1);
+            relax(x, y, -1, -1, DIAGONAL);
+            relax(x, y, 1, -1, DIAGONAL);
+        }
+    }
+    for (int y = SIZE - 1; y >= 0; y--) {
+        for (int x = SIZE - 1; x >= 0; x--) {
+            relax(x, y, 1, 0, 1);
+            relax(x, y, 0, 1, 1);
+            relax(x, y, 1, 1, DIAGONAL);
+            relax(x, y, -1, 1, DIAGONAL);
+        }
+    }
+
+    // The square root of the distance over the range, which keeps the precision near the shore.
+    float cellSize = 512.0f / WATER_SHORE_CELLS;
+    std::vector<uint8_t> field(SIZE * SIZE);
+    for (int i = 0; i < SIZE * SIZE; i++)
+        field[i] = static_cast<uint8_t>(std::sqrt(std::min(distance[i] * cellSize / WATER_SHORE_RANGE, 1.0f)) * 255.0f + 0.5f);
+
+    glGenTextures(1, &_waterShore);
+    glBindTexture(GL_TEXTURE_2D, _waterShore);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, SIZE, SIZE, 0, GL_RED, GL_UNSIGNED_BYTE, field.data());
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 void OpenGLRenderer::_ensureWaterNormals() {
     if (_waterNormals)
         return;
@@ -1954,6 +2046,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _windSway = config->graphics.WindSway.value();
     _skyClouds = _linearPipeline && config->graphics.SkyClouds.value();
     _nightSky = _linearPipeline && config->graphics.NightSky.value();
+    _waterShader = _linearPipeline && config->graphics.WaterShader.value();
     _filmicTonemap = _linearPipeline && config->graphics.FilmicTonemap.value();
     _eyeAdaptation = _filmicTonemap && config->graphics.EyeAdaptation.value();
 }
@@ -3002,6 +3095,14 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _submitGlobalIllumination(shader);
     _submitSkyAmbient(shader);
     _submitWater(shader, nullptr);
+    if (shader.hasDefine("WATER_SHADER")) {
+        _ensureWaterShore();
+        glActiveTexture(GL_TEXTURE0 + WATER_SHORE_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, _waterShore);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(shader.uniformLocation("waterShore"), WATER_SHORE_TEXTURE_UNIT);
+        _bindWaterAverages(shader, terraintextures[0]);
+    }
     if (tileMaterials) {
         glUniform1i(shader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
         glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
@@ -4812,6 +4913,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
         //if (numoutbuildtexloaded[unit] > 0) {
             OpenGLShader &shader = outbuildmaterials[unit] ? outbuildmaterialshader : outbuildshader;
             shader.use();
+            _bindWaterAverages(shader, outbuildtextures[unit]);
             glUniform1i(shader.uniformLocation("watertiles"), GLint(unit == 0));
             if (outbuildmaterials[unit]) {
                 glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
@@ -5145,6 +5247,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
             //if (numoutbuildtexloaded[unit] > 0) {
             OpenGLShader &shader = bspmaterials[unit] ? bspmaterialshader : bspshader;
             shader.use();
+            _bindWaterAverages(shader, bsptextures[unit]);
             glUniform1i(shader.uniformLocation("watertiles"), GLint(unit == 0)); // toggle for water faces or not
             if (bspmaterials[unit]) {
                 glActiveTexture(GL_TEXTURE0 + MATERIAL_TEXTURE_UNIT);
@@ -5482,6 +5585,10 @@ bool OpenGLRenderer::ReloadShaders() {
         for (std::vector<std::string_view> *defines : {&outdoorLitDefines, &outdoorLitMaterialDefines, &indoorDefines, &indoorMaterialDefines})
             defines->push_back("GLOBAL_ILLUMINATION");
     }
+    if (_waterShader) {
+        for (std::vector<std::string_view> *defines : {&outdoorLitDefines, &outdoorLitMaterialDefines, &indoorDefines, &indoorMaterialDefines})
+            defines->push_back("WATER_SHADER");
+    }
     if (_skyAmbient) {
         outdoorLitDefines.push_back("SKY_AMBIENT");
         outdoorLitMaterialDefines.push_back("SKY_AMBIENT");
@@ -5585,6 +5692,11 @@ void OpenGLRenderer::ReleaseTerrain() {
 
     terraintexmap.clear();
     _terrainBuild = {};
+
+    if (_waterShore) {
+        glDeleteTextures(1, &_waterShore);
+        _waterShore = 0;
+    }
 
     for (int i = 0; i < 8; i++) {
         glDeleteTextures(1, &terraintextures[i]);

@@ -579,6 +579,10 @@ class GameConfig : public Config {
         Bool SkyClouds = {this, "sky_clouds", false,
                           "Draw the sky outdoors with drifting clouds lit by the sun in place of the painted sky bitmaps, keeping"
                           " their colour. Only applies with linear_pipeline."};
+        Bool WaterShader = {this, "water_shader", false,
+                            "Draw the sea, lakes and indoor pools with a water shader: deep away from the shore and lighter in the"
+                            " shallows, foam where waves break on the shore, three sizes of waves reflecting the sky, and the sun's"
+                            " glints. Only applies with linear_pipeline."};
         Bool NightSky = {this, "night_sky", false,
                          "Show stars and a moon with the calendar's phase in the night sky outdoors, over either sky. Only"
                          " applies with linear_pipeline."};
