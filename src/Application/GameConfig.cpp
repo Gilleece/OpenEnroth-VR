@@ -42,6 +42,7 @@ void GameConfig::updateEnhancedGraphics() {
     apply(graphics.WindSway, true);
     apply(graphics.NightSky, true);
     apply(graphics.SkyClouds, true);
+    apply(graphics.WaterShader, true);
     apply(graphics.UiScale, 2);
 }
 
