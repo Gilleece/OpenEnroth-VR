@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "Testing/Game/GameTest.h"
@@ -100,18 +101,28 @@ static void moveMouseBy(EngineController &game, Pointi rel) {
     game.postEvent(std::move(event));
 }
 
+static int64_t countHudCursorFrames(const VrSystem::FrameStats &stats) {
+    // Frames that hung the spread HUD's cursor on a quad of its own.
+    int64_t result = 0;
+    for (const auto &[kind, count] : stats.kinds)
+        if (kind.hudCursor)
+            result += count;
+    return result;
+}
+
 static void checkFrames(VrSystem *vr, std::string_view phase) {
     // Each frame carries the eyes' projection layer if it has the world, a quad over it while it fades out, and the UI
-    // as one quad or the spread HUD's six, which only spreads around the world. Every quad shows its whole swapchain
-    // image, since runtimes don't agree on where a part of one is.
+    // as one quad or the spread HUD's six, which only spreads around the world, with its cursor on one more away from
+    // its parts. Every quad shows its whole swapchain image, since runtimes don't agree on where a part of one is.
     if (!vr)
         return;
     EXPECT_EQ(vr->frameStats().partialImageQuads, 0) << phase;
     for (const auto &[kind, count] : vr->frameStats().kinds) {
-        uint32_t expected = (kind.world ? 1 : 0) + (kind.fade ? 1 : 0) + (kind.spreadHud ? 6 : 1);
+        uint32_t expected = (kind.world ? 1 : 0) + (kind.fade ? 1 : 0) + (kind.spreadHud ? 6 + (kind.hudCursor ? 1 : 0) : 1);
         EXPECT_EQ(kind.layers, expected) << phase << ": " << count << " frames, world " << kind.world << ", fade " << kind.fade
-                                         << ", spread HUD " << kind.spreadHud;
+                                         << ", spread HUD " << kind.spreadHud << ", HUD cursor " << kind.hudCursor;
         EXPECT_TRUE(kind.world || !kind.spreadHud) << phase << ": " << count << " frames spread the HUD without the world";
+        EXPECT_TRUE(kind.spreadHud || !kind.hudCursor) << phase << ": " << count << " frames hung the HUD cursor without the HUD";
         EXPECT_TRUE(kind.world || !kind.fade) << phase << ": " << count << " frames faded out a world they didn't carry";
     }
 }
@@ -375,16 +386,39 @@ GAME_TEST(VrSmoke, Session) {
         EXPECT_GT(countFrames(vr->frameStats(), true, true), 0);
     }
 
-    // The spread HUD turns its cursor with the mouse over its parts around the head, across the gaps between them, and
-    // clicks land where it is.
+    // The spread HUD turns its cursor with the mouse around its parts, over the gaps between them too, where it hangs on
+    // a quad of its own and clicks land nowhere. On a part, clicks land where it is.
     if (vr) {
-        ASSERT_TRUE(vr->pointHudCursorAt(Pointi(450, 30))); // Near the viewport's upper right corner.
-        moveMouseBy(game, Pointi(100, -50)); // Up and right, into the gap before the minimap.
+        ASSERT_TRUE(vr->pointHudCursorAt(Pointi(460, 180))); // Near the viewport's right edge.
+        for (int i = 0; i < 100 && vr->hudCursorOnPart(); i++) {
+            moveMouseBy(game, Pointi(4, 0));
+            game.tick(1);
+        }
+        EXPECT_FALSE(vr->hudCursorOnPart()); // Past the edge, into the gap beside the viewport.
+        EXPECT_FALSE(vr->hudShows(mouse->position())) << mouse->position().x << ", " << mouse->position().y;
+        glm::vec2 inGap = *vr->hudCursorAngles();
+        moveMouseBy(game, Pointi(40, 0));
+        game.tick(1);
+        EXPECT_GT(vr->hudCursorAngles()->x, inGap.x); // Still moving, not stuck at the edge.
+        EXPECT_EQ(vr->hudCursorAngles()->y, inGap.y);
+        vr->resetFrameStats();
         game.tick(2);
-        EXPECT_TRUE(Recti(469, 0, 171, 148).contains(mouse->position())) << mouse->position().x << ", " << mouse->position().y;
-        moveMouseBy(game, Pointi(5000, 0)); // Far past everything to the right.
-        game.tick(2);
-        EXPECT_TRUE(vr->hudShows(mouse->position())) << mouse->position().x << ", " << mouse->position().y;
+        EXPECT_GT(countHudCursorFrames(vr->frameStats()), 0);
+        game.pressAndReleaseButton(BUTTON_LEFT, 0, 0);
+        game.tick(5);
+        EXPECT_EQ(current_screen_type, SCREEN_GAME);
+        moveMouseBy(game, Pointi(5000, 0)); // Far past everything to the right, where it stops.
+        game.tick(1);
+        glm::vec2 far = *vr->hudCursorAngles();
+        moveMouseBy(game, Pointi(5000, 0));
+        game.tick(1);
+        EXPECT_EQ(*vr->hudCursorAngles(), far);
+        for (int i = 0; i < 1000 && !vr->hudCursorOnPart(); i++) {
+            moveMouseBy(game, Pointi(-4, 0));
+            game.tick(1);
+        }
+        ASSERT_TRUE(vr->hudCursorOnPart()); // Back on the viewport at its edge, nothing in between skipped.
+        EXPECT_GE(mouse->position().x, 462) << mouse->position().x << ", " << mouse->position().y;
         ASSERT_TRUE(vr->pointHudCursorAt(pBtn_Rest->rect.center()));
         game.pressAndReleaseButton(BUTTON_LEFT, 0, 0); // Where the event says doesn't matter, the cursor is pinned.
         game.tick(5);
