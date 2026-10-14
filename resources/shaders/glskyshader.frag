@@ -149,7 +149,7 @@ void main() {
     sky += sky * SunColour() * pow(towardsSun, 4.0) * low * sunVisibility * 0.8; // Dawn and dusk warm the sky around the sun.
     float disc = smoothstep(0.99974, 0.99985, towardsSun); // About a degree across.
 #if defined(NIGHT_SKY)
-    if (procedural != 0 && direction.z > 0.0) {
+    if (procedural != 0 && direction.z > 0.0 && nightVisibility > 0.0) {
         sky += Stars(direction) * nightVisibility * smoothstep(0.0, 0.2, direction.z); // The haze at the horizon hides them.
         vec4 moon = Moon(direction);
         sky = mix(sky, moon.rgb, moon.a * nightVisibility);
