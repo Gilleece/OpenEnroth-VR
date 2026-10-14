@@ -22,6 +22,15 @@ float ambientOcclusion = 1.0; // Scales the ambient light and the point lights, 
 #ifdef GLOBAL_ILLUMINATION
 vec3 indirectLight = vec3(1.0); // Scales the ambient light by the baked indirect light, main sets it.
 #endif
+#ifdef SKY_AMBIENT
+uniform vec3 skyAmbient; // Scale of the ambient light on faces turned up to the sky.
+uniform vec3 groundAmbient; // On faces turned down to the ground.
+vec3 hemisphereLight = vec3(1.0); // Scales the ambient light by the sky above and the ground below, main sets it.
+
+vec3 HemisphereLight(vec3 normal) {
+    return mix(groundAmbient, skyAmbient, 0.5 + 0.5 * normal.z);
+}
+#endif
 
 // The sun's ambient light at this fragment.
 vec3 SunAmbient(vec3 ambient) {
@@ -31,6 +40,9 @@ vec3 SunAmbient(vec3 ambient) {
 #endif
 #ifdef GLOBAL_ILLUMINATION
     result *= indirectLight;
+#endif
+#ifdef SKY_AMBIENT
+    result *= hemisphereLight;
 #endif
     return result;
 }

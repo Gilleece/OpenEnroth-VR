@@ -88,6 +88,9 @@ static constexpr GLint GI_PROBES_TEXTURE_UNIT = 18;
 static constexpr GLint GI_TERRAIN_HEIGHTS_TEXTURE_UNIT = 19;
 static constexpr int GI_MAX_LAYERS = 8; // As `gi.glsl` declares it.
 static constexpr int GI_BLEND_STEPS = 32; // Steps between two time keys, a few game minutes each.
+static constexpr Vec3f SKY_AMBIENT_GROUND = Vec3f(1.0f, 0.85f, 0.7f); // Warm grey light off the ground, where no indirect light is baked.
+static constexpr float SKY_AMBIENT_GROUND_LUMA = 0.7f; // Ambient light on faces turned down, against 1 on faces turned up.
+static constexpr float SKY_AMBIENT_MAX_TINT = 0.2f; // Largest part by which a channel of the sky or ground tint leaves white.
 static constexpr int TORCH_SHADOW_SIZE = 512;
 static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
@@ -1363,6 +1366,60 @@ void OpenGLRenderer::_submitGlobalIllumination(const OpenGLShader &shader) {
     glUniform3f(shader.uniformLocation("giAverage"), _giAverage.x, _giAverage.y, _giAverage.z);
 }
 
+static float luma(Vec3f colour) {
+    return 0.2126f * colour.x + 0.7152f * colour.y + 0.0722f * colour.z;
+}
+
+/**
+ * @param colour                        Linear colour.
+ * @return                              The colour at a luma of 1, white for black.
+ */
+static Vec3f hueOf(Vec3f colour) {
+    float l = luma(colour);
+    return l > 1e-4f ? colour / l : Vec3f(1, 1, 1);
+}
+
+/**
+ * @param hue                           Colour at a luma of 1.
+ * @param brightness                    Luma of the result.
+ * @return                              The hue with no channel further than `SKY_AMBIENT_MAX_TINT` from white, at
+ *                                      the luma.
+ */
+static Vec3f ambientTint(Vec3f hue, float brightness) {
+    Vec3f offset = hue - Vec3f(1, 1, 1);
+    float largest = std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)});
+    if (largest > SKY_AMBIENT_MAX_TINT)
+        offset = offset * (SKY_AMBIENT_MAX_TINT / largest);
+    return hueOf(Vec3f(1, 1, 1) + offset) * brightness;
+}
+
+void OpenGLRenderer::_submitSkyAmbient(const OpenGLShader &shader) {
+    if (!shader.hasDefine("SKY_AMBIENT"))
+        return;
+
+    if (uCurrentlyLoadedLevelType != LEVEL_OUTDOOR) {
+        glUniform3f(shader.uniformLocation("skyAmbient"), 1, 1, 1);
+        glUniform3f(shader.uniformLocation("groundAmbient"), 1, 1, 1);
+        return;
+    }
+
+    // The zenith's colour, turning to the sun's as it nears the horizon, as glskyshader.frag warms the sky around it.
+    SkyState state = _skyState();
+    float warmth = std::clamp(state.sunDirection.z / 0.4f, 0.0f, 1.0f);
+    warmth = warmth * warmth * (3 - 2 * warmth);
+    Vec3f sunColour = Vec3f(1.0f, 0.55f, 0.3f) + (Vec3f(1.0f, 0.95f, 0.85f) - Vec3f(1.0f, 0.55f, 0.3f)) * warmth;
+    float height = std::clamp(state.sunDirection.z / 0.5f, 0.0f, 1.0f);
+    float dusk = (1 - height * height * (3 - 2 * height)) * state.daylight;
+    Vec3f zenith = ambientTint(hueOf(Vec3f(state.zenith.r, state.zenith.g, state.zenith.b)), 1.0f);
+    Vec3f sun = ambientTint(hueOf(sunColour), 1.0f);
+
+    Vec3f ground = hueOf(_giProbes && luma(_giAverage) > 1e-4f ? _giAverage : SKY_AMBIENT_GROUND);
+    Vec3f up = hueOf(zenith + (sun - zenith) * dusk);
+    Vec3f down = ambientTint(ground, SKY_AMBIENT_GROUND_LUMA);
+    glUniform3f(shader.uniformLocation("skyAmbient"), up.x, up.y, up.z);
+    glUniform3f(shader.uniformLocation("groundAmbient"), down.x, down.y, down.z);
+}
+
 void OpenGLRenderer::_submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers) {
     if (!shader.hasDefine("TORCH_SHADOWS"))
         return;
@@ -1740,6 +1797,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _torchShadows = config->graphics.TorchShadows.value();
     _ambientOcclusion = _linearPipeline && config->graphics.AmbientOcclusion.value();
     _globalIllumination = _linearPipeline && config->graphics.GlobalIllumination.value();
+    _skyAmbient = _linearPipeline && config->graphics.SkyAmbient.value();
     _terrainVariation = _linearPipeline && config->graphics.TerrainVariation.value();
     _spriteCrossfade = config->graphics.SpriteCrossfade.value();
     _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
@@ -2939,6 +2997,7 @@ void OpenGLRenderer::DrawOutdoorTerrain(const LightsSnapshot &lights) {
     _submitHeightFog(shader, true);
     _submitAmbientOcclusion(shader);
     _submitGlobalIllumination(shader);
+    _submitSkyAmbient(shader);
     _submitWater(shader, nullptr);
     if (tileMaterials) {
         glUniform1i(shader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
@@ -3994,6 +4053,7 @@ void OpenGLRenderer::DrawBillboards() {
     uniforms.submit(billbshader);
     _submitHeightFog(billbshader, worldSpaceBillboards());
     _submitGlobalIllumination(billbshader);
+    _submitSkyAmbient(billbshader);
     bool soft = _sceneDepthCopied && worldSpaceBillboards();
     if (billbshader.hasDefine("LINEAR_PIPELINE")) {
         glActiveTexture(GL_TEXTURE0 + SCENE_DEPTH_TEXTURE_UNIT);
@@ -4871,6 +4931,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
     _submitHeightFog(outbuildshader, true);
     _submitAmbientOcclusion(outbuildshader);
     _submitGlobalIllumination(outbuildshader);
+    _submitSkyAmbient(outbuildshader);
     _submitWater(outbuildshader, nullptr);
     bool hasMaterials = std::ranges::any_of(outbuildmaterials, [](GLuint id) { return id != 0; });
     if (hasMaterials) {
@@ -4880,6 +4941,7 @@ void OpenGLRenderer::DrawOutdoorBuildings(const LightsSnapshot &lights) {
         _submitHeightFog(outbuildmaterialshader, true);
         _submitAmbientOcclusion(outbuildmaterialshader);
         _submitGlobalIllumination(outbuildmaterialshader);
+        _submitSkyAmbient(outbuildmaterialshader);
         _submitWater(outbuildmaterialshader, nullptr);
         glUniform1i(outbuildmaterialshader.uniformLocation("materialArray"), MATERIAL_TEXTURE_UNIT);
     }
@@ -5728,6 +5790,10 @@ bool OpenGLRenderer::ReloadShaders() {
         for (std::vector<std::string_view> *defines : {&outdoorLitDefines, &outdoorLitMaterialDefines, &indoorDefines, &indoorMaterialDefines})
             defines->push_back("GLOBAL_ILLUMINATION");
     }
+    if (_skyAmbient) {
+        outdoorLitDefines.push_back("SKY_AMBIENT");
+        outdoorLitMaterialDefines.push_back("SKY_AMBIENT");
+    }
     std::vector<std::string_view> terrainDefines = outdoorLitDefines;
     std::vector<std::string_view> terrainMaterialDefines = outdoorLitMaterialDefines;
     if (_terrainVariation) {
@@ -5743,6 +5809,8 @@ bool OpenGLRenderer::ReloadShaders() {
         billboardDefines.push_back("SPRITE_LIGHTING");
     if (_globalIllumination)
         billboardDefines.push_back("GLOBAL_ILLUMINATION");
+    if (_skyAmbient)
+        billboardDefines.push_back("SKY_AMBIENT");
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          terrainDefines},
         {&outbuildshader,         "gloutbuild",       "Outdoor buildings",                outdoorLitDefines},

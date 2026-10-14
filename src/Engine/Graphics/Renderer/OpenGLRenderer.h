@@ -328,6 +328,15 @@ class OpenGLRenderer : public BaseRenderer {
     void _submitGlobalIllumination(const OpenGLShader &shader);
 
     /**
+     * Sets the colours of the sky and the ground that `lighting.glsl` scales the sun's ambient light by, from the sky
+     * at the current time and the baked indirect light of the map. Does nothing for programs compiled without
+     * `SKY_AMBIENT`.
+     *
+     * @param shader                    Program in use.
+     */
+    void _submitSkyAmbient(const OpenGLShader &shader);
+
+    /**
      * Binds the sun shadow map and sets the uniforms `shadow.glsl` reads. Does nothing for programs compiled without
      * `SUN_SHADOWS`.
      *
@@ -608,6 +617,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _torchShadows = false; // Same for the indoor shaders.
     bool _ambientOcclusion = false; // Same for the lit world shaders.
     bool _globalIllumination = false; // Same for the lit world shaders and the billboards.
+    bool _skyAmbient = false; // Same for the outdoor world shaders and the billboards.
     MapId _giMap = MAP_INVALID; // Map that `_giProbes` were looked up for.
     std::optional<GiProbes> _giProbes; // Baked indirect light of `_giMap`, empty if the texture pack has none.
     std::vector<float> _giKeys; // Coefficients of each time key as floats, laid out as `_giTexture` holds them.
