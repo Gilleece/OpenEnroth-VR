@@ -31,6 +31,7 @@ void GameConfig::updateEnhancedGraphics() {
     apply(graphics.Bloom, true);
     apply(graphics.Antialiasing, ANTIALIASING_FXAA);
     apply(graphics.SunShadows, true);
+    apply(graphics.ShadowFilter, SHADOW_FILTER_SOFT);
     apply(graphics.TorchShadows, true);
     apply(graphics.AmbientOcclusion, true);
     apply(graphics.TerrainVariation, true);

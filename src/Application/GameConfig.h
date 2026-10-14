@@ -518,10 +518,11 @@ class GameConfig : public Config {
         Int WorldTargetFilter = {this, "world_target_filter", 1, &ValidateWorldTargetFilter,
                                  "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
         Bool Enhanced = {this, "enhanced", false,
-                         "Turn on the enhanced renderer: linear_pipeline, filmic_tonemap, eye_adaptation, bloom, FXAA, sun_shadows, "
-                         "torch_shadows, ambient_occlusion, terrain_variation, global_illumination, sky_ambient, world_space_billboards, "
-                         "wind_sway, night_sky, sky_clouds and a ui_scale of 2, with the 3D world drawn at the window's resolution. The "
-                         "UI scale changes on restart. Entries that are set in this file, not commented out, take precedence over it."};
+                         "Turn on the enhanced renderer: linear_pipeline, filmic_tonemap, eye_adaptation, bloom, FXAA, sun_shadows "
+                         "with the soft shadow_filter, torch_shadows, ambient_occlusion, terrain_variation, global_illumination, "
+                         "sky_ambient, world_space_billboards, wind_sway, night_sky, sky_clouds and a ui_scale of 2, with the 3D world "
+                         "drawn at the window's resolution. The UI scale changes on restart. Entries that are set in this file, not "
+                         "commented out, take precedence over it."};
         Bool LinearPipeline = {this, "linear_pipeline", false,
                                "Blend the 3D world in linear colour in a 16-bit floating point world target, then tonemap it into the"
                                " game viewport. Uses a world target the size of the viewport when world_target_width and"
