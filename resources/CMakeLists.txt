@@ -64,6 +64,8 @@ set(RESOURCE_SOURCES
         shaders/glcomposite.vert
         shaders/gldecalshader.frag
         shaders/gldecalshader.vert
+        shaders/glfireparticles.frag
+        shaders/glfireparticles.vert
         shaders/glforcepershader.frag
         shaders/glforcepershader.vert
         shaders/glfxaa.frag

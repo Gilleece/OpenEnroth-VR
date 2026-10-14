@@ -579,6 +579,9 @@ class GameConfig : public Config {
         Bool SkyClouds = {this, "sky_clouds", false,
                           "Draw the sky outdoors with drifting clouds lit by the sun in place of the painted sky bitmaps, keeping"
                           " their colour. Only applies with linear_pipeline."};
+        Bool GpuParticles = {this, "gpu_particles", false,
+                             "Let camp fires, torches and beacon fires throw flames, sparks and smoke that drift with the wind, on top"
+                             " of their sprites. Only applies with linear_pipeline and world_space_billboards."};
         Bool WaterShader = {this, "water_shader", false,
                             "Draw the sea, lakes and indoor pools with a water shader: deep away from the shore and lighter in the"
                             " shallows, foam where waves break on the shore, three sizes of waves reflecting the sky, and the sun's"
