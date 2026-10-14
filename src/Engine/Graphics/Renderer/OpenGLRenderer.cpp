@@ -3988,7 +3988,7 @@ void OpenGLRenderer::_submitSkyDetails(const SkyState &sky) {
         glUniform2f(skyshader.uniformLocation("cloudOffset"), static_cast<float>(std::fmod(drift * WIND_DIRECTION.x, CLOUD_NOISE_PERIOD)),
                     static_cast<float>(std::fmod(drift * WIND_DIRECTION.y, CLOUD_NOISE_PERIOD)));
         glUniform3f(skyshader.uniformLocation("skyClear"), _skyClear.r, _skyClear.g, _skyClear.b);
-        glUniform1f(skyshader.uniformLocation("cloudCoverage"), pWeather->bRenderSnow ? 0.8f : fog ? 0.7f : 0.45f);
+        glUniform1f(skyshader.uniformLocation("cloudCoverage"), pWeather->bRenderSnow ? 0.8f : fog ? 0.7f : 0.3f);
     }
 
     if (skyshader.hasDefine("NIGHT_SKY")) {
