@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <list>
 #include <memory>
+#include <span>
 #include <vector>
 #include <string>
 
@@ -35,6 +36,7 @@ class Mouse;
 
 class GUIFont;
 class GUIButton;
+class GraphicsImage;
 class GUIWindow_House;
 class GUIWindow_Chest;
 class GUIWindow_MessageScroll;
@@ -255,6 +257,20 @@ void CharacterUI_DrawPickedItemUnderlay(Vec2i offset);
 Color GetSkillColor(Class uPlayerClass, Skill uPlayerSkillType, Mastery skill_mastery);
 
 void GUI_UpdateWindows();
+
+/**
+ * Pressed image of a clicked button that its click window drew for a frame.
+ */
+struct PressedButtonFlash {
+    GraphicsImage *image = nullptr;
+    Pointi position; // In the game's 640x480 layout.
+};
+
+/**
+ * @return                              The pressed button images that click windows drew in this frame's
+ *                                      `GUI_UpdateWindows`, for the VR HUD's cards to show too.
+ */
+std::span<const PressedButtonFlash> pressedButtonFlashes();
 Color GetConditionDrawColor(Condition uConditionIdx);  // idb
 Color UI_GetHealthManaAndOtherQualitiesStringColor(int current_pos, int base_pos);
 int GetSizeInInventorySlots(int uNumPixels);

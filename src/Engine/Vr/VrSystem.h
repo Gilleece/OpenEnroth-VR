@@ -86,6 +86,7 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
         std::map<FrameKind, int64_t> kinds; // Frames the runtime wanted drawn, by what they carried.
         int64_t frames = 0; // All frames ended, drawn or not.
         int64_t partialImageQuads = 0; // Quads that showed part of their swapchain image, which runtimes place differently.
+        int64_t pressedButtonFlashes = 0; // Pressed images of clicked buttons drawn on the spread HUD's cards.
         std::chrono::steady_clock::time_point firstFrameTime;
         std::chrono::steady_clock::time_point lastFrameTime;
     };

@@ -1266,6 +1266,12 @@ bool VrSystem::drawHudCards() {
         engine->drawHudPanels();
         if (GetCurrentMenuID() == MENU_NONE)
             GameUI_DrawFoodAndGold();
+        for (const PressedButtonFlash &flash : pressedButtonFlashes()) {
+            if (!flash.image || !card.rect.intersects(Recti(flash.position, flash.image->size())))
+                continue;
+            render->DrawQuad2D(flash.image, flash.position);
+            _frameStats.pressedButtonFlashes++;
+        }
         DrawPopupFrameAround(card.rect);
         if (mouse && pParty->pPickedItem.itemId != ITEM_NULL) {
             mouse->DrawPickedItem();
