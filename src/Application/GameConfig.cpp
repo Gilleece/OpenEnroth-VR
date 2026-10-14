@@ -38,6 +38,7 @@ void GameConfig::updateEnhancedGraphics() {
     apply(graphics.SkyAmbient, true);
     apply(graphics.WorldSpaceBillboards, true);
     apply(graphics.WindSway, true);
+    apply(graphics.NightSky, true);
     apply(graphics.UiScale, 2);
 }
 
