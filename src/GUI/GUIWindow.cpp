@@ -444,11 +444,21 @@ void DialogueEnding() {
     gameTimer->setPaused(false);
 }
 
+static std::vector<PressedButtonFlash> pressedButtonFlashList; // See `pressedButtonFlashes`.
+
+/**
+ * Draws a clicked button's pressed image for its click window, and keeps it for `pressedButtonFlashes`.
+ */
+static void drawPressedButton(GraphicsImage *image, Pointi position) {
+    render->DrawQuad2D(image, position);
+    pressedButtonFlashList.push_back({image, position});
+}
+
 void OnButtonClick::Update() {
     if (_playSound) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawPressedButton(_button->vTextures[0], frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -459,7 +469,7 @@ void OnButtonClick::Update() {
 void OnButtonClick3::Update() {
     pAudioPlayer->playUISound(SOUND_StartMainChoice02);
 
-    render->DrawQuad2D(_button->vTextures[1], frameRect.topLeft());
+    drawPressedButton(_button->vTextures[1], frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -471,7 +481,7 @@ void OnSaveLoad::Update() {
     if (!sHint.empty()) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawPressedButton(_button->vTextures[0], frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -489,7 +499,7 @@ void OnCancel::Update() {
     if (sHint.empty()) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawPressedButton(_button->vTextures[0], frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -503,7 +513,7 @@ void OnCancel2::Update() {
     if (!sHint.empty()) {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
-    render->DrawQuad2D(_button->vTextures[1], frameRect.topLeft());
+    drawPressedButton(_button->vTextures[1], frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -518,7 +528,7 @@ void OnCancel3::Update() {
         pAudioPlayer->playUISound(SOUND_StartMainChoice02);
     }
 
-    render->DrawQuad2D(_button->vTextures[0], frameRect.topLeft());
+    drawPressedButton(_button->vTextures[0], frameRect.topLeft());
     if (!sHint.empty()) {
         _button->DrawLabel(sHint, assets->pFontCreate.get(), colorTable.White);
     }
@@ -528,7 +538,12 @@ void OnCancel3::Update() {
     delete this;
 }
 
+std::span<const PressedButtonFlash> pressedButtonFlashes() {
+    return pressedButtonFlashList;
+}
+
 void GUI_UpdateWindows() {
+    pressedButtonFlashList.clear();
     if (GetCurrentMenuID() != MENU_CREATEPARTY) {
         extern bool UI_OnKeyDown(PlatformKey key);
         UI_OnKeyDown(PlatformKey::KEY_PAGEDOWN); // hack to highlight dialog options under mouse cursor

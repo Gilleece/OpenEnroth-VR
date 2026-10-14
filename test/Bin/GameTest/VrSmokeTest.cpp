@@ -419,6 +419,14 @@ GAME_TEST(VrSmoke, Session) {
         }
         ASSERT_TRUE(vr->hudCursorOnPart()); // Back on the viewport at its edge, nothing in between skipped.
         EXPECT_GE(mouse->position().x, 462) << mouse->position().x << ", " << mouse->position().y;
+        // A clicked button flashes pressed on its card for a frame, as in the stock UI.
+        vr->resetFrameStats();
+        for (GUIButton *button : {pBtn_ZoomIn, pBtn_ZoomOut}) {
+            ASSERT_TRUE(vr->pointHudCursorAt(button->rect.center()));
+            game.pressAndReleaseButton(BUTTON_LEFT, 0, 0);
+            game.tick(2);
+        }
+        EXPECT_EQ(vr->frameStats().pressedButtonFlashes, 2);
         ASSERT_TRUE(vr->pointHudCursorAt(pBtn_Rest->rect.center()));
         game.pressAndReleaseButton(BUTTON_LEFT, 0, 0); // Where the event says doesn't matter, the cursor is pinned.
         game.tick(5);
