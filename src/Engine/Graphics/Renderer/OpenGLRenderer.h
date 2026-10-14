@@ -376,6 +376,13 @@ class OpenGLRenderer : public BaseRenderer {
     SkyState _skyState();
 
     /**
+     * Sets the uniforms of the clouds, the stars and the moon in the sky shader for the current time and weather.
+     *
+     * @param sky                       The sky at the current time.
+     */
+    void _submitSkyDetails(const SkyState &sky);
+
+    /**
      * Binds the water normals and sets the uniforms `water.glsl` and `sky.glsl` read. Does nothing for programs
      * compiled without `LINEAR_PIPELINE`.
      *
@@ -547,6 +554,7 @@ class OpenGLRenderer : public BaseRenderer {
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
     GraphicsImage *_skyAverageTexture = nullptr;
     Colorf _skyAverage; // Average colour of `_skyAverageTexture`.
+    Colorf _skyClear; // Average colour of its texels darker than the average, the open sky between the painted clouds.
 
     // torch shadows
     GLuint _torchShadowMaps = 0; // Depth cube map array, a cube per light.
@@ -636,6 +644,8 @@ class OpenGLRenderer : public BaseRenderer {
     bool _spriteDepth = false; // Same.
     bool _spriteLighting = false; // Same.
     bool _windSway = false; // Same for the billboards, and decides whether sprite shadows sway.
+    bool _skyClouds = false; // Same for the sky shader.
+    bool _nightSky = false; // Same.
     uint64_t _windFrame = UINT64_MAX; // Frame `_windTime` was taken in.
     float _windTime = 0;
     bool _filmicTonemap = false; // Same for the composite shader.
