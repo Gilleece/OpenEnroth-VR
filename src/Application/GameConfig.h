@@ -520,7 +520,7 @@ class GameConfig : public Config {
         Bool Enhanced = {this, "enhanced", false,
                          "Turn on the enhanced renderer: linear_pipeline, filmic_tonemap, eye_adaptation, bloom, FXAA, sun_shadows "
                          "with the soft shadow_filter, torch_shadows for 16 lights, ambient_occlusion, terrain_variation, global_illumination, "
-                         "sky_ambient, world_space_billboards, wind_sway, night_sky, sky_clouds and a ui_scale of 2, with the 3D world "
+                         "sky_ambient, world_space_billboards, wind_sway, night_sky, sky_clouds, water_shader and a ui_scale of 2, with the 3D world "
                          "drawn at the window's resolution. The UI scale changes on restart. Entries that are set in this file, not "
                          "commented out, take precedence over it."};
         Bool LinearPipeline = {this, "linear_pipeline", false,
