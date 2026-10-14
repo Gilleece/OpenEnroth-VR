@@ -23,6 +23,8 @@ struct SunShadowSprite {
     Vec3f pos; // Bottom centre.
     float scale = 1;
     bool mirrored = false;
+    float swayRatio = 0; // Part of the height by which the top sways in the wind, see `decorationSwayRatio`.
+    float swayPhase = 0; // See `windSwayPhase`.
 };
 
 struct ODMRenderParams {

@@ -548,6 +548,9 @@ class GameConfig : public Config {
         Bool SpriteLighting = {this, "sprite_lighting", false,
                                "Light sprites with the normals of a texture pack's sprite shapes, from the sun, the torch and the"
                                " level's lights, keeping their stock brightness on average. Only applies with sprite_depth."};
+        Bool WindSway = {this, "wind_sway", false,
+                         "Sway trees, bushes, flowers and plants outdoors in the wind, together with their sun shadows. Only"
+                         " applies with world_space_billboards."};
         Bool SpriteCrossfade = {this, "sprite_crossfade", false,
                                 "Blend a sprite between its two nearest sides as it turns, instead of switching sides every 45"
                                 " degrees. Only applies with world_space_billboards."};

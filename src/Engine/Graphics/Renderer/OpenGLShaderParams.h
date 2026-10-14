@@ -193,6 +193,7 @@ struct BillboardVertex {
     Vec2f shapeSize; // World width and height of the sprite image, negative width when mirrored.
     float shapeThickness = 0;
     float shapeTexid = 0; // Only for batching, not passed to the shader.
+    Vec2f sway; // World units the vertex moves along the wind at most, and the phase of its sprite, see `WindSway.h`.
 };
 
 struct BillboardUniforms {

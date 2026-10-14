@@ -25,6 +25,19 @@ flat out vec2 shapeSize;
 flat out float shapeThickness;
 #endif
 
+#ifdef WIND_SWAY
+layout (location = 14) in vec2 vaSway; // World units the vertex moves along the wind at most, and the phase of its sprite.
+
+uniform float windTime; // Seconds, wrapped to the period of the sway.
+uniform vec2 windDirection;
+
+// Sway along the wind from -1 to 1, as `windSway` in WindSway.cpp computes it for the sprite shadows.
+float WindSway(float phase) {
+    const float OMEGA = 6.2831853 / 8.0;
+    return 0.7 * sin(windTime * OMEGA * 2.0 + phase) + 0.3 * sin(windTime * OMEGA * 5.0 + 1.7 * phase);
+}
+#endif
+
 out vec4 colour;
 out vec2 texuv;
 out float screenspace;
@@ -55,7 +68,11 @@ uniform mat4 view;
 uniform mat4 projection;
 
 void main() {
-    gl_Position = projection * view * vec4(vaPos, 1.0);
+    vec3 pos = vaPos;
+#ifdef WIND_SWAY
+    pos.xy += windDirection * vaSway.x * WindSway(vaSway.y);
+#endif
+    gl_Position = projection * view * vec4(pos, 1.0);
     // float opacity = smoothstep(1.0 , 0.9999, vaPos.z);
     colour = vec4(vaCol.r, vaCol.g, vaCol.b, 1.0);
     texuv = vaTexUV;
@@ -72,7 +89,7 @@ void main() {
     crossfadePaletteid = int(vaCrossfadePalette);
 #endif
 #ifdef LINEAR_PIPELINE
-    worldPos = vaPos;
+    worldPos = pos;
 #endif
 #ifdef GLOBAL_ILLUMINATION
     // Daylight sprites are drawn at full brightness, so a brightness ratio would make them glow. They take its tint only.

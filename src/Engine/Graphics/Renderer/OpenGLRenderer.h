@@ -337,6 +337,12 @@ class OpenGLRenderer : public BaseRenderer {
     void _submitSkyAmbient(const OpenGLShader &shader);
 
     /**
+     * @return                          Seconds on the platform clock, taken once a frame and wrapped to `WIND_PERIOD`, so that
+     *                                  both eyes of a headset see the same sway.
+     */
+    float _windSeconds();
+
+    /**
      * Binds the sun shadow map and sets the uniforms `shadow.glsl` reads. Does nothing for programs compiled without
      * `SUN_SHADOWS`.
      *
@@ -629,6 +635,9 @@ class OpenGLRenderer : public BaseRenderer {
     bool _spriteCrossfade = false; // Same for the billboard shader.
     bool _spriteDepth = false; // Same.
     bool _spriteLighting = false; // Same.
+    bool _windSway = false; // Same for the billboards, and decides whether sprite shadows sway.
+    uint64_t _windFrame = UINT64_MAX; // Frame `_windTime` was taken in.
+    float _windTime = 0;
     bool _filmicTonemap = false; // Same for the composite shader.
     bool _eyeAdaptation = false; // Same.
     SpriteLightUniforms _spriteLights; // Lights of the level pass in the current view.
