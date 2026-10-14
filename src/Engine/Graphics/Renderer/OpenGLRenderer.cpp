@@ -123,6 +123,7 @@ static constexpr GLint WATER_AVERAGE_TEXTURE_UNIT = 20; // Past the indoor array
 static constexpr int FIRE_EMITTERS_MAX = 64; // The nearest burning decorations that throw particles.
 static constexpr float FIRE_EMITTER_REACH = 6144.0f; // Distance from the camera past which none do.
 static constexpr float FIRE_EMITTER_HALVED = 2048.0f; // Distance from the camera past which they throw half as many.
+static constexpr float FIRE_SOFT_DISTANCE = 8.0f; // World units in front of the level over which the particles fade out.
 static constexpr int FIRE_PARTICLE_PERIOD_MS = 3600000; // The particles' clock wraps after this, the sine hash loses precision on large inputs.
 static constexpr int WATER_SHORE_CELLS = 8; // Cells of the shore distance field along each side of a terrain tile.
 static constexpr float WATER_SHORE_RANGE = 2048.0f; // Distance from the shore where the field stops, as glterrain.frag has it.
@@ -4046,20 +4047,24 @@ void OpenGLRenderer::_prepareFireParticles() {
             const LevelDecoration &decoration = pLevelDecorations[emitters[e].second];
             const DecorationData *desc = pDecorationTable->decoration(decoration.uDecorationDescID);
             const FireEmitterProfile &profile = *fireEmitterProfile(decoration.uDecorationDescID);
-            Vec3f origin = decoration.vPosition + Vec3f(0, 0, profile.height * desc->uDecorationHeight);
+            const SpriteFrame *frame = pSpriteFrameTable->GetFrame(desc->uSpriteID, Duration());
+            float height = frame->sprites[0] ? frame->sprites[0]->uHeight * frame->scale : desc->uDecorationHeight;
+            Vec3f origin = decoration.vPosition + Vec3f(0, 0, profile.height * height);
             bool coloured = desc->uColoredLight != Color() && config->graphics.ColoredLights.value();
-            Colorf light = coloured ? desc->uColoredLight.toColorf() : Colorf(1.0f, 0.55f, 0.25f);
+            Colorf colour = coloured ? desc->uColoredLight.toColorf() : Colorf(1.0f, 0.55f, 0.25f);
+            Vec3f light(colour.r, colour.g, colour.b);
             float share = emitters[e].first > FIRE_EMITTER_HALVED ? 0.5f : 1.0f;
             auto add = [&](int kind, int number) {
                 number = std::max(1, static_cast<int>(number * share));
                 for (int i = 0; i < number; i++) {
                     FireParticle &particle = _fireParticles.emplace_back();
                     particle.origin = origin;
+                    particle.glow = profile.glow;
                     particle.kind = static_cast<float>(kind);
                     particle.phase = static_cast<float>(i) / number;
                     particle.seed = static_cast<float>(emitters[e].second * 131 + kind * 37 + i);
                     particle.flameSize = profile.flameSize;
-                    particle.colour = light;
+                    particle.light = light;
                     particle.spread = profile.spread;
                 }
             };
@@ -4087,9 +4092,9 @@ void OpenGLRenderer::_bindFireParticles(int first) {
     glBindVertexArray(_fireParticleVao);
     glBindBuffer(GL_ARRAY_BUFFER, _fireParticleVbo);
     size_t base = first * sizeof(FireParticle);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, origin)));
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, origin)));
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, kind)));
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, colour)));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, light)));
     for (GLuint attribute : {0u, 1u, 2u}) {
         glEnableVertexAttribArray(attribute);
         glVertexAttribDivisor(attribute, 1);
@@ -4114,7 +4119,7 @@ void OpenGLRenderer::_drawFireParticles() {
         glUniform1i(fireparticleshader.uniformLocation("sceneDepth"), SCENE_DEPTH_TEXTURE_UNIT);
         glUniform4f(fireparticleshader.uniformLocation("sceneViewport"), _sceneDepthViewport.x, _sceneDepthViewport.y, _sceneDepthViewport.w, _sceneDepthViewport.h);
         glUniform2f(fireparticleshader.uniformLocation("sceneProjection"), projmat[2][2], projmat[3][2]);
-        glUniform1f(fireparticleshader.uniformLocation("softDistance"), _sceneDepthCopied ? SOFT_PARTICLE_DISTANCE : 0.0f);
+        glUniform1f(fireparticleshader.uniformLocation("softDistance"), _sceneDepthCopied ? FIRE_SOFT_DISTANCE : 0.0f);
     }
 
     glEnable(GL_BLEND);

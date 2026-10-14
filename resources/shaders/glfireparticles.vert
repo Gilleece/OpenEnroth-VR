@@ -1,4 +1,4 @@
-layout (location = 0) in vec3 vaOrigin; // Where the emitter's particles rise from.
+layout (location = 0) in vec4 vaOrigin; // Where the emitter's particles rise from, and how bright its flames burn.
 layout (location = 1) in vec4 vaParticle; // Kind (0 flame, 1 spark, 2 smoke), phase in its life cycle, seed, flame size.
 layout (location = 2) in vec4 vaColour; // The emitter's light, which tints its flames and lights its smoke, and its spread.
 
@@ -34,11 +34,13 @@ void main() {
 
     vec3 offset;
     float diameter;
+    float stretch = 1.0;
     if (kind == 0) {
         // Flames lick upwards, narrowing towards the middle, and lean a little with the wind.
-        offset = vec3(start * (1.0 - age * 0.7) + windDirection * seconds * 6.0, (20.0 + 50.0 * Hash(n + 3.0)) * age * age * grow);
-        diameter = flameSize * mix(1.0, 0.3, age);
-        colour = vec4(mix(vec3(3.2, 2.6, 1.6), vaColour.rgb * 2.2, smoothstep(0.1, 0.7, age)), (1.0 - age) * smoothstep(0.0, 0.08, age));
+        offset = vec3(start * (1.0 - age * 0.7) + windDirection * seconds * 6.0, (40.0 + 60.0 * Hash(n + 3.0)) * pow(age, 0.8) * grow);
+        diameter = flameSize * mix(1.0, 0.35, age);
+        stretch = 1.6;
+        colour = vec4(mix(vec3(0.6, 0.2, 0.04), vaColour.rgb * vec3(0.4, 0.15, 0.05), smoothstep(0.1, 0.6, age)) * vaOrigin.w, (1.0 - age) * smoothstep(0.0, 0.1, age));
     } else if (kind == 1) {
         // Sparks rise fast, wander and burn out.
         vec2 wander = (vec2(Hash(n + 4.0), Hash(n + 5.0)) - 0.5) * 60.0 * age;
@@ -56,7 +58,11 @@ void main() {
     vec2 corner = CORNERS[gl_VertexID % 6];
     vec3 right = vec3(view[0][0], view[1][0], view[2][0]);
     vec3 up = vec3(view[0][1], view[1][1], view[2][1]);
-    vec3 pos = vaOrigin + offset + (right * corner.x + up * corner.y) * diameter * 0.5;
+    vec3 pos = vaOrigin.xyz + offset + (right * corner.x + up * corner.y * stretch) * diameter * 0.5;
     texuv = corner * 0.5 + 0.5;
-    gl_Position = projection * view * vec4(pos, 1.0);
+
+    // Puffs come forward by their size, so that a torch's flames clear the wall it hangs on.
+    vec4 viewPos = view * vec4(pos, 1.0);
+    viewPos.z += diameter;
+    gl_Position = projection * viewPos;
 }
