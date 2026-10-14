@@ -91,6 +91,9 @@ vec3 SpriteLightSum(vec3 normal, vec3 pos, vec3 viewDir) {
 #else
     vec3 result = sun.ambient;
 #endif
+#ifdef SKY_AMBIENT
+    result *= HemisphereLight(normal);
+#endif
     if (dot(sun.direction, sun.direction) > 0.0) // Indoors there is no sun.
         result += sun.diffuse * max(dot(normal, normalize(sun.direction)), 0.0);
     for (int i = 0; i < num_point_lights; i++)

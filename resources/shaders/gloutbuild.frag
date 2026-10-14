@@ -66,6 +66,9 @@ void main() {
 #ifdef GLOBAL_ILLUMINATION
     indirectLight = GlobalIllumination(vsPos, fragnorm);
 #endif
+#ifdef SKY_AMBIENT
+    hemisphereLight = HemisphereLight(fragnorm);
+#endif
     vec3 fragviewdir = normalize(CameraPos - vsPos);
 #ifdef LINEAR_PIPELINE
     bool waterTile = watertiles == 1 && olayer == 0.0 && (vsAttrib & 0x3C00) == 0;

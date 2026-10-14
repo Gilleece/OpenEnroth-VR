@@ -565,6 +565,9 @@ class GameConfig : public Config {
                                    "Light the world with the indirect light that a texture pack bakes for each map, so that walls tint"
                                    " the ground next to them and enclosed places get less ambient light. Only applies with"
                                    " linear_pipeline."};
+        Bool SkyAmbient = {this, "sky_ambient", false,
+                           "Light the shade outdoors from the sky above and the ground below, so that it is bluish under a clear"
+                           " sky and warm at sunset, and faces turned down get less of it. Only applies with linear_pipeline."};
         Bool SunShadows = {this, "sun_shadows", false,
                            "Let terrain, buildings, trees and monsters cast shadows from the sun outdoors. Takes effect on restart."};
         Int ShadowDistance = {this, "shadow_distance", 8192, &ValidateShadowDistance,
