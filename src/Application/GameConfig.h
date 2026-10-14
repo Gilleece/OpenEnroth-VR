@@ -519,7 +519,7 @@ class GameConfig : public Config {
                                  "Filtering method when scaling the world render target into the game viewport. 1 - linear filter, 2 - nearest filter"};
         Bool Enhanced = {this, "enhanced", false,
                          "Turn on the enhanced renderer: linear_pipeline, filmic_tonemap, eye_adaptation, bloom, FXAA, sun_shadows "
-                         "with the soft shadow_filter, torch_shadows, ambient_occlusion, terrain_variation, global_illumination, "
+                         "with the soft shadow_filter, torch_shadows for 16 lights, ambient_occlusion, terrain_variation, global_illumination, "
                          "sky_ambient, world_space_billboards, wind_sway, night_sky, sky_clouds and a ui_scale of 2, with the 3D world "
                          "drawn at the window's resolution. The UI scale changes on restart. Entries that are set in this file, not "
                          "commented out, take precedence over it."};

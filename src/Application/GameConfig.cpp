@@ -33,6 +33,7 @@ void GameConfig::updateEnhancedGraphics() {
     apply(graphics.SunShadows, true);
     apply(graphics.ShadowFilter, SHADOW_FILTER_SOFT);
     apply(graphics.TorchShadows, true);
+    apply(graphics.TorchShadowCount, 16);
     apply(graphics.AmbientOcclusion, true);
     apply(graphics.TerrainVariation, true);
     apply(graphics.GlobalIllumination, true);
