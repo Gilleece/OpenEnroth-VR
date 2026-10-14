@@ -587,8 +587,8 @@ class GameConfig : public Config {
         Float ShadowStrength = {this, "shadow_strength", 0.0f, &ValidateShadowStrength,
                                 "Part of the ambient light that sun shadows take away too. At 0 a shadow only takes the sun's direct light."};
         ConfigEntry<ShadowFilterMode> ShadowFilter = {this, "shadow_filter", SHADOW_FILTER_PCF3X3,
-                                                      "Filtering of sun shadow edges, 'pcf3x3' or the cheaper 'pcf1'. Always pcf1 in VR, where the"
-                                                      " eye images are too large for pcf3x3."};
+                                                      "Filtering of sun shadow edges, 'pcf3x3' or the cheaper 'pcf1'. vr.shadow_filter can make the"
+                                                      " headset take pcf1 on its own."};
         Bool SoftShadows = {this, "soft_shadows", false,
                             "Soften the sun shadows near the camera with a penumbra that widens with the distance from what casts"
                             " them, sharp at a tree's foot and soft at its crown. Only applies with the pcf3x3 shadow_filter."};
@@ -875,6 +875,10 @@ class GameConfig : public Config {
         Float RenderScale = {this, "render_scale", 1.0f, &ValidateRenderScale,
             "Size of the eye images as a multiple of the size the headset recommends, from 0.5 to 1.5. Most of the cost "
             "of a frame grows with the number of pixels, which goes with the square of this."};
+
+        ConfigEntry<ShadowFilterMode> ShadowFilter = {this, "shadow_filter", SHADOW_FILTER_PCF3X3,
+            "Filtering of sun shadow edges in the headset. 'pcf3x3' filters them as graphics.shadow_filter and "
+            "graphics.soft_shadows do on the screen, 'pcf1' takes the single cheaper tap for slower cards."};
 
         Int Msaa = {this, "msaa", 4, &ValidateMsaa,
             "Samples per pixel of multisample antialiasing in the headset, 0, 2, 4 or 8, in place of graphics.msaa. "

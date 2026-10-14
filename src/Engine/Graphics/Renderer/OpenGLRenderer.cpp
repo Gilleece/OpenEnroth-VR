@@ -1831,7 +1831,8 @@ void OpenGLRenderer::_submitSunShadow(const OpenGLShader &shader) {
     glUniform1fv(shader.uniformLocation("sunShadowTexels"), SUN_SHADOW_CASCADES, _sunShadowTexels.data());
     glUniform1f(shader.uniformLocation("sunShadowFade"), _sunShadowFade);
     glUniform1f(shader.uniformLocation("sunShadowStrength"), config->graphics.ShadowStrength.value());
-    bool pcf1 = _externalWorldTarget || config->graphics.ShadowFilter.value() == SHADOW_FILTER_PCF1; // The 3x3 filter costs too much at the size of a headset's eye images.
+    bool pcf1 = config->graphics.ShadowFilter.value() == SHADOW_FILTER_PCF1 ||
+                (_externalWorldTarget && config->vr.ShadowFilter.value() == SHADOW_FILTER_PCF1);
     glUniform1i(shader.uniformLocation("sunShadowFilter"), pcf1);
 
     if (shader.hasDefine("SOFT_SHADOWS")) {
