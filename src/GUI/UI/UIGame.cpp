@@ -376,7 +376,7 @@ static constexpr int VR_LINE_COUNT = 9; // Lines that fit in the panel.
 static constexpr std::array VR_FIRST_PAGE = {VR_SETTING_SNAP_TURN, VR_SETTING_SNAP_TURN_DEGREES, VR_SETTING_MINIMAL_HUD, VR_SETTING_UI_DISTANCE,
                                              VR_SETTING_UI_WIDTH, VR_SETTING_HEAD_OFFSET_RADIUS, VR_SETTING_RECENTER, VR_SETTING_MORE};
 static constexpr std::array VR_SECOND_PAGE = {VR_SETTING_HUD_LAYOUT, VR_SETTING_HUD_DISTANCE, VR_SETTING_HUD_SCALE, VR_SETTING_HUD_SPREAD,
-                                              VR_SETTING_UI_FOLLOW, VR_SETTING_RENDER_SCALE, VR_SETTING_BACK};
+                                              VR_SETTING_UI_FOLLOW, VR_SETTING_RENDER_SCALE, VR_SETTING_MSAA, VR_SETTING_BACK};
 static_assert(VR_FIRST_PAGE.size() <= VR_LINE_COUNT && VR_SECOND_PAGE.size() <= VR_LINE_COUNT);
 
 /**
@@ -458,6 +458,9 @@ static void changeVrSetting(VrSetting setting) {
     case VR_SETTING_RENDER_SCALE:
         vr.RenderScale.setValue(nextStep(vr.RenderScale.value(), {0.7f, 0.8f, 1.0f, 1.2f}));
         break;
+    case VR_SETTING_MSAA:
+        vr.Msaa.setValue(nextStep(vr.Msaa.value(), {0, 2, 4, 8}));
+        break;
     case VR_SETTING_MORE:
     case VR_SETTING_BACK:
         break; // Pages are flipped by the window.
@@ -484,6 +487,7 @@ static std::string vrSettingText(VrSetting setting) {
     case VR_SETTING_HUD_SCALE: return fmt::format("HUD scale: {:g}", vr.HudScale.value());
     case VR_SETTING_HUD_SPREAD: return fmt::format("HUD spread: {:.1f}", vr.HudSpread.value());
     case VR_SETTING_RENDER_SCALE: return fmt::format("Render scale: {:.1f}, on restart", vr.RenderScale.value());
+    case VR_SETTING_MSAA: return vr.Msaa.value() > 0 ? fmt::format("Multisampling: {}x", vr.Msaa.value()) : "Multisampling: off";
     case VR_SETTING_MORE: return "More...";
     case VR_SETTING_BACK: return "Back";
     }

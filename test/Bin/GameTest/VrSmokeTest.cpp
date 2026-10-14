@@ -374,7 +374,7 @@ GAME_TEST(VrSmoke, Session) {
     game.tick(2);
     game.pressAndReleaseButton(BUTTON_LEFT, 350, 166); // HUD layout.
     game.tick(2);
-    game.pressAndReleaseButton(BUTTON_LEFT, 350, 256); // Back.
+    game.pressAndReleaseButton(BUTTON_LEFT, 350, 271); // Back.
     game.tick(2);
     game.pressAndReleaseKey(PlatformKey::KEY_ESCAPE);
     game.tick(2);

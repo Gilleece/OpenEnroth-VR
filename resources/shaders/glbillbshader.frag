@@ -65,6 +65,7 @@ uniform vec3 eyePosition;
 uniform vec3 parallaxOrigin; // Where the sprite is seen without parallax, the head between the eyes.
 uniform int depthPrepass; // Only the depth of the opaque parts is drawn.
 uniform int shapeColourPass; // The colour of the sprites the depth prepass drew, blended by alpha.
+uniform int alphaToCoverage; // In the depth prepass, the alpha gives the samples covered instead of a cutoff.
 uniform mat4 view;
 uniform mat4 projection;
 
@@ -154,6 +155,11 @@ void main() {
 
 #ifdef SPRITE_DEPTH
     if (depthPrepass != 0) {
+        if (alphaToCoverage != 0) {
+            // The edge sharpened to about a pixel, so that it's antialiased rather than blurred when the sprite is close.
+            FragColour = vec4(0.0, 0.0, 0.0, clamp((fragcol.a - 0.5) / max(fwidth(fragcol.a), 0.0001) + 0.5, 0.0, 1.0));
+            return;
+        }
         if (fragcol.a < 0.5)
             discard;
         FragColour = vec4(0.0); // Only the depth is written, the colour below would go nowhere.

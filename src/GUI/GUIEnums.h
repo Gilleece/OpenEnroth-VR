@@ -246,6 +246,7 @@ enum class VrSetting {
     VR_SETTING_HUD_SCALE,
     VR_SETTING_HUD_SPREAD,
     VR_SETTING_RENDER_SCALE,
+    VR_SETTING_MSAA,
     VR_SETTING_MORE, // Shows the second page of the block.
     VR_SETTING_BACK, // Shows the first page again.
 };
