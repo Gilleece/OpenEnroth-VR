@@ -5909,7 +5909,7 @@ bool OpenGLRenderer::ReloadShaders() {
         skyDefines.push_back("NIGHT_SKY");
     if (_globalIllumination)
         billboardDefines.push_back("GLOBAL_ILLUMINATION");
-    if (_skyAmbient)
+    if (_skyAmbient && _spriteLighting) // Only the sprite lighting reads it.
         billboardDefines.push_back("SKY_AMBIENT");
     const std::initializer_list<std::tuple<OpenGLShader *, std::string_view, std::string_view, std::span<const std::string_view>>> shaders = {
         {&terrainshader,          "glterrain",        "Terrain",                          terrainDefines},
