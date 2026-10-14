@@ -41,13 +41,14 @@ float SunShadowSample(int cascade, vec3 pos, vec3 normal) {
 
 #ifdef SOFT_SHADOWS
 uniform highp sampler2DArray sunShadowDepths; // The same map read as depths, for the blocker search.
-uniform float sunShadowDepthSpan; // World distance across the nearest cascade's depth range.
+uniform float sunShadowDepthSpans[SUN_SHADOW_CASCADES]; // World distance across each cascade's depth range.
 
 const float SUN_PENUMBRA_SLOPE = 0.0093; // Penumbra width per unit of distance behind the caster, the sun's angular diameter.
 const float SUN_SOFT_MAX_TEXELS = 8.0; // Largest penumbra radius, and the radius of the blocker search, in texels.
 const float SUN_SOFT_MAX_SLOPE = 8.0; // Steepest receiver, in depth per horizontal distance, whose plane the taps follow.
-const int SUN_SOFT_BLOCKER_TAPS = 8;
-const int SUN_SOFT_FILTER_TAPS = 12;
+const int SUN_SOFT_CASCADES = 3; // In the farthest cascade a penumbra is narrower than a texel.
+const int SUN_SOFT_BLOCKER_TAPS = 6;
+const int SUN_SOFT_FILTER_TAPS = 10;
 
 // Tap i of n on a golden angle spiral that fills the unit disc, turned by angle.
 vec2 SunSoftTap(int i, int n, float angle) {
@@ -55,31 +56,31 @@ vec2 SunSoftTap(int i, int n, float angle) {
     return sqrt((float(i) + 0.5) / float(n)) * vec2(cos(theta), sin(theta));
 }
 
-// Change of the nearest cascade's depth per change of its position along the surface with this normal.
-vec2 SunShadowReceiverSlope(vec3 normal) {
+// Change of a cascade's depth per change of its position along the surface with this normal.
+vec2 SunShadowReceiverSlope(int cascade, vec3 normal) {
     vec3 tangent = normalize(abs(normal.z) < 0.9 ? cross(normal, vec3(0.0, 0.0, 1.0)) : cross(normal, vec3(1.0, 0.0, 0.0)));
-    vec3 a = (sunShadowMatrices[0] * vec4(tangent, 0.0)).xyz;
-    vec3 b = (sunShadowMatrices[0] * vec4(cross(normal, tangent), 0.0)).xyz;
+    vec3 a = (sunShadowMatrices[cascade] * vec4(tangent, 0.0)).xyz;
+    vec3 b = (sunShadowMatrices[cascade] * vec4(cross(normal, tangent), 0.0)).xyz;
     float det = a.x * b.y - a.y * b.x;
     vec2 slope = abs(det) > 1e-12 ? vec2(a.z * b.y - b.z * a.y, b.z * a.x - a.z * b.x) / det : vec2(0.0);
-    float limit = SUN_SOFT_MAX_SLOPE * sunShadowTexels[0] * float(textureSize(sunShadowMap, 0).x) / sunShadowDepthSpan;
+    float limit = SUN_SOFT_MAX_SLOPE * sunShadowTexels[cascade] * float(textureSize(sunShadowMap, 0).x) / sunShadowDepthSpans[cascade];
     return clamp(slope, -limit, limit);
 }
 
-// Soft shadows in the nearest cascade, whose penumbra widens with the distance from the point to what shadows it.
-// A search around the point finds that distance first.
-float SunShadowSoft(vec3 pos, vec3 normal) {
-    vec4 coord = sunShadowMatrices[0] * vec4(pos + normal * sunShadowTexels[0] * 1.5, 1.0);
+// Soft shadows, whose penumbra widens with the distance from the point to what shadows it. A search around the
+// point finds that distance first.
+float SunShadowSoft(int cascade, vec3 pos, vec3 normal) {
+    vec4 coord = sunShadowMatrices[cascade] * vec4(pos + normal * sunShadowTexels[cascade] * 1.5, 1.0);
     vec2 size = vec2(textureSize(sunShadowMap, 0).xy);
     vec2 texel = vec2(1.0) / size;
-    vec2 slope = SunShadowReceiverSlope(normal);
+    vec2 slope = SunShadowReceiverSlope(cascade, normal);
     float angle = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))); // Interleaved gradient noise.
 
     float blockerSum = 0.0;
     float blockerCount = 0.0;
     for (int i = 0; i < SUN_SOFT_BLOCKER_TAPS; i++) {
         vec2 offset = SunSoftTap(i, SUN_SOFT_BLOCKER_TAPS, angle) * SUN_SOFT_MAX_TEXELS * texel;
-        vec4 depths = textureGather(sunShadowDepths, vec3(coord.xy + offset, 0.0));
+        vec4 depths = textureGather(sunShadowDepths, vec3(coord.xy + offset, float(cascade)));
         vec4 blocks = vec4(lessThan(depths, vec4(coord.z + dot(slope, offset))));
         blockerSum += dot(depths, blocks);
         blockerCount += dot(blocks, vec4(1.0));
@@ -87,20 +88,29 @@ float SunShadowSoft(vec3 pos, vec3 normal) {
     if (blockerCount == 0.0)
         return 1.0;
 
-    float blockerDistance = max(coord.z - blockerSum / blockerCount, 0.0) * sunShadowDepthSpan;
-    float radius = clamp(0.5 * blockerDistance * SUN_PENUMBRA_SLOPE / sunShadowTexels[0], 1.0, SUN_SOFT_MAX_TEXELS);
+    float blockerDistance = max(coord.z - blockerSum / blockerCount, 0.0) * sunShadowDepthSpans[cascade];
+    float radius = clamp(0.5 * blockerDistance * SUN_PENUMBRA_SLOPE / sunShadowTexels[cascade], 1.0, SUN_SOFT_MAX_TEXELS);
     float lit = 0.0;
     for (int i = 0; i < SUN_SOFT_FILTER_TAPS; i++) {
         vec2 offset = SunSoftTap(i, SUN_SOFT_FILTER_TAPS, angle) * radius * texel;
         vec2 p = (coord.xy + offset) * size - 0.5;
         vec2 base = floor(p);
         vec2 f = p - base;
-        vec4 gathered = textureGather(sunShadowMap, vec3((base + 1.0) * texel, 0.0), coord.z + dot(slope, offset));
+        vec4 gathered = textureGather(sunShadowMap, vec3((base + 1.0) * texel, float(cascade)), coord.z + dot(slope, offset));
         lit += dot(gathered, SunShadowGatherWeights(vec2(1.0 - f.x, f.x), vec2(1.0 - f.y, f.y)));
     }
     return lit / float(SUN_SOFT_FILTER_TAPS);
 }
 #endif
+
+// The shadow from a cascade with the filter in use.
+float SunShadowFiltered(int cascade, vec3 pos, vec3 normal) {
+#ifdef SOFT_SHADOWS
+    if (sunShadowFilter == 0 && cascade < SUN_SOFT_CASCADES)
+        return SunShadowSoft(cascade, pos, normal);
+#endif
+    return SunShadowSample(cascade, pos, normal);
+}
 
 // How far inside a cascade a point is, 0 at its border and 0.5 at its centre, negative outside.
 float SunShadowInside(int cascade, vec3 pos) {
@@ -119,14 +129,10 @@ float SunShadow(vec3 pos, vec3 normal) {
         if (inside < 0.0)
             continue;
 
-#ifdef SOFT_SHADOWS
-        float shadow = cascade == 0 && sunShadowFilter == 0 ? SunShadowSoft(pos, normal) : SunShadowSample(cascade, pos, normal);
-#else
-        float shadow = SunShadowSample(cascade, pos, normal);
-#endif
+        float shadow = SunShadowFiltered(cascade, pos, normal);
         float blend = clamp(inside / (SUN_SHADOW_BLEND * 0.5), 0.0, 1.0);
         if (blend < 1.0) {
-            float next = cascade + 1 < SUN_SHADOW_CASCADES ? SunShadowSample(cascade + 1, pos, normal) : 1.0;
+            float next = cascade + 1 < SUN_SHADOW_CASCADES ? SunShadowFiltered(cascade + 1, pos, normal) : 1.0;
             shadow = mix(next, shadow, blend);
         }
         return mix(1.0, shadow, sunShadowFade);
