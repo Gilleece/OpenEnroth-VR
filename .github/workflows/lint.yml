@@ -188,6 +188,12 @@ jobs:
                 ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
               done
             done
+            for shader in resources/shaders/glskyshader.{vert,frag}; do
+              for defines in "LINEAR_PIPELINE SKY_CLOUDS" "LINEAR_PIPELINE NIGHT_SKY" "LINEAR_PIPELINE SKY_CLOUDS NIGHT_SKY"; do
+                echo "Checking $shader with $defines against GLSL $glsl_version..."
+                ./scripts/check_shader.sh "$shader" "$glsl_version" $defines
+              done
+            done
             for shader in resources/shaders/glao.{vert,frag}; do
               echo "Checking $shader with AO_BLUR against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" AO_BLUR

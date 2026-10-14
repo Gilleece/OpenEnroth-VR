@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <iterator>
 #include <memory>
+#include <numbers>
 #include <utility>
 #include <map>
 #include <string>
@@ -92,6 +93,9 @@ static constexpr int GI_BLEND_STEPS = 32; // Steps between two time keys, a few 
 static constexpr Vec3f SKY_AMBIENT_GROUND = Vec3f(1.0f, 0.85f, 0.7f); // Warm grey light off the ground, where no indirect light is baked.
 static constexpr float SKY_AMBIENT_GROUND_LUMA = 0.7f; // Ambient light on faces turned down, against 1 on faces turned up.
 static constexpr float SKY_AMBIENT_MAX_TINT = 0.2f; // Largest part by which a channel of the sky or ground tint leaves white.
+static constexpr double CLOUD_CELL = 2500.0; // World units per noise cell, as glskyshader.frag has it.
+static constexpr double CLOUD_SPEED = 2.0; // World units the clouds drift per game second.
+static constexpr double CLOUD_NOISE_PERIOD = 256.0; // Cells after which the cloud noise repeats.
 static constexpr int TORCH_SHADOW_SIZE = 512;
 static constexpr float TORCH_SHADOW_NEAR = 4.0f;
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
@@ -1696,6 +1700,18 @@ OpenGLRenderer::SkyState OpenGLRenderer::_skyState() {
         float count = 255.0f * pixels.width() * pixels.height();
         _skyAverage = Colorf(r / count, g / count, b / count);
         _skyAverageTexture = texture;
+
+        float averageSum = (r + g + b) / pixels.width() / pixels.height();
+        float clearR = 0, clearG = 0, clearB = 0, clearCount = 0;
+        for (Color pixel : pixels.pixels()) {
+            if (pixel.r + pixel.g + pixel.b > averageSum)
+                continue;
+            clearR += pixel.r;
+            clearG += pixel.g;
+            clearB += pixel.b;
+            clearCount += 255.0f;
+        }
+        _skyClear = clearCount > 0 ? Colorf(clearR / clearCount, clearG / clearCount, clearB / clearCount) : _skyAverage;
     }
 
     // The same tint the sky is drawn with, it darkens the sky at night and fades it into the horizon.
@@ -1817,6 +1833,8 @@ void OpenGLRenderer::_readPipelineSettings() {
     _spriteDepth = _linearPipeline && config->graphics.SpriteDepth.value();
     _spriteLighting = _spriteDepth && config->graphics.SpriteLighting.value();
     _windSway = config->graphics.WindSway.value();
+    _skyClouds = _linearPipeline && config->graphics.SkyClouds.value();
+    _nightSky = _linearPipeline && config->graphics.NightSky.value();
     _filmicTonemap = _linearPipeline && config->graphics.FilmicTonemap.value();
     _eyeAdaptation = _filmicTonemap && config->graphics.EyeAdaptation.value();
 }
@@ -3952,6 +3970,43 @@ void OpenGLRenderer::queueWorldIndoorSky(BLVFace *face) {
     }
 }
 
+void OpenGLRenderer::_submitSkyDetails(const SkyState &sky) {
+    if (!skyshader.hasDefine("SKY_CLOUDS") && !skyshader.hasDefine("NIGHT_SKY"))
+        return;
+
+    bool outdoor = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR;
+    glUniform1i(skyshader.uniformLocation("procedural"), outdoor);
+    if (!outdoor)
+        return;
+
+    bool fog = GetLevelFogColor() != Color();
+    if (skyshader.hasDefine("SKY_CLOUDS")) {
+        // Drift in noise cells along each axis, each wrapped on its own so the tileable noise shows no seam.
+        double gameSeconds = static_cast<double>(pParty->GetPlayingTime().ticks()) * Duration::GAME_SECONDS_IN_REALTIME_SECOND /
+                             Duration::TICKS_PER_REALTIME_SECOND;
+        double drift = gameSeconds * CLOUD_SPEED / CLOUD_CELL;
+        glUniform2f(skyshader.uniformLocation("cloudOffset"), static_cast<float>(std::fmod(drift * WIND_DIRECTION.x, CLOUD_NOISE_PERIOD)),
+                    static_cast<float>(std::fmod(drift * WIND_DIRECTION.y, CLOUD_NOISE_PERIOD)));
+        glUniform3f(skyshader.uniformLocation("skyClear"), _skyClear.r, _skyClear.g, _skyClear.b);
+        glUniform1f(skyshader.uniformLocation("cloudCoverage"), pWeather->bRenderSnow ? 0.8f : fog ? 0.7f : 0.45f);
+    }
+
+    if (skyshader.hasDefine("NIGHT_SKY")) {
+        float minutes = pParty->uCurrentHour * 60.0f + pParty->uCurrentMinute;
+        float pi = std::numbers::pi_v<float>;
+        glUniform1f(skyshader.uniformLocation("nightVisibility"), fog ? 0.0f : 1.0f - sky.daylight);
+        glUniform1f(skyshader.uniformLocation("starRotation"), minutes / 1440.0f * 2 * pi);
+        // The moon crosses the sky from 18:00 to 06:00, the other way round from the sun.
+        float moonAngle = std::fmod(minutes - 1080.0f + 1440.0f, 1440.0f) / 720.0f * pi;
+        Vec3f moon(-std::cos(moonAngle), 0.25f, std::sin(moonAngle));
+        moon /= moon.length();
+        glUniform3f(skyshader.uniformLocation("moonDirection"), moon.x, moon.y, moon.z);
+        // New moon on the second day of the calendar's 28, full on the sixteenth, as the calendar names them.
+        int day = static_cast<int>(pParty->GetPlayingTime().toDays() % 28);
+        glUniform1f(skyshader.uniformLocation("moonPhase"), (day - 1 + (minutes / 1440.0f)) / 28.0f * 2 * pi);
+    }
+}
+
 void OpenGLRenderer::drawSkyVertices(float planeHeight, bool fade) {
     if (_skyVertices.empty())
         return;
@@ -3993,6 +4048,7 @@ void OpenGLRenderer::drawSkyVertices(float planeHeight, bool fade) {
         SkyState sky = _skyState();
         glUniform3f(skyshader.uniformLocation("sunDirection"), sky.sunDirection.x, sky.sunDirection.y, sky.sunDirection.z);
         glUniform1f(skyshader.uniformLocation("sunVisibility"), sky.sunVisibility);
+        _submitSkyDetails(sky);
     }
 
     GLboolean blend = glIsEnabled(GL_BLEND);
@@ -5845,6 +5901,11 @@ bool OpenGLRenderer::ReloadShaders() {
         billboardDefines.push_back("SPRITE_LIGHTING");
     if (_windSway)
         billboardDefines.push_back("WIND_SWAY");
+    std::vector<std::string_view> skyDefines = worldDefines;
+    if (_skyClouds)
+        skyDefines.push_back("SKY_CLOUDS");
+    if (_nightSky)
+        skyDefines.push_back("NIGHT_SKY");
     if (_globalIllumination)
         billboardDefines.push_back("GLOBAL_ILLUMINATION");
     if (_skyAmbient)
@@ -5859,7 +5920,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&billbshader,            "glbillbshader",    "Billboards",                       billboardDefines},
         {&decalshader,            "gldecalshader",    "Decals",                           worldDefines},
         {&forcepershader,         "glforcepershader", "Forced perspective",               worldDefines},
-        {&skyshader,              "glskyshader",      "Sky",                              worldDefines},
+        {&skyshader,              "glskyshader",      "Sky",                              skyDefines},
         {&compositeshader,        "glcomposite",      "Composite",                        compositeDefines},
         {&luminanceshader,        "glluminance",      "Luminance",                        {}},
         {&adaptshader,            "glluminance",      "Eye adaptation",                   adaptDefines},
