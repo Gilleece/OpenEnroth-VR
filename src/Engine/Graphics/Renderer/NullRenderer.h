@@ -88,6 +88,8 @@ class NullRenderer : public BaseRenderer {
 
     virtual void ReleaseTerrain() override;
     virtual void ReleaseBSP() override;
+    virtual bool prepareLevelStep() override;
+    virtual void presentHeldFrame() override;
 
     virtual void DrawTwodVerts() override;
 

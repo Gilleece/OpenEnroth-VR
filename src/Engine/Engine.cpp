@@ -796,6 +796,12 @@ void DoPrepareWorld(bool bLoading, int _1_fullscreen_loading_2_box) {
         }
     }
 
+    // The level's texture arrays and the pack images of the sprites the first frame draws load here in small steps
+    // rather than all in that frame, so that a headset keeps getting frames.
+    engine->_worldFrame->beginSpritePreload();
+    while (render->prepareLevelStep() || engine->_worldFrame->preloadSpritesStep())
+        render->presentHeldFrame();
+
     pGameLoadingUI_ProgressBar->Progress();
     memset(&render->pBillboardRenderListD3D, 0, sizeof(render->pBillboardRenderListD3D));
     render->pSortedBillboardRenderListD3D.fill(nullptr);

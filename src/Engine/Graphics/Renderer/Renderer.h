@@ -161,6 +161,17 @@ class Renderer {
      */
     virtual bool spriteShapes() = 0;
 
+    /**
+     * @param frame                     Sprite frame of a decoration or an actor.
+     * @param pos                       Where the object stands.
+     * @param yaw                       Facing of the object.
+     * @param eye                       Position the frame is seen from.
+     * @param[out] images               Gets the images the frame is drawn with from `eye`: the side that faces it, in
+     *                                  its texture pack variant when there is one, the side it crossfades with, and
+     *                                  their shapes.
+     */
+    virtual void addSpriteSideImages(const SpriteFrame *frame, Vec3f pos, int yaw, Vec3f eye, std::vector<GraphicsImage *> *images) = 0;
+
     virtual bool worldSpaceBillboards() = 0;
 
     /**
@@ -388,6 +399,20 @@ class Renderer {
 
     virtual void ReleaseTerrain() = 0;
     virtual void ReleaseBSP() = 0;
+
+    /**
+     * Does the next step of building the loaded level's geometry and texture arrays, which the first frame drawn there
+     * does all at once otherwise.
+     *
+     * @return                          Whether there was a step left to do.
+     */
+    virtual bool prepareLevelStep() = 0;
+
+    /**
+     * Presents the last presented frame again while frames are paced from outside, by a headset that has to keep
+     * getting them. Does nothing otherwise.
+     */
+    virtual void presentHeldFrame() = 0;
 
     virtual void DrawTwodVerts() = 0;
 

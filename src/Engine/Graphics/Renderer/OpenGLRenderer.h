@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 #include <map>
@@ -116,6 +117,8 @@ class OpenGLRenderer : public BaseRenderer {
 
     virtual void ReleaseTerrain() override;
     virtual void ReleaseBSP() override;
+    virtual bool prepareLevelStep() override;
+    virtual void presentHeldFrame() override;
 
     virtual void DrawTwodVerts() override;
     void DrawBillboards();
@@ -187,6 +190,77 @@ class OpenGLRenderer : public BaseRenderer {
     void _initImGui();
     void _shutdownImGui();
     void _initWaterTiles();
+
+    /**
+     * Progress of building one of the level's sets of texture arrays a step at a time.
+     */
+    struct LevelArraysBuild {
+        std::vector<GraphicsImage *> decodes; // Texture pack images the arrays are built from.
+        size_t decoded = 0; // How many of `decodes` are loaded.
+        int nextArray = 0; // First texture array unit that isn't built yet.
+    };
+
+    /**
+     * Gathers the loaded outdoor level's terrain vertices and the textures of its texture arrays.
+     */
+    void _gatherTerrain();
+
+    /**
+     * @param unit                      Texture array unit of the terrain to create and fill.
+     */
+    void _buildTerrainArray(int unit);
+
+    /**
+     * Does the next step of building the terrain: the gather, a few texture pack images or one texture array.
+     *
+     * @return                          Whether there was a step left to do.
+     */
+    bool _buildTerrainStep();
+
+    /**
+     * Gathers the textures of the loaded outdoor level's buildings into texture array units and layers.
+     */
+    void _gatherOutdoorBuildings();
+
+    /**
+     * @param unit                      Texture array unit of the buildings to create and fill.
+     */
+    void _buildOutdoorBuildingsArray(int unit);
+
+    /**
+     * Does the next step of building the outdoor buildings: the gather, a few texture pack images or one texture array.
+     *
+     * @return                          Whether there was a step left to do.
+     */
+    bool _buildOutdoorBuildingsStep();
+
+    /**
+     * Gathers the textures of the loaded indoor level's faces into texture array units and layers.
+     */
+    void _gatherIndoorFaces();
+
+    /**
+     * @param unit                      Texture array unit of the indoor faces to create and fill.
+     */
+    void _buildIndoorFacesArray(int unit);
+
+    /**
+     * Does the next step of building the indoor faces: the gather, a few texture pack images or one texture array.
+     *
+     * @return                          Whether there was a step left to do.
+     */
+    bool _buildIndoorFacesStep();
+
+    /**
+     * Loads the next few texture pack images of a set of texture arrays, or once they are all loaded, builds the next
+     * texture array.
+     *
+     * @param build                     Progress of the set.
+     * @param layerCounts               Layers of each texture array unit of the set.
+     * @param buildArray                Creates and fills the texture array of a unit.
+     * @return                          Whether there was a step left to do.
+     */
+    bool _buildArraysStep(LevelArraysBuild *build, std::span<const unsigned> layerCounts, const std::function<void(int)> &buildArray);
 
     FrameLimiter _frameLimiter;
 
@@ -497,6 +571,7 @@ class OpenGLRenderer : public BaseRenderer {
     unsigned int numterraintexloaded[8]{};
     unsigned int terraintexturesizes[8]{};
     std::map<std::string, int> terraintexmap;
+    LevelArraysBuild _terrainBuild;
 
     // outside building shader
     std::array<OpenGLVertexBuffer<ShaderVertex>, 16> _outbuildBuffers;
@@ -507,6 +582,7 @@ class OpenGLRenderer : public BaseRenderer {
     unsigned int outbuildtexturewidths[16]{};
     unsigned int outbuildtextureheights[16]{};
     std::map<std::string, int> outbuildtexmap;
+    LevelArraysBuild _outbuildBuild;
 
     // indoors bsp shader
     std::array<OpenGLVertexBuffer<ShaderVertex>, 16> _bspBuffers;
@@ -517,6 +593,7 @@ class OpenGLRenderer : public BaseRenderer {
     unsigned int bsptexturewidths[16]{};
     unsigned int bsptextureheights[16]{};
     std::map<std::string, int> bsptexmap;
+    LevelArraysBuild _bspBuild;
 
     // TODO(captainurist): reserve the buffers here, then adjust the flush checks to use reserved size?
 

@@ -28,6 +28,7 @@ class BaseRenderer : public Renderer {
     virtual void buildWorldBillboardQuads(const CameraView &view, SpriteFacing facing) override;
     virtual const WorldBillboard *builtWorldBillboard(int index) override;
     virtual void turnWorldSpritesTo(const Vec3f &eye, int view) override;
+    virtual void addSpriteSideImages(const SpriteFrame *frame, Vec3f pos, int yaw, Vec3f eye, std::vector<GraphicsImage *> *images) override;
     virtual void sortBillboardRenderList() override;
     virtual void buildBloodsplatDecals() override;
     virtual bool AddBillboardIfVisible(const SpriteFrame *frame, int octant, int yaw, const Vec3f &pos, const Vec2f &scale, BillboardFlags flags,
