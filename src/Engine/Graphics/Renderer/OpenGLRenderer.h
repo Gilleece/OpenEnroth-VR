@@ -14,6 +14,7 @@
 #include <glm/glm.hpp>
 
 #include "Engine/Graphics/CameraView.h"
+#include "Engine/Graphics/FaceEnums.h"
 #include "Engine/Graphics/FrameLimiter.h"
 #include "Engine/MapEnums.h"
 #include "Engine/Resources/GiProbes.h"
@@ -508,8 +509,15 @@ class OpenGLRenderer : public BaseRenderer {
      * @param shader                    Program in use.
      * @param layers                    Shadow map layer of each light in the program's light list, -1 for lights
      *                                  without one.
+     * @param strengths                 How far each of those lights' shadows has faded in, 0 to 1.
      */
-    void _submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers);
+    void _submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers, std::span<const float> strengths);
+
+    /**
+     * Marks the torch shadow cubes stale whose lights reach vertices or faces that changed since the last check, as
+     * when a door moves.
+     */
+    void _markStaleTorchShadows();
 
     /**
      * @return                          Internal format for the colour texture arrays of the world, sRGB with the
@@ -660,9 +668,19 @@ class OpenGLRenderer : public BaseRenderer {
     std::vector<GLuint> _torchShadowFramebuffers; // One per cube face.
     OpenGLVertexBuffer<TorchShadowVertex> _torchShadowBuffer;
     std::vector<TorchShadowVertex> _torchShadowVertices;
-    std::vector<int> _torchShadowLights; // Indices into the stationary light stack, the cube of each is its position here.
-    std::vector<std::pair<Vec3f, int>> _torchShadowDrawnLights; // Position and radius of the lights the cubes hold.
-    int _torchShadowDrawnVersion = 0; // `IndoorLocation::geometryVersion` the cubes were drawn at.
+    struct TorchShadowCube {
+        Vec3f position; // Of the light the cube holds.
+        int radius = 0; // Of that light, 0 while the cube holds none.
+        bool stale = false; // Something in the light's reach moved since the cube was drawn.
+        int64_t drawnAt = 0; // Milliseconds of `platform->tickCount()` when the cube was first drawn for its light.
+        uint64_t usedFrame = 0; // Last frame its light cast a shadow.
+    };
+    std::vector<TorchShadowCube> _torchShadowCubes;
+    std::vector<int> _torchShadowLayers; // Cube of each light in the stationary light stack this frame, -1 for none.
+    std::vector<float> _torchShadowStrengths; // How far each light's shadow has faded in, same indices.
+    std::vector<Vec3f> _torchShadowCheckedVertices; // `IndoorLocation::vertices` when the cubes were last checked against them.
+    std::vector<FaceAttributes> _torchShadowCheckedFaces; // Same for the face attributes.
+    int _torchShadowCheckedVersion = -1; // `IndoorLocation::geometryVersion` of that check.
 
     std::vector<std::unique_ptr<OpenGLRenderTarget>> _bloomTargets; // Half the world target's size, then halving.
     OpenGLRenderTarget _luminanceTarget; // Display brightness of the world under both curves, with mipmaps that average it.

@@ -559,9 +559,10 @@ class GameConfig : public Config {
                                 "Blend a sprite between its two nearest sides as it turns, instead of switching sides every 45"
                                 " degrees. Only applies with world_space_billboards."};
         Bool TorchShadows = {this, "torch_shadows", false,
-                             "Let the nearest wall torches and other lights indoors cast shadows. Takes effect on restart."};
+                             "Let the wall torches and other lights indoors cast shadows. Takes effect on restart."};
         Int TorchShadowCount = {this, "torch_shadow_count", 4, &ValidateTorchShadowCount,
-                                "How many of the nearest indoor lights cast shadows, 1 to 8. Takes effect on restart."};
+                                "How many of the nearest indoor lights in view cast shadows at once, 1 to 32. Each takes 3 MB of"
+                                " video memory."};
         Bool TerrainVariation = {this, "terrain_variation", false,
                                  "Break up the repetition of terrain tiles, with a mirror per tile and a slow variation in brightness across"
                                  " the map. Only applies with linear_pipeline."};
@@ -658,7 +659,7 @@ class GameConfig : public Config {
             return std::clamp(distance, 1024, 16192);
         }
         static int ValidateTorchShadowCount(int count) {
-            return std::clamp(count, 1, 8);
+            return std::clamp(count, 1, 32);
         }
         static float ValidateShadowStrength(float strength) {
             return std::clamp(strength, 0.0f, 1.0f);

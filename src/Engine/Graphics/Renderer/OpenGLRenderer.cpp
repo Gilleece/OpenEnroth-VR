@@ -100,6 +100,8 @@ static constexpr double CLOUD_NOISE_PERIOD = 256.0; // Cells after which the clo
 static constexpr int TORCH_SHADOW_SIZE = 512;
 static constexpr size_t LEVEL_DECODE_BATCH = 8; // Texture pack images of the level's texture arrays decoded in one step of its build.
 static constexpr float TORCH_SHADOW_NEAR = 4.0f;
+static constexpr int TORCH_SHADOW_DRAWS_PER_FRAME = 2; // Cubes drawn for lights that newly need one, or whose surroundings moved.
+static constexpr float TORCH_SHADOW_FADE_MS = 250.0f; // Time a new cube's shadow takes to fade in.
 static constexpr float SUN_SHADOW_SPLIT_LAMBDA = 0.75f; // Blend of logarithmic and uniform cascade splits.
 static constexpr float SUN_SHADOW_EXTRUSION = 16384.0f; // How far towards the sun the cascades reach past what they cover, for the casters.
 static constexpr float SUN_SHADOW_FADE_ELEVATION = 8.0f; // Sun elevation in degrees below which shadows fade out.
@@ -971,11 +973,59 @@ static float sunShadowBillboardRatio() {
     return std::clamp(ambient / 0.85f, 0.0f, 1.0f);
 }
 
+/**
+ * @return                              Whether the indoor pass can light the frame with the light: it is in a sector
+ *                                      the frame sees, or reaches into the party's sector.
+ */
+static bool lightsIndoorFrame(const StationaryLight &light) {
+    for (unsigned j = 0; j < pBspRenderer->uNumVisibleNotEmptySectors; ++j)
+        if (pBspRenderer->pVisibleSectorIDs_toDrawDecorsActorsEtcFrom[j] == light.uSectorID)
+            return true;
+    return pIndoor->sectors[pBLVRenderParams->uPartySectorID].boundingBox.intersectsCube(light.vPosition, static_cast<float>(light.uRadius));
+}
+
+void OpenGLRenderer::_markStaleTorchShadows() {
+    if (pIndoor->geometryVersion == _torchShadowCheckedVersion)
+        return;
+    _torchShadowCheckedVersion = pIndoor->geometryVersion;
+
+    std::vector<Vec3f> moved;
+    if (_torchShadowCheckedVertices.size() == pIndoor->vertices.size() && _torchShadowCheckedFaces.size() == pIndoor->faces.size()) {
+        for (size_t i = 0; i < pIndoor->vertices.size(); i++) {
+            if (pIndoor->vertices[i] != _torchShadowCheckedVertices[i]) {
+                moved.push_back(_torchShadowCheckedVertices[i]);
+                moved.push_back(pIndoor->vertices[i]);
+            }
+        }
+        for (size_t i = 0; i < pIndoor->faces.size(); i++)
+            if (pIndoor->faces[i].attributes != _torchShadowCheckedFaces[i])
+                for (int vertexId : pIndoor->faces[i].vertexIds)
+                    moved.push_back(pIndoor->vertices[vertexId]);
+    }
+    _torchShadowCheckedVertices.assign(pIndoor->vertices.begin(), pIndoor->vertices.end());
+    _torchShadowCheckedFaces.clear();
+    for (const BLVFace &face : pIndoor->faces)
+        _torchShadowCheckedFaces.push_back(face.attributes);
+    if (moved.empty())
+        return;
+
+    BBoxf changed = BBoxf::forPoints(moved);
+    for (TorchShadowCube &cube : _torchShadowCubes)
+        if (cube.radius > 0 && changed.intersectsCube(cube.position, static_cast<float>(cube.radius)))
+            cube.stale = true;
+}
+
 void OpenGLRenderer::drawTorchShadows() {
-    _torchShadowLights.clear();
+    _torchShadowLayers.assign(pStationaryLightsStack->uNumLightsActive, -1);
+    _torchShadowStrengths.assign(pStationaryLightsStack->uNumLightsActive, 0.0f);
     if (!_torchShadows || uCurrentlyLoadedLevelType != LEVEL_INDOOR)
         return;
 
+    if (_torchShadowMaps && _torchShadowCount != config->graphics.TorchShadowCount.value()) {
+        glDeleteFramebuffers(static_cast<GLsizei>(_torchShadowFramebuffers.size()), _torchShadowFramebuffers.data());
+        glDeleteTextures(1, &_torchShadowMaps);
+        _torchShadowMaps = 0;
+    }
     if (!_torchShadowMaps) {
         _torchShadowCount = config->graphics.TorchShadowCount.value();
         glGenTextures(1, &_torchShadowMaps);
@@ -1003,35 +1053,73 @@ void OpenGLRenderer::drawTorchShadows() {
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         _torchShadowBuffer.reset(GL_DYNAMIC_DRAW, &TorchShadowVertex::pos, &TorchShadowVertex::normal);
+        _torchShadowCubes.assign(_torchShadowCount, {});
     }
 
-    // The nearest lights, by how far the camera is from the edge of their reach.
+    _markStaleTorchShadows();
+
+    // The lights the frame uses, nearest first by how far the camera is from the edge of their reach.
     Vec3f camera(pCamera3D->vCameraPos.x, pCamera3D->vCameraPos.y, pCamera3D->vCameraPos.z);
     std::vector<std::pair<float, int>> candidates;
     for (int i = 0; i < pStationaryLightsStack->uNumLightsActive; i++) {
         const StationaryLight &light = pStationaryLightsStack->pLights[i];
-        if (light.uRadius >= 1)
+        if (light.uRadius >= 1 && lightsIndoorFrame(light))
             candidates.emplace_back((light.vPosition - camera).length() - light.uRadius, i);
     }
     int count = std::min(static_cast<int>(candidates.size()), _torchShadowCount);
     std::partial_sort(candidates.begin(), candidates.begin() + count, candidates.end());
 
-    std::vector<std::pair<Vec3f, int>> drawnLights;
+    // Lights keep the cubes that already hold them. A few lights a frame get a cube, or have a stale one redrawn,
+    // the nearest first, in the cube whose light was used longest ago.
+    std::vector<int> cubeOf(count, -1);
+    std::vector<bool> taken(_torchShadowCubes.size(), false);
     for (int c = 0; c < count; c++) {
         const StationaryLight &light = pStationaryLightsStack->pLights[candidates[c].second];
-        _torchShadowLights.push_back(candidates[c].second);
-        drawnLights.emplace_back(light.vPosition, light.uRadius);
+        for (size_t k = 0; k < _torchShadowCubes.size(); k++) {
+            if (!taken[k] && _torchShadowCubes[k].radius == light.uRadius && _torchShadowCubes[k].position == light.vPosition) {
+                cubeOf[c] = static_cast<int>(k);
+                taken[k] = true;
+                break;
+            }
+        }
     }
-    if (drawnLights == _torchShadowDrawnLights && pIndoor->geometryVersion == _torchShadowDrawnVersion)
-        return; // The cubes already hold these lights and the walls haven't changed since.
-    _torchShadowDrawnLights = std::move(drawnLights);
-    _torchShadowDrawnVersion = pIndoor->geometryVersion;
+    int64_t now = platform->tickCount();
+    std::vector<int> drawn; // Indices into `candidates` of the lights whose cubes are drawn this frame.
+    for (int c = 0; c < count && static_cast<int>(drawn.size()) < TORCH_SHADOW_DRAWS_PER_FRAME; c++) {
+        if (cubeOf[c] >= 0) {
+            if (_torchShadowCubes[cubeOf[c]].stale)
+                drawn.push_back(c);
+            continue;
+        }
+        int oldest = -1;
+        for (size_t k = 0; k < _torchShadowCubes.size(); k++)
+            if (!taken[k] && (oldest < 0 || _torchShadowCubes[k].usedFrame < _torchShadowCubes[oldest].usedFrame))
+                oldest = static_cast<int>(k);
+        if (oldest < 0)
+            break;
+        const StationaryLight &light = pStationaryLightsStack->pLights[candidates[c].second];
+        _torchShadowCubes[oldest] = {light.vPosition, light.uRadius, false, now, 0};
+        taken[oldest] = true;
+        cubeOf[c] = oldest;
+        drawn.push_back(c);
+    }
+    for (int c = 0; c < count; c++) {
+        if (cubeOf[c] < 0)
+            continue;
+        TorchShadowCube &cube = _torchShadowCubes[cubeOf[c]];
+        cube.usedFrame = _frameNumber;
+        _torchShadowLayers[candidates[c].second] = cubeOf[c];
+        _torchShadowStrengths[candidates[c].second] = std::clamp(static_cast<float>(now - cube.drawnAt) / TORCH_SHADOW_FADE_MS, 0.0f, 1.0f);
+    }
+    if (drawn.empty())
+        return;
 
     // Walls, floors and ceilings of the sectors each light reaches.
     std::vector<std::pair<int, int>> ranges;
     _torchShadowVertices.clear();
-    for (int c = 0; c < count; c++) {
+    for (int c : drawn) {
         const StationaryLight &light = pStationaryLightsStack->pLights[candidates[c].second];
+        _torchShadowCubes[cubeOf[c]].stale = false;
         int first = static_cast<int>(_torchShadowVertices.size());
         for (const BLVSector &sector : pIndoor->sectors) {
             if (!sector.boundingBox.intersectsCube(light.vPosition, static_cast<float>(light.uRadius)))
@@ -1049,9 +1137,8 @@ void OpenGLRenderer::drawTorchShadows() {
         }
         ranges.emplace_back(first, static_cast<int>(_torchShadowVertices.size()) - first);
     }
-    if (_torchShadowVertices.empty())
-        return;
-    _torchShadowBuffer.update(_torchShadowVertices);
+    if (!_torchShadowVertices.empty())
+        _torchShadowBuffer.update(_torchShadowVertices); // Cubes with nothing to draw are still cleared below.
 
     GLint framebuffer = 0;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebuffer);
@@ -1078,19 +1165,20 @@ void OpenGLRenderer::drawTorchShadows() {
         {{1, 0, 0}, {0, -1, 0}}, {{-1, 0, 0}, {0, -1, 0}}, {{0, 1, 0}, {0, 0, 1}},
         {{0, -1, 0}, {0, 0, -1}}, {{0, 0, 1}, {0, -1, 0}}, {{0, 0, -1}, {0, -1, 0}}
     }};
-    for (size_t c = 0; c < ranges.size(); c++) {
-        const StationaryLight &light = pStationaryLightsStack->pLights[_torchShadowLights[c]];
+    for (size_t d = 0; d < drawn.size(); d++) {
+        const StationaryLight &light = pStationaryLightsStack->pLights[candidates[drawn[d]].second];
+        int cube = cubeOf[drawn[d]];
         glm::vec3 position(light.vPosition.x, light.vPosition.y, light.vPosition.z);
         glm::mat4 projection = glm::perspectiveRH_NO(glm::radians(90.0f), 1.0f, TORCH_SHADOW_NEAR, static_cast<float>(light.uRadius));
         glUniform3f(torchshadowshader.uniformLocation("lightPosition"), position.x, position.y, position.z);
         glUniform1f(torchshadowshader.uniformLocation("lightRadius"), static_cast<float>(light.uRadius));
         for (int face = 0; face < 6; face++) {
             glm::mat4 lightMatrix = projection * glm::lookAtRH(position, position + faces[face].first, faces[face].second);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _torchShadowFramebuffers[c * 6 + face]);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _torchShadowFramebuffers[cube * 6 + face]);
             glClear(GL_DEPTH_BUFFER_BIT);
             glUniformMatrix4fv(torchshadowshader.uniformLocation("lightMatrix"), 1, GL_FALSE, &lightMatrix[0][0]);
-            if (ranges[c].second > 0) {
-                glDrawArrays(GL_TRIANGLES, ranges[c].first, ranges[c].second);
+            if (ranges[d].second > 0) {
+                glDrawArrays(GL_TRIANGLES, ranges[d].first, ranges[d].second);
                 drawcalls++;
             }
         }
@@ -1438,7 +1526,7 @@ void OpenGLRenderer::_submitSkyAmbient(const OpenGLShader &shader) {
     glUniform3f(shader.uniformLocation("groundAmbient"), down.x, down.y, down.z);
 }
 
-void OpenGLRenderer::_submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers) {
+void OpenGLRenderer::_submitTorchShadows(const OpenGLShader &shader, std::span<const int> layers, std::span<const float> strengths) {
     if (!shader.hasDefine("TORCH_SHADOWS"))
         return;
 
@@ -1447,6 +1535,7 @@ void OpenGLRenderer::_submitTorchShadows(const OpenGLShader &shader, std::span<c
     glActiveTexture(GL_TEXTURE0);
     glUniform1i(shader.uniformLocation("torchShadowMaps"), TORCH_SHADOW_TEXTURE_UNIT);
     glUniform1iv(shader.uniformLocation("torchShadowLayers"), static_cast<GLsizei>(layers.size()), layers.data());
+    glUniform1fv(shader.uniformLocation("torchShadowStrengths"), static_cast<GLsizei>(strengths.size()), strengths.data());
 }
 
 void OpenGLRenderer::drawSunShadows(std::span<const int> casterModels, std::span<const SunShadowSprite> casterSprites) {
@@ -4953,6 +5042,8 @@ void OpenGLRenderer::DrawIndoorFaces() {
         // stack the static lights next (wall torches)
         std::array<int, 40> torchShadowLayers;
         torchShadowLayers.fill(-1);
+        std::array<float, 40> torchShadowStrengths;
+        torchShadowStrengths.fill(0.0f);
         for (int i = 0; i < pStationaryLightsStack->uNumLightsActive; ++i) {
             if (num_lights >= 40) break;
 
@@ -5000,8 +5091,10 @@ void OpenGLRenderer::DrawIndoorFaces() {
             uniforms.pointLights[num_lights].diffuse = color;
             uniforms.pointLights[num_lights].specular = Colorf(0.0f, 0.0f, 0.0f);
             uniforms.pointLights[num_lights].radius = test.uRadius;
-            auto cube = std::ranges::find(_torchShadowLights, i);
-            torchShadowLayers[num_lights] = cube == _torchShadowLights.end() ? -1 : static_cast<int>(cube - _torchShadowLights.begin());
+            if (i < static_cast<int>(_torchShadowLayers.size())) {
+                torchShadowLayers[num_lights] = _torchShadowLayers[i];
+                torchShadowStrengths[num_lights] = _torchShadowStrengths[i];
+            }
             num_lights++;
         }
 
@@ -5028,7 +5121,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
         uniforms.submit(bspshader);
         _spriteLights.sun = uniforms.sun;
         std::copy_n(uniforms.pointLights.begin(), _spriteLights.pointLights.size(), _spriteLights.pointLights.begin());
-        _submitTorchShadows(bspshader, torchShadowLayers);
+        _submitTorchShadows(bspshader, torchShadowLayers, torchShadowStrengths);
         _submitAmbientOcclusion(bspshader);
         _submitGlobalIllumination(bspshader);
         float wall = ambient * INDOOR_WATER_REFLECTION;
@@ -5038,7 +5131,7 @@ void OpenGLRenderer::DrawIndoorFaces() {
         if (hasMaterials) {
             bspmaterialshader.use();
             uniforms.submit(bspmaterialshader);
-            _submitTorchShadows(bspmaterialshader, torchShadowLayers);
+            _submitTorchShadows(bspmaterialshader, torchShadowLayers, torchShadowStrengths);
             _submitAmbientOcclusion(bspmaterialshader);
             _submitGlobalIllumination(bspmaterialshader);
             _submitWater(bspmaterialshader, &room);
@@ -5537,7 +5630,10 @@ void OpenGLRenderer::ReleaseBSP() {
 
     bsptexmap.clear();
     _bspBuild = {};
-    _torchShadowDrawnLights.clear();
+    _torchShadowCubes.assign(_torchShadowCubes.size(), {});
+    _torchShadowCheckedVertices.clear();
+    _torchShadowCheckedFaces.clear();
+    _torchShadowCheckedVersion = -1;
     _aoIndoorBuffer.reset();
 
     for (int i = 0; i < 16; i++) {
