@@ -695,12 +695,11 @@ class OpenGLRenderer : public BaseRenderer {
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
     struct FireParticle {
         Vec3f origin;
-        float glow;
         float kind; // 0 flame, 1 spark, 2 smoke, as `glfireparticles.vert` has them.
         float phase;
         float seed;
         float flameSize;
-        Vec3f light;
+        Vec3f flame;
         float spread;
     };
     std::vector<FireParticle> _fireParticles; // Smoke first, then the flames and sparks.

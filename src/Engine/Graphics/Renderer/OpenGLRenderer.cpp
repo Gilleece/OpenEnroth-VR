@@ -4050,21 +4050,17 @@ void OpenGLRenderer::_prepareFireParticles() {
             const SpriteFrame *frame = pSpriteFrameTable->GetFrame(desc->uSpriteID, Duration());
             float height = frame->sprites[0] ? frame->sprites[0]->uHeight * frame->scale : desc->uDecorationHeight;
             Vec3f origin = decoration.vPosition + Vec3f(0, 0, profile.height * height);
-            bool coloured = desc->uColoredLight != Color() && config->graphics.ColoredLights.value();
-            Colorf colour = coloured ? desc->uColoredLight.toColorf() : Colorf(1.0f, 0.55f, 0.25f);
-            Vec3f light(colour.r, colour.g, colour.b);
             float share = emitters[e].first > FIRE_EMITTER_HALVED ? 0.5f : 1.0f;
             auto add = [&](int kind, int number) {
                 number = std::max(1, static_cast<int>(number * share));
                 for (int i = 0; i < number; i++) {
                     FireParticle &particle = _fireParticles.emplace_back();
                     particle.origin = origin;
-                    particle.glow = profile.glow;
                     particle.kind = static_cast<float>(kind);
                     particle.phase = static_cast<float>(i) / number;
                     particle.seed = static_cast<float>(emitters[e].second * 131 + kind * 37 + i);
                     particle.flameSize = profile.flameSize;
-                    particle.light = light;
+                    particle.flame = profile.flame;
                     particle.spread = profile.spread;
                 }
             };
@@ -4092,9 +4088,9 @@ void OpenGLRenderer::_bindFireParticles(int first) {
     glBindVertexArray(_fireParticleVao);
     glBindBuffer(GL_ARRAY_BUFFER, _fireParticleVbo);
     size_t base = first * sizeof(FireParticle);
-    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, origin)));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, origin)));
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, kind)));
-    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, light)));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, flame)));
     for (GLuint attribute : {0u, 1u, 2u}) {
         glEnableVertexAttribArray(attribute);
         glVertexAttribDivisor(attribute, 1);
