@@ -541,6 +541,9 @@ class GameConfig : public Config {
         Float BloomIntensity = {this, "bloom_intensity", 0.08f, &ValidateBloomIntensity, "Strength of the bloom added to the 3D world."};
         ConfigEntry<AntialiasingMode> Antialiasing = {this, "antialiasing", ANTIALIASING_OFF,
                                                       "Antialiasing of the 3D world, 'off' or 'fxaa'. Only applies with linear_pipeline."};
+        Int Msaa = {this, "msaa", 0, &ValidateMsaa,
+                    "Samples per pixel of multisample antialiasing for the 3D world, 0, 2, 4 or 8. Smooths the edges of "
+                    "geometry and of sprite cutouts, and replaces fxaa when on. Only applies with linear_pipeline."};
         Bool SpriteDepth = {this, "sprite_depth", false,
                             "Give sprites the depth of a texture pack's sprite shapes: they cut into walls, floors and each other,"
                             " and each eye sees them with its own parallax. Only applies with linear_pipeline and"
@@ -639,6 +642,9 @@ class GameConfig : public Config {
         }
         static int ValidateUiScale(int scale) {
             return scale >= 4 ? 4 : scale >= 2 ? 2 : 1;
+        }
+        static int ValidateMsaa(int samples) {
+            return samples >= 8 ? 8 : samples >= 4 ? 4 : samples >= 2 ? 2 : 0;
         }
         static int ValidateWorldTargetDimension(int dimension) {
             return std::max(dimension, 0);
@@ -867,6 +873,11 @@ class GameConfig : public Config {
             "Size of the eye images as a multiple of the size the headset recommends, from 0.5 to 1.5. Most of the cost "
             "of a frame grows with the number of pixels, which goes with the square of this."};
 
+        Int Msaa = {this, "msaa", 4, &ValidateMsaa,
+            "Samples per pixel of multisample antialiasing in the headset, 0, 2, 4 or 8, in place of graphics.msaa. "
+            "Smooths the edges of geometry and of sprite cutouts for much less than a higher render_scale. Only "
+            "applies with graphics.linear_pipeline."};
+
      private:
         static float ValidateUiDistance(float distance) {
             return std::clamp(distance, 0.3f, 10.0f);
@@ -885,6 +896,9 @@ class GameConfig : public Config {
         }
         static float ValidateRenderScale(float scale) {
             return std::clamp(scale, 0.5f, 1.5f);
+        }
+        static int ValidateMsaa(int samples) {
+            return samples >= 8 ? 8 : samples >= 4 ? 4 : samples >= 2 ? 2 : 0;
         }
         static float ValidateHudScale(float scale) {
             return std::clamp(scale, 0.5f, 2.0f);

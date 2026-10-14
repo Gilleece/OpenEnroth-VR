@@ -1,5 +1,6 @@
 #include "OpenGLRenderTarget.h"
 
+#include <cassert>
 #include <string>
 
 #include "Library/Logger/Logger.h"
@@ -26,10 +27,21 @@ static void GL_Check_Framebuffer(const char *name) {
     MM_WARNING("OpenGL Framebuffer error ({}): {} from function {}", status, error, name);
 }
 
+static GLenum internalFormat(RenderTargetFormat format) {
+    switch (format) {
+    case RENDER_TARGET_FORMAT_RGBA16F: return GL_RGBA16F;
+    case RENDER_TARGET_FORMAT_R11G11B10F: return GL_R11F_G11F_B10F;
+    case RENDER_TARGET_FORMAT_RG16F: return GL_RG16F;
+    case RENDER_TARGET_FORMAT_R16F: return GL_R16F;
+    default: return GL_RGBA8;
+    }
+}
+
 void OpenGLRenderTarget::reset(Sizei size, RenderTargetFormat format, bool withDepth) {
     reset();
 
     _size = size;
+    _format = format;
     glGenFramebuffers(1, &_framebuffer);
 
     _ownsColorTexture = true;
@@ -73,11 +85,56 @@ void OpenGLRenderTarget::resetExternal(GLuint colorTexture, Sizei size, bool wit
         createDepthTexture();
 }
 
+void OpenGLRenderTarget::resetMultisample(Sizei size, RenderTargetFormat format, int samples) {
+    reset();
+
+    _size = size;
+    _format = format;
+    _samples = samples;
+    glGenRenderbuffers(1, &_colorRenderbuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, _colorRenderbuffer);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, internalFormat(format), size.w, size.h);
+    glGenRenderbuffers(1, &_depthRenderbuffer);
+    glBindRenderbuffer(GL_RENDERBUFFER, _depthRenderbuffer);
+    glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, GL_DEPTH_COMPONENT24, size.w, size.h);
+    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+    GLint previous = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &previous);
+    glGenFramebuffers(1, &_framebuffer);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _framebuffer);
+    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, _colorRenderbuffer);
+    glFramebufferRenderbuffer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, _depthRenderbuffer);
+    GL_Check_Framebuffer(__FUNCTION__);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, previous);
+}
+
+void OpenGLRenderTarget::resolveInto(OpenGLRenderTarget &target, GLbitfield buffers) const {
+    assert(_samples > 0 && target._samples == 0 && target._size == _size && target._format == _format);
+
+    GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    target.bind();
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, _framebuffer);
+    glBlitFramebuffer(0, 0, _size.w, _size.h, 0, 0, _size.w, _size.h, buffers, GL_NEAREST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+    if (scissor)
+        glEnable(GL_SCISSOR_TEST);
+}
+
 void OpenGLRenderTarget::reset() {
     if (_framebuffer) {
         glDeleteFramebuffers(1, &_framebuffer);
         _framebuffer = 0;
     }
+    for (GLuint *renderbuffer : {&_colorRenderbuffer, &_depthRenderbuffer}) {
+        if (*renderbuffer) {
+            glDeleteRenderbuffers(1, renderbuffer);
+            *renderbuffer = 0;
+        }
+    }
+    _samples = 0;
     if (_colorTexture) {
         if (_ownsColorTexture)
             glDeleteTextures(1, &_colorTexture);
@@ -103,6 +160,8 @@ void OpenGLRenderTarget::createDepthTexture() {
 
 void OpenGLRenderTarget::bind() {
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, _framebuffer);
+    if (_samples > 0)
+        return; // The renderbuffers are attached once, when they're made.
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, _colorTexture, 0);
     if (_depthTexture)
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, _depthTexture, 0);

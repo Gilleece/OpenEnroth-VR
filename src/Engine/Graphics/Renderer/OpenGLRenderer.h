@@ -210,6 +210,19 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLRenderTarget *_currentWorldTarget();
 
     /**
+     * @return                          Samples per pixel to draw the 3D world with into `_currentWorldTarget`, 0
+     *                                  without multisampling. Only the linear pipeline's world targets are multisampled,
+     *                                  by `graphics.msaa`, or `vr.msaa` for an external target.
+     */
+    int _worldSamples();
+
+    /**
+     * @return                          Target to draw the 3D world into, the multisampled one that goes with
+     *                                  `_currentWorldTarget` when the world is multisampled, otherwise that target.
+     */
+    OpenGLRenderTarget *_worldDrawTarget();
+
+    /**
      * @param colorTexture              Colour texture owned by the caller.
      * @param size                      Size of the texture.
      * @param withDepth                 Whether to add a depth texture, when the target is made.
@@ -612,6 +625,10 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLRenderTarget *_externalWorldTarget = nullptr;
     OpenGLRenderTarget *_externalOutput = nullptr; // Wraps the colour texture given to `setExternalWorldTarget`.
     OpenGLRenderTarget _externalLinearTarget; // What the world is drawn into for an external target with the linear pipeline.
+    OpenGLRenderTarget _msaaTarget; // What the world is drawn into when it's multisampled, resolved into `_worldTarget`.
+    OpenGLRenderTarget _externalMsaaTarget; // The same for `_externalLinearTarget`.
+    OpenGLRenderTarget *_multisampledTarget = nullptr; // That the 3D pass since the last `BeginScene3D` draws into, if any.
+    int _maxWorldSamples = -1; // Most samples per pixel the driver takes for a renderbuffer, -1 until asked.
     OpenGLRenderTarget _mirrorTarget;
 
     /**

@@ -510,8 +510,10 @@ void OpenGLRenderer::BeginScene3D(const CameraView &view) {
 
     // Setup for 3D
 
-    if (OpenGLRenderTarget *target = _currentWorldTarget()) {
-        target->bind();
+    OpenGLRenderTarget *drawTarget = _worldDrawTarget();
+    _multisampledTarget = drawTarget && drawTarget->samples() > 0 ? drawTarget : nullptr;
+    if (drawTarget) {
+        drawTarget->bind();
         glDisable(GL_SCISSOR_TEST);
     } else if (_usesUiTarget()) {
         _uiTarget.bind();
@@ -543,6 +545,8 @@ void OpenGLRenderer::EndScene3D() {
         DrawTwodVerts();
         return;
     }
+    if (_multisampledTarget)
+        _multisampledTarget->resolveInto(*target);
 
     if (_linearPipeline && target == &_externalLinearTarget) {
         // An external target has no 2D pass of its own, so it gets the tonemapped world here and the 2D quads over it.
@@ -640,7 +644,7 @@ void OpenGLRenderer::drawComposite(const OpenGLRenderTarget &source, const Recti
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_SCISSOR_TEST);
 
-    bool fxaa = config->graphics.Antialiasing.value() == ANTIALIASING_FXAA;
+    bool fxaa = config->graphics.Antialiasing.value() == ANTIALIASING_FXAA && !_multisampledTarget;
     if (fxaa) {
         if (_antialiasingTarget.size() != viewport.size())
             _antialiasingTarget.reset(viewport.size(), RENDER_TARGET_FORMAT_RGBA8, false);
@@ -2635,6 +2639,40 @@ Recti OpenGLRenderer::_uiPixels(const Recti &rect) const {
     return Recti(rect.x * _uiScale, (outputRender.h - (rect.y + rect.h)) * _uiScale, rect.w * _uiScale, rect.h * _uiScale);
 }
 
+int OpenGLRenderer::_worldSamples() {
+    OpenGLRenderTarget *target = _currentWorldTarget();
+    if (!_linearPipeline || !target)
+        return 0;
+    int samples = _externalWorldTarget ? config->vr.Msaa.value() : config->graphics.Msaa.value();
+    if (samples <= 1)
+        return 0;
+    if (_maxWorldSamples < 0) {
+        GLint max = 0;
+        glGetIntegerv(GL_MAX_SAMPLES, &max);
+        _maxWorldSamples = max;
+    }
+    samples = std::min(samples, _maxWorldSamples);
+    return samples > 1 ? samples : 0;
+}
+
+OpenGLRenderTarget *OpenGLRenderer::_worldDrawTarget() {
+    OpenGLRenderTarget *target = _currentWorldTarget();
+    if (!target)
+        return nullptr;
+    OpenGLRenderTarget &multisampled = target == &_externalLinearTarget ? _externalMsaaTarget : _msaaTarget;
+    int samples = _worldSamples();
+    if (samples == 0) {
+        if (multisampled)
+            multisampled.reset();
+        return target;
+    }
+    if (multisampled.size() != target->size() || multisampled.samples() != samples || multisampled.format() != target->format()) {
+        multisampled.resetMultisample(target->size(), target->format(), samples);
+        MM_INFO("Drawing the 3D world with {}x multisampling at {}x{}.", samples, target->size().w, target->size().h);
+    }
+    return &multisampled;
+}
+
 OpenGLRenderTarget *OpenGLRenderer::_currentWorldTarget() {
     if (_externalWorldTarget)
         return _externalWorldTarget;
@@ -3691,6 +3729,8 @@ void OpenGLRenderer::_copySceneDepth() {
         GLboolean blend = glIsEnabled(GL_BLEND);
         glDisable(GL_SCISSOR_TEST);
         glDisable(GL_BLEND);
+        if (_multisampledTarget)
+            _multisampledTarget->resolveInto(*world, GL_DEPTH_BUFFER_BIT); // The world was drawn into the samples.
         _sceneDepthHalf.bind();
         glViewport(0, 0, half.w, half.h);
         _ensureFullscreenTriangle();
@@ -3851,7 +3891,10 @@ void OpenGLRenderer::drawWorldBillboards() {
             _billboardDepthPrepass = true;
             glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
             glDepthMask(GL_TRUE);
+            if (_multisampledTarget)
+                glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE); // The cutouts' depth edges get the samples' coverage.
             DrawBillboards();
+            glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
             _billboardDepthPrepass = false;
             glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
             glDepthMask(GL_FALSE);
@@ -4172,6 +4215,7 @@ void OpenGLRenderer::DrawBillboards() {
         glUniform3f(billbshader.uniformLocation("parallaxOrigin"), origin.x, origin.y, origin.z);
         glUniform1i(billbshader.uniformLocation("depthPrepass"), _billboardDepthPrepass);
         glUniform1i(billbshader.uniformLocation("shapeColourPass"), _billboardShapeColourPass);
+        glUniform1i(billbshader.uniformLocation("alphaToCoverage"), _billboardDepthPrepass && _multisampledTarget);
     }
     if (billbshader.hasDefine("SPRITE_LIGHTING"))
         _spriteLights.submit(billbshader);
