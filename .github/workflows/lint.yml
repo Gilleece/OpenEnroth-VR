@@ -218,7 +218,7 @@ jobs:
               echo "Checking $shader with EYE_ADAPT against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" EYE_ADAPT
             done
-            for shader in resources/shaders/{glterrain,gloutbuild,glbspshader,glbillbshader,gldecalshader,glforcepershader,glskyshader}.{vert,frag}; do
+            for shader in resources/shaders/{glterrain,gloutbuild,glbspshader,glbillbshader,gldecalshader,glforcepershader,glskyshader,glfireparticles}.{vert,frag}; do
               echo "Checking $shader with LINEAR_PIPELINE against GLSL $glsl_version..."
               ./scripts/check_shader.sh "$shader" "$glsl_version" LINEAR_PIPELINE
             done
