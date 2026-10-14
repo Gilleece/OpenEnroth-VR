@@ -9,6 +9,7 @@
 #include <cstring>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <glad/gl.h> // NOLINT: not a C system header.
@@ -89,9 +90,10 @@ static constexpr std::array<HudCard, 5> HUD_CARDS = {{
 static constexpr Recti HUD_VIEWPORT(9, 9, 458, 342); // Inside the frame around the world view, a pixel in from its black edge.
 static constexpr int HUD_CARD_SCALE = 3; // Pixels of a card's image per pixel of the game screen.
 static constexpr float HUD_CURSOR_RAD_PER_COUNT = 0.04f * M_PI / 180; // Turn of the spread HUD's cursor per count of mouse motion.
-static constexpr float HUD_CURSOR_REACH_RAD = 60 * M_PI / 180; // How far the cursor looks across a gap for the next part.
-static constexpr float HUD_CURSOR_STEP_RAD = 0.25f * M_PI / 180;
-static constexpr uint32_t HUD_LAYER_COUNT = static_cast<uint32_t>(3 + HUD_CARDS.size()); // With the viewport, the world and its fade.
+static constexpr float HUD_CURSOR_MARGIN_RAD = 5 * M_PI / 180; // How far past the HUD's outer edges the cursor goes.
+static constexpr Pointi HUD_CURSOR_PARKED(-1000, -1000); // Game's cursor while the HUD's is away from its parts, off the screen.
+static constexpr Recti HUD_CURSOR_BOX(-128, -128, 256, 256); // Around the cursor's hot spot, what its quad shows, room for a held item.
+static constexpr uint32_t HUD_LAYER_COUNT = static_cast<uint32_t>(4 + HUD_CARDS.size()); // With the viewport, the cursor, the world and its fade.
 
 using PfnWglSwapIntervalExt = BOOL (WINAPI *)(int interval);
 using PfnWglGetSwapIntervalExt = int (WINAPI *)();
@@ -260,7 +262,7 @@ static int visibleModelCount() {
     return result;
 }
 
-VrSystem::VrSystem() : PlatformEventFilter({EVENT_KEY_PRESS, EVENT_MOUSE_MOVE}) {}
+VrSystem::VrSystem() : PlatformEventFilter({EVENT_KEY_PRESS, EVENT_MOUSE_MOVE, EVENT_MOUSE_BUTTON_PRESS, EVENT_MOUSE_BUTTON_RELEASE}) {}
 
 VrSystem::~VrSystem() {
     shutdown();
@@ -520,34 +522,32 @@ bool VrSystem::mouseMoveEvent(const PlatformMouseEvent *event) {
     if (!_hudCursor || !mouse)
         return false;
 
-    // The cursor turns with the mouse over the parts of the HUD around the head. Across a gap it goes on in the same
-    // direction to the next part, and with none it slides along the edge of the part it's on.
-    glm::vec2 from = *_hudCursor;
+    // The cursor turns with the mouse around the parts of the HUD, over the gaps between them too, as far as a little
+    // past their outer edges.
     glm::vec2 motion = glm::vec2(event->rel.x, -event->rel.y) * HUD_CURSOR_RAD_PER_COUNT;
     if (motion == glm::vec2(0))
         return false;
-    std::optional<glm::vec2> to;
-    for (glm::vec2 candidate : {from + motion, from + glm::vec2(motion.x, 0), from + glm::vec2(0, motion.y)}) {
-        if (hudPositionAt(candidate.x, candidate.y)) {
-            to = candidate;
-            break;
-        }
-    }
-    if (!to) {
-        glm::vec2 step = glm::normalize(motion) * HUD_CURSOR_STEP_RAD;
-        for (glm::vec2 candidate = from + motion; glm::length(candidate - from) < HUD_CURSOR_REACH_RAD; candidate += step) {
-            if (hudPositionAt(candidate.x, candidate.y)) {
-                to = candidate;
-                break;
-            }
-        }
-    }
-    if (!to)
-        return false;
-    _hudCursor = *to;
-    mouse->setPinnedPosition(hudPositionAt(to->x, to->y));
+    auto [low, high] = hudCursorBounds();
+    _hudCursor = glm::clamp(*_hudCursor + motion, low, high);
+    placeHudCursor();
     return false;
 }
+
+bool VrSystem::mousePressEvent(const PlatformMouseEvent *event) {
+    // A click away from the HUD's parts lands nowhere, and so does the release that goes with it.
+    if (!_hudCursor || _hudCursorOnPart)
+        return false;
+    _swallowedButtons |= event->button;
+    return true;
+}
+
+bool VrSystem::mouseReleaseEvent(const PlatformMouseEvent *event) {
+    if (!(_swallowedButtons & event->button))
+        return false;
+    _swallowedButtons &= ~event->button;
+    return true;
+}
+
 bool VrSystem::hudShows(Pointi uiPosition) const {
     return hudPartAt(uiPosition) != nullptr;
 }
@@ -593,15 +593,44 @@ bool VrSystem::pointHudCursorAt(Pointi uiPosition) {
     for (const HudQuad &quad : parts) {
         if (!quad.rect.contains(uiPosition))
             continue;
-        glm::vec3 local((uiPosition.x + 0.5f - quad.frame.x - quad.frame.w / 2.0f) * quad.metresPerPixel,
-                        (quad.frame.y + quad.frame.h / 2.0f - uiPosition.y - 0.5f) * quad.metresPerPixel, 0);
-        glm::vec3 point = toGlm(quad.pose.position) + toGlm(quad.pose.orientation) * local - (_hudInRoom ? _hudHead : glm::vec3(0));
-        glm::vec3 direction = glm::normalize(point);
-        _hudCursor = glm::vec2(std::atan2(direction.x, -direction.z), std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
-        mouse->setPinnedPosition(hudPositionAt(_hudCursor->x, _hudCursor->y));
+        _hudCursor = hudAngles(quad, Vec2f(uiPosition.x + 0.5f, uiPosition.y + 0.5f));
+        placeHudCursor();
         return true;
     }
     return false;
+}
+
+void VrSystem::placeHudCursor() {
+    std::optional<Pointi> position = hudPositionAt(_hudCursor->x, _hudCursor->y);
+    _hudCursorOnPart = position.has_value();
+    mouse->setPinnedPosition(position.value_or(HUD_CURSOR_PARKED));
+}
+
+glm::vec2 VrSystem::hudAngles(const HudQuad &quad, Vec2f uiPoint) const {
+    glm::vec3 local((uiPoint.x - quad.frame.x - quad.frame.w / 2.0f) * quad.metresPerPixel,
+                    (quad.frame.y + quad.frame.h / 2.0f - uiPoint.y) * quad.metresPerPixel, 0);
+    glm::vec3 point = toGlm(quad.pose.position) + toGlm(quad.pose.orientation) * local - (_hudInRoom ? _hudHead : glm::vec3(0));
+    glm::vec3 direction = glm::normalize(point);
+    return glm::vec2(std::atan2(direction.x, -direction.z), std::asin(std::clamp(direction.y, -1.0f, 1.0f)));
+}
+
+std::pair<glm::vec2, glm::vec2> VrSystem::hudCursorBounds() const {
+    HudQuad viewport = _hudScreen;
+    viewport.rect = HUD_VIEWPORT;
+    std::vector<HudQuad> parts = _hudCards;
+    parts.push_back(viewport);
+    glm::vec2 low(std::numeric_limits<float>::max());
+    glm::vec2 high(std::numeric_limits<float>::lowest());
+    for (const HudQuad &quad : parts) {
+        for (int x : {quad.rect.x, quad.rect.x + quad.rect.w}) {
+            for (int y : {quad.rect.y, quad.rect.y + quad.rect.h}) {
+                glm::vec2 corner = hudAngles(quad, Vec2f(x, y));
+                low = glm::min(low, corner);
+                high = glm::max(high, corner);
+            }
+        }
+    }
+    return {low - HUD_CURSOR_MARGIN_RAD, high + HUD_CURSOR_MARGIN_RAD};
 }
 
 void VrSystem::steerHudCursor(bool on) {
@@ -616,9 +645,11 @@ void VrSystem::steerHudCursor(bool on) {
         if (!pointHudCursorAt(mouse->position()))
             pointHudCursorAt(HUD_VIEWPORT.center());
     } else {
-        // The system cursor comes back where the HUD's cursor was.
+        // The system cursor comes back where the HUD's cursor was, or in the middle of the viewport if that was away
+        // from the HUD's parts.
+        Pointi position = _hudCursorOnPart ? mouse->position() : HUD_VIEWPORT.center();
         _hudCursor.reset();
-        Pointi position = mouse->position();
+        _hudCursorOnPart = false;
         mouse->setPinnedPosition(std::nullopt);
         if (ProxyWindow::base()) {
             ProxyWindow::setMouseRelative(false);
@@ -626,6 +657,7 @@ void VrSystem::steerHudCursor(bool on) {
         }
     }
 }
+
 void VrSystem::recenter() {
     _recenterRequested = true;
 }
@@ -983,7 +1015,7 @@ void VrSystem::endFrame() {
         _frameStats.firstFrameTime = endTime;
     _frameStats.lastFrameTime = endTime;
     if (_frameState.shouldRender)
-        _frameStats.kinds[FrameKind{_layerReady, fading, _hudSpread, endInfo.layerCount}]++;
+        _frameStats.kinds[FrameKind{_layerReady, fading, _hudSpread, _hudCursorShown, endInfo.layerCount}]++;
 
     if (worldDrawn)
         _worldFrameCount++;
@@ -1051,6 +1083,7 @@ bool VrSystem::copyUi(std::vector<XrCompositionLayerQuad> *layers) {
     // The HUD only spreads around the world, which the main menu, also the game screen, doesn't have.
     bool wanted = engine->config->vr.HudLayout.value() == VR_HUD_LAYOUT_SPREAD && current_screen_type == SCREEN_GAME && _layerReady;
     bool spread = wanted && _maxLayerCount >= HUD_LAYER_COUNT;
+    _hudCursorShown = false;
     if (spread) {
         _uiAim.reset(); // The floating screen comes back in front of the head.
         _uiPose.reset();
@@ -1163,6 +1196,44 @@ bool VrSystem::spreadHud(std::vector<XrCompositionLayerQuad> *layers) {
                     swapchain.size.w, swapchain.size.h);
         }
     }
+
+    // The parts may have moved under the cursor. Away from them it hangs on top of everything on a quad of its own.
+    if (_hudCursor && mouse) {
+        placeHudCursor();
+        XrCompositionLayerQuad cursor;
+        if (!_hudCursorOnPart && drawHudCursor(quad, metresPerPixel, distance, &cursor)) {
+            layers->push_back(cursor);
+            _hudCursorShown = true;
+        }
+    }
+    return true;
+}
+
+bool VrSystem::drawHudCursor(const XrCompositionLayerQuad &base, float metresPerPixel, float distance, XrCompositionLayerQuad *layer) {
+    Sizei size(HUD_CURSOR_BOX.w * HUD_CARD_SCALE, HUD_CURSOR_BOX.h * HUD_CARD_SCALE);
+    uint32_t imageIndex = 0;
+    if (!ensureSwapchain(&_hudCursorQuad, size, "HUD cursor") || !acquireImage(&_hudCursorQuad, &imageIndex))
+        return false;
+    // The game's cursor waits off the screen, the box around it is drawn like a card.
+    Recti box(HUD_CURSOR_PARKED.x + HUD_CURSOR_BOX.x, HUD_CURSOR_PARKED.y + HUD_CURSOR_BOX.y, HUD_CURSOR_BOX.w, HUD_CURSOR_BOX.h);
+    render->beginUiCard(TextureRenderId(_hudCursorQuad.images[imageIndex]), size, box);
+    if (pParty->pPickedItem.itemId != ITEM_NULL) {
+        mouse->DrawPickedItem();
+    } else {
+        mouse->drawCursorImage();
+    }
+    render->endUiCard();
+    XrSwapchainImageReleaseInfo releaseInfo = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+    check(xrReleaseSwapchainImage(_hudCursorQuad.swapchain, &releaseInfo), "xrReleaseSwapchainImage");
+
+    // The hot spot in the middle of the quad, where the cursor points, facing the head.
+    glm::quat facing = glm::angleAxis(-_hudCursor->x, glm::vec3(0, 1, 0)) * glm::angleAxis(_hudCursor->y, glm::vec3(1, 0, 0));
+    glm::vec3 position = (_hudInRoom ? _hudHead : glm::vec3(0)) + facing * glm::vec3(0, 0, -distance);
+    *layer = base;
+    layer->pose = {{facing.x, facing.y, facing.z, facing.w}, {position.x, position.y, position.z}};
+    layer->size = {HUD_CURSOR_BOX.w * metresPerPixel, HUD_CURSOR_BOX.h * metresPerPixel};
+    layer->subImage.swapchain = _hudCursorQuad.swapchain;
+    layer->subImage.imageRect = {{0, 0}, {size.w, size.h}};
     return true;
 }
 
@@ -1217,7 +1288,7 @@ bool VrSystem::drawHudCards() {
 }
 
 Sizei VrSystem::swapchainSize(XrSwapchain swapchain) const {
-    for (const Swapchain *candidate : {&_ui, &_hudViewport, &_fade})
+    for (const Swapchain *candidate : {&_ui, &_hudViewport, &_hudCursorQuad, &_fade})
         if (candidate->swapchain == swapchain)
             return candidate->size;
     for (const Swapchain &card : _hudCardSwapchains)
@@ -1432,6 +1503,7 @@ void VrSystem::shutdown() {
     for (Swapchain &card : _hudCardSwapchains)
         destroySwapchain(&card);
     destroySwapchain(&_hudViewport);
+    destroySwapchain(&_hudCursorQuad);
     destroySwapchain(&_fade);
     for (XrSpace space : {_space, _viewSpace, _localSpace})
         if (space != XR_NULL_HANDLE)

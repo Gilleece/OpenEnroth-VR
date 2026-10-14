@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include <glm/gtc/quaternion.hpp> // NOLINT: not a C system header.
@@ -72,6 +73,7 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
         bool world = false; // The eyes' projection layer, drawn this frame or the last one drawn while it fades out.
         bool fade = false; // A black quad over the world fading out, after the world stopped being drawn.
         bool spreadHud = false; // The spread HUD instead of the single UI quad.
+        bool hudCursor = false; // The spread HUD's cursor on a quad of its own, away from the HUD's parts.
         uint32_t layers = 0;
 
         auto operator<=>(const FrameKind &) const = default;
@@ -145,10 +147,25 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
 
     /**
      * @param uiPosition                Position in the game's 640x480 layout.
-     * @return                          Whether the spread HUD shows it, on the viewport or a card. The cursor is kept
-     *                                  on those while the HUD is spread.
+     * @return                          Whether the spread HUD shows it, on the viewport or a card.
      */
     [[nodiscard]] bool hudShows(Pointi uiPosition) const;
+
+    /**
+     * @return                          Yaw and pitch in radians of the spread HUD's cursor while it steers it, for
+     *                                  tests. See `hudPositionAt`.
+     */
+    [[nodiscard]] std::optional<glm::vec2> hudCursorAngles() const {
+        return _hudCursor;
+    }
+
+    /**
+     * @return                          Whether the spread HUD's cursor is on its viewport or a card. Away from them
+     *                                  the game's cursor waits off the screen and clicks land nowhere.
+     */
+    [[nodiscard]] bool hudCursorOnPart() const {
+        return _hudCursor && _hudCursorOnPart;
+    }
 
  private:
     friend class PlatformIntrospection; // Give access to private bases.
@@ -191,6 +208,8 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     virtual bool grabsMouse() const override;
     virtual bool keyPressEvent(const PlatformKeyEvent *event) override;
     virtual bool mouseMoveEvent(const PlatformMouseEvent *event) override;
+    virtual bool mousePressEvent(const PlatformMouseEvent *event) override;
+    virtual bool mouseReleaseEvent(const PlatformMouseEvent *event) override;
 
     /**
      * @param yaw                       Radians to the right of straight ahead, from the head in the space the HUD
@@ -203,11 +222,43 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
 
     /**
      * Starts or stops the spread HUD's own cursor: the window's mouse goes into relative mode, and the cursor moves by
-     * angles over the parts of the HUD as they hang around the head, pinned to the game screen position under it.
+     * angles around the parts of the HUD as they hang around the head, pinned to the game screen position under it
+     * on a part.
      *
      * @param on                        Whether the spread HUD shows.
      */
     void steerHudCursor(bool on);
+
+    /**
+     * Pins the game's cursor to the position that the spread HUD shows under its own cursor, or parks it off the
+     * screen when no part of the HUD is there.
+     */
+    void placeHudCursor();
+
+    /**
+     * @param quad                      Viewport or card of the spread HUD.
+     * @param uiPoint                   Point of the game screen on it.
+     * @return                          Yaw and pitch in radians of that point from the head, see `hudPositionAt`.
+     */
+    glm::vec2 hudAngles(const HudQuad &quad, Vec2f uiPoint) const;
+
+    /**
+     * @return                          Lowest and highest yaw and pitch the spread HUD's cursor reaches, the corners
+     *                                  of the HUD's parts with a margin around them.
+     */
+    std::pair<glm::vec2, glm::vec2> hudCursorBounds() const;
+
+    /**
+     * Draws the spread HUD's cursor, or the item it holds, into a swapchain of its own, and hangs it where the cursor
+     * points at the cards' distance.
+     *
+     * @param base                      Layer to copy the space and flags from.
+     * @param metresPerPixel            Size of a pixel of the game screen on the cards.
+     * @param distance                  Distance of the cards in metres.
+     * @param[out] layer                Quad layer of the cursor.
+     * @return                          Whether it was drawn.
+     */
+    bool drawHudCursor(const XrCompositionLayerQuad &base, float metresPerPixel, float distance, XrCompositionLayerQuad *layer);
 
     /**
      * @param result                    Result of an OpenXR call.
@@ -395,6 +446,7 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     Swapchain _ui;
     std::vector<Swapchain> _hudCardSwapchains; // One per card of the spread HUD.
     Swapchain _hudViewport; // Overlay of the world viewport in the spread HUD.
+    Swapchain _hudCursorQuad; // The spread HUD's cursor, when it's away from the HUD's parts.
     Swapchain _fade; // Black at the opacity of the world's fade.
     std::optional<Vec2f> _uiPlacement; // Width and distance of the UI quad last logged.
     std::optional<UiAim> _uiAim; // Where the lazy UI quad goes, null until it's placed.
@@ -410,6 +462,9 @@ class VrSystem : private ProxyOpenGLContext, private ProxyWindow, private Platfo
     bool _hudInRoom = false; // Whether those are in the head origin space, rather than VIEW space.
     glm::vec3 _hudHead = glm::vec3(0); // Head position in the head origin space in that frame.
     std::optional<glm::vec2> _hudCursor; // Yaw and pitch of the spread HUD's cursor in radians, while it steers it.
+    bool _hudCursorOnPart = false; // Whether that's on the viewport or a card.
+    bool _hudCursorShown = false; // Whether the last frame hung it on a quad of its own.
+    PlatformMouseButtons _swallowedButtons; // Pressed while the cursor was away from the HUD's parts, released likewise.
     std::optional<std::array<float, 6>> _hudPlacement; // Settings the spread HUD was last logged with.
     int64_t _swapchainFormat = 0;
     bool _running = false;
