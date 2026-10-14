@@ -64,6 +64,7 @@ uniform sampler2D spriteShape; // RG normal, B depth with 0.5 on the sprite's pl
 uniform vec3 eyePosition;
 uniform vec3 parallaxOrigin; // Where the sprite is seen without parallax, the head between the eyes.
 uniform int depthPrepass; // Only the depth of the opaque parts is drawn.
+uniform int shapeColourPass; // The colour of the sprites the depth prepass drew, blended by alpha.
 uniform mat4 view;
 uniform mat4 projection;
 
@@ -149,18 +150,32 @@ void main() {
 #endif
 
 #ifdef SPRITE_DEPTH
-    if (depthPrepass != 0 && fragcol.a < 0.5)
-        discard;
+    if (depthPrepass != 0) {
+        if (fragcol.a < 0.5)
+            discard;
+        FragColour = vec4(0.0); // Only the depth is written, the colour below would go nowhere.
+        return;
+    }
 #endif
 
     fragcol *= colour;
 #ifdef SPRITE_LIGHTING
-    // The stock tint stays the light of a flat sprite, the shape's normals move that light around.
+    // Fetched while the whole quad of fragments still runs, so that the filtering sees the same derivatives.
     vec2 shapeNormal = texture(spriteShape, SpriteInset(spriteuv)).rg * 2.0 - 1.0;
-    vec3 surfaceNormal = normalize(shapeRight * sign(shapeSize.x) * shapeNormal.x + vec3(0.0, 0.0, 1.0) * shapeNormal.y +
-                                   spriteNormal * sqrt(max(1.0 - dot(shapeNormal, shapeNormal), 0.0)));
-    vec3 relight = SpriteLightSum(surfaceNormal, worldPos, toEye) / max(SpriteLightSum(spriteNormal, worldPos, toEye), vec3(0.05));
-    relight = shapeThickness > 0.0 ? clamp(relight, vec3(SPRITE_RELIGHT_MIN), vec3(SPRITE_RELIGHT_MAX)) : vec3(1.0);
+#endif
+#ifdef SPRITE_DEPTH
+    if (shapeColourPass != 0 && fragcol.a == 0.0)
+        discard; // Blended by alpha, a clear texel leaves the pixel as it is, so its lighting is skipped.
+#endif
+#ifdef SPRITE_LIGHTING
+    // The stock tint stays the light of a flat sprite, the shape's normals move that light around.
+    vec3 relight = vec3(1.0);
+    if (shapeThickness > 0.0) {
+        vec3 surfaceNormal = normalize(shapeRight * sign(shapeSize.x) * shapeNormal.x + vec3(0.0, 0.0, 1.0) * shapeNormal.y +
+                                       spriteNormal * sqrt(max(1.0 - dot(shapeNormal, shapeNormal), 0.0)));
+        relight = SpriteLightSum(surfaceNormal, worldPos, toEye) / max(SpriteLightSum(spriteNormal, worldPos, toEye), vec3(0.05));
+        relight = clamp(relight, vec3(SPRITE_RELIGHT_MIN), vec3(SPRITE_RELIGHT_MAX));
+    }
 #endif
 #ifdef SUN_SHADOWS
     fragcol.rgb *= sunlight;

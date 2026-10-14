@@ -3751,7 +3751,9 @@ void OpenGLRenderer::drawWorldBillboards() {
             glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
             glDepthMask(GL_FALSE);
             _billboardVertices = std::move(shapeVertices);
+            _billboardShapeColourPass = true;
             DrawBillboards();
+            _billboardShapeColourPass = false;
         }
     }
 
@@ -4019,6 +4021,7 @@ void OpenGLRenderer::DrawBillboards() {
         Vec3f origin = _worldBillboardQuadsBuilt ? _worldBillboardEye : _view.position; // The head, where the quads were built.
         glUniform3f(billbshader.uniformLocation("parallaxOrigin"), origin.x, origin.y, origin.z);
         glUniform1i(billbshader.uniformLocation("depthPrepass"), _billboardDepthPrepass);
+        glUniform1i(billbshader.uniformLocation("shapeColourPass"), _billboardShapeColourPass);
     }
     if (billbshader.hasDefine("SPRITE_LIGHTING"))
         _spriteLights.submit(billbshader);
