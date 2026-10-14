@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <string>
+#include <string_view>
 #include <exception>
 #include <mutex>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -20,6 +22,7 @@
 
 static constexpr int TEXTURE_PACK_FORMAT = 1;
 static constexpr int MAX_TEXTURE_PACK_SCALE = 4;
+static constexpr std::array<std::string_view, 6> PACK_FOLDERS = {"bitmaps", "icons", "normal/bitmaps", "roughness/bitmaps", "shape/sprites", "sprites"};
 
 template<class Entry>
 static std::unordered_map<std::string, Entry> lowercaseKeys(std::unordered_map<std::string, Entry> entries) {
@@ -120,6 +123,12 @@ TexturePack::TexturePack(const FileSystem *fs) : _fs(fs) {
     _manifest.icons = lowercaseKeys(std::move(_manifest.icons));
     _manifest.sprites = lowercaseKeys(std::move(_manifest.sprites));
     _manifest.gi = lowercaseKeys(std::move(_manifest.gi));
+
+    // The file system lists a folder the first time a path in it is read, most of a second for the sprite folders, and
+    // the pack opens before any frame is drawn.
+    for (std::string_view folder : PACK_FOLDERS)
+        if (_fs->exists(folder))
+            std::ignore = _fs->ls(folder);
 }
 
 TexturePack::~TexturePack() = default;
