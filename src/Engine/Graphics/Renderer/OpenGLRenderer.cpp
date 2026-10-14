@@ -34,6 +34,8 @@
 #include "Engine/Graphics/DecalBuilder.h"
 #include "Engine/Objects/Actor.h"
 #include "Engine/Objects/Decoration.h"
+#include "Engine/Tables/DecorationTable.h"
+#include "Engine/Data/DecorationData.h"
 #include "Engine/Graphics/LightsStack.h"
 #include "Engine/Graphics/Outdoor.h"
 #include "Engine/Graphics/Sprites.h"
@@ -44,6 +46,7 @@
 #include "Engine/Graphics/Viewport.h"
 #include "Engine/Graphics/Vis.h"
 #include "Engine/Graphics/Weather.h"
+#include "Engine/Graphics/FireEmitters.h"
 #include "Engine/Graphics/WindSway.h"
 #include "Engine/Graphics/WorldFrame.h"
 #include "Engine/Tables/TileTable.h"
@@ -117,6 +120,11 @@ static constexpr float CONTACT_SHADOW_LIFT = 6.0f; // World units above the floo
 static constexpr GLint WATER_NORMALS_TEXTURE_UNIT = 9; // After the terrain arrays, the material array and the sun shadow map.
 static constexpr GLint WATER_SHORE_TEXTURE_UNIT = 11; // After the sun shadow depths, outdoors only.
 static constexpr GLint WATER_AVERAGE_TEXTURE_UNIT = 20; // Past the indoor arrays on 0 to 15 and the units after them.
+static constexpr int FIRE_EMITTERS_MAX = 64; // The nearest burning decorations that throw particles.
+static constexpr float FIRE_EMITTER_REACH = 6144.0f; // Distance from the camera past which none do.
+static constexpr float FIRE_EMITTER_HALVED = 2048.0f; // Distance from the camera past which they throw half as many.
+static constexpr float FIRE_SOFT_DISTANCE = 8.0f; // World units in front of the level over which the particles fade out.
+static constexpr int FIRE_PARTICLE_PERIOD_MS = 3600000; // The particles' clock wraps after this, the sine hash loses precision on large inputs.
 static constexpr int WATER_SHORE_CELLS = 8; // Cells of the shore distance field along each side of a terrain tile.
 static constexpr float WATER_SHORE_RANGE = 2048.0f; // Distance from the shore where the field stops, as glterrain.frag has it.
 static constexpr int WATER_NORMALS_SIZE = 256;
@@ -2070,6 +2078,7 @@ void OpenGLRenderer::_readPipelineSettings() {
     _skyClouds = _linearPipeline && config->graphics.SkyClouds.value();
     _nightSky = _linearPipeline && config->graphics.NightSky.value();
     _waterShader = _linearPipeline && config->graphics.WaterShader.value();
+    _gpuParticles = _linearPipeline && config->graphics.GpuParticles.value();
     _filmicTonemap = _linearPipeline && config->graphics.FilmicTonemap.value();
     _eyeAdaptation = _filmicTonemap && config->graphics.EyeAdaptation.value();
 }
@@ -3901,6 +3910,7 @@ void OpenGLRenderer::drawWorldBillboards() {
 
     if (!_worldBillboardQuadsBuilt)
         buildWorldBillboardQuads(_view, SPRITE_FACING_VIEW_PLANE);
+    _prepareFireParticles();
     bool additive = false;
     for (int i = 0; i < uNumBillboardsToDraw && !additive; i++)
         additive = _worldBillboards[i].opacity != RenderBillboardD3D::Transparent;
@@ -3993,7 +4003,7 @@ void OpenGLRenderer::drawWorldBillboards() {
         }
     }
 
-    if (_linearPipeline && additive)
+    if (_linearPipeline && (additive || !_fireParticles.empty()))
         _copySceneDepth();
 
     for (int i = uNumBillboardsToDraw - 1; i >= 0; --i) {
@@ -4003,8 +4013,133 @@ void OpenGLRenderer::drawWorldBillboards() {
     }
 
     DrawBillboards();
+    _drawFireParticles();
 
     glDepthMask(GL_TRUE);
+}
+
+void OpenGLRenderer::_prepareFireParticles() {
+    if (_fireParticleFrame == _frameNumber)
+        return;
+    _fireParticleFrame = _frameNumber;
+    _fireParticleTime = static_cast<float>(platform->tickCount() % FIRE_PARTICLE_PERIOD_MS) / 1000.0f;
+    _fireParticles.clear();
+    _fireSmokeCount = 0;
+    if (!_gpuParticles || (uCurrentlyLoadedLevelType != LEVEL_OUTDOOR && uCurrentlyLoadedLevelType != LEVEL_INDOOR))
+        return;
+
+    // The nearest burning decorations, the same for every view of the frame.
+    Vec3f camera(pCamera3D->vCameraPos.x, pCamera3D->vCameraPos.y, pCamera3D->vCameraPos.z);
+    std::vector<std::pair<float, int>> emitters;
+    for (int i = 0; i < static_cast<int>(pLevelDecorations.size()); i++) {
+        const LevelDecoration &decoration = pLevelDecorations[i];
+        if (decoration.uFlags & LEVEL_DECORATION_INVISIBLE || !fireEmitterProfile(decoration.uDecorationDescID))
+            continue;
+        float distance = (decoration.vPosition - camera).length();
+        if (distance < FIRE_EMITTER_REACH)
+            emitters.emplace_back(distance, i);
+    }
+    int count = std::min(static_cast<int>(emitters.size()), FIRE_EMITTERS_MAX);
+    std::partial_sort(emitters.begin(), emitters.begin() + count, emitters.end());
+
+    // Smoke first, it's drawn blended over the scene, then the flames and sparks that add their light.
+    for (int pass = 0; pass < 2; pass++) {
+        for (int e = 0; e < count; e++) {
+            const LevelDecoration &decoration = pLevelDecorations[emitters[e].second];
+            const DecorationData *desc = pDecorationTable->decoration(decoration.uDecorationDescID);
+            const FireEmitterProfile &profile = *fireEmitterProfile(decoration.uDecorationDescID);
+            const SpriteFrame *frame = pSpriteFrameTable->GetFrame(desc->uSpriteID, Duration());
+            float height = frame->sprites[0] ? frame->sprites[0]->uHeight * frame->scale : desc->uDecorationHeight;
+            Vec3f origin = decoration.vPosition + Vec3f(0, 0, profile.height * height);
+            float share = emitters[e].first > FIRE_EMITTER_HALVED ? 0.5f : 1.0f;
+            auto add = [&](int kind, int number) {
+                number = std::max(1, static_cast<int>(number * share));
+                for (int i = 0; i < number; i++) {
+                    FireParticle &particle = _fireParticles.emplace_back();
+                    particle.origin = origin;
+                    particle.kind = static_cast<float>(kind);
+                    particle.phase = static_cast<float>(i) / number;
+                    particle.seed = static_cast<float>(emitters[e].second * 131 + kind * 37 + i);
+                    particle.flameSize = profile.flameSize;
+                    particle.flame = profile.flame;
+                    particle.spread = profile.spread;
+                }
+            };
+            if (pass == 0) {
+                add(2, profile.smoke);
+            } else {
+                add(0, profile.flames);
+                add(1, profile.sparks);
+            }
+        }
+        if (pass == 0)
+            _fireSmokeCount = static_cast<int>(_fireParticles.size());
+    }
+
+    if (!_fireParticleVao) {
+        glGenVertexArrays(1, &_fireParticleVao);
+        glGenBuffers(1, &_fireParticleVbo);
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, _fireParticleVbo);
+    glBufferData(GL_ARRAY_BUFFER, _fireParticles.size() * sizeof(FireParticle), _fireParticles.data(), GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void OpenGLRenderer::_bindFireParticles(int first) {
+    glBindVertexArray(_fireParticleVao);
+    glBindBuffer(GL_ARRAY_BUFFER, _fireParticleVbo);
+    size_t base = first * sizeof(FireParticle);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, origin)));
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, kind)));
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(FireParticle), reinterpret_cast<void *>(base + offsetof(FireParticle, flame)));
+    for (GLuint attribute : {0u, 1u, 2u}) {
+        glEnableVertexAttribArray(attribute);
+        glVertexAttribDivisor(attribute, 1);
+    }
+}
+
+void OpenGLRenderer::_drawFireParticles() {
+    if (_fireParticles.empty())
+        return;
+
+    fireparticleshader.use();
+    glUniformMatrix4fv(fireparticleshader.uniformLocation("view"), 1, GL_FALSE, &viewmat[0][0]);
+    glUniformMatrix4fv(fireparticleshader.uniformLocation("projection"), 1, GL_FALSE, &projmat[0][0]);
+    glUniform1f(fireparticleshader.uniformLocation("time"), _fireParticleTime);
+    glUniform2f(fireparticleshader.uniformLocation("windDirection"), WIND_DIRECTION.x, WIND_DIRECTION.y);
+    float ambient = uCurrentlyLoadedLevelType == LEVEL_OUTDOOR ? 0.15f + 0.75f * _skyState().daylight : 0.12f;
+    glUniform3f(fireparticleshader.uniformLocation("smokeAmbient"), ambient, ambient, ambient);
+    if (fireparticleshader.hasDefine("LINEAR_PIPELINE")) {
+        glActiveTexture(GL_TEXTURE0 + SCENE_DEPTH_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, _sceneDepthCopied ? _sceneDepthTexture : 0);
+        glActiveTexture(GL_TEXTURE0);
+        glUniform1i(fireparticleshader.uniformLocation("sceneDepth"), SCENE_DEPTH_TEXTURE_UNIT);
+        glUniform4f(fireparticleshader.uniformLocation("sceneViewport"), _sceneDepthViewport.x, _sceneDepthViewport.y, _sceneDepthViewport.w, _sceneDepthViewport.h);
+        glUniform2f(fireparticleshader.uniformLocation("sceneProjection"), projmat[2][2], projmat[3][2]);
+        glUniform1f(fireparticleshader.uniformLocation("softDistance"), _sceneDepthCopied ? FIRE_SOFT_DISTANCE : 0.0f);
+    }
+
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    if (_fireSmokeCount > 0) {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glUniform1i(fireparticleshader.uniformLocation("additive"), 0);
+        _bindFireParticles(0);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, _fireSmokeCount);
+        drawcalls++;
+    }
+    int glowing = static_cast<int>(_fireParticles.size()) - _fireSmokeCount;
+    if (glowing > 0) {
+        glBlendFunc(GL_ONE, GL_ONE);
+        glUniform1i(fireparticleshader.uniformLocation("additive"), 1);
+        _bindFireParticles(_fireSmokeCount);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, 6, glowing);
+        drawcalls++;
+    }
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    fireparticleshader.unuse();
 }
 
 void OpenGLRenderer::drawWorldProjectile(Vec3f src, Vec3f dst, GraphicsImage *texture) {
@@ -5690,6 +5825,7 @@ bool OpenGLRenderer::ReloadShaders() {
         {&decalshader,            "gldecalshader",    "Decals",                           worldDefines},
         {&forcepershader,         "glforcepershader", "Forced perspective",               worldDefines},
         {&skyshader,              "glskyshader",      "Sky",                              skyDefines},
+        {&fireparticleshader,     "glfireparticles",  "Fire particles",                   worldDefines},
         {&compositeshader,        "glcomposite",      "Composite",                        compositeDefines},
         {&luminanceshader,        "glluminance",      "Luminance",                        {}},
         {&adaptshader,            "glluminance",      "Eye adaptation",                   adaptDefines},

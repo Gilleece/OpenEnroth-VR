@@ -10,6 +10,7 @@ set(ENGINE_GRAPHICS_SOURCES
         ClippingFunctions.cpp
         Collisions.cpp
         DecalBuilder.cpp
+        FireEmitters.cpp
         FrameLimiter.cpp
         GiBaker.cpp
         Image.cpp
@@ -41,6 +42,7 @@ set(ENGINE_GRAPHICS_HEADERS
         Collisions.h
         DecalBuilder.h
         FaceEnums.h
+        FireEmitters.h
         FrameLimiter.h
         GiBaker.h
         Image.h

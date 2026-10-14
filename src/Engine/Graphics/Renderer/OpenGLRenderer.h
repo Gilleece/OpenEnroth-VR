@@ -518,6 +518,25 @@ class OpenGLRenderer : public BaseRenderer {
     void _ensureWaterShore();
 
     /**
+     * Gathers the particles of the burning decorations nearest the camera into `_fireParticles` and uploads them, once
+     * a frame.
+     */
+    void _prepareFireParticles();
+
+    /**
+     * Points the particle attributes at `_fireParticles` from a particle on, one particle per instance.
+     *
+     * @param first                     Index of the first particle to draw.
+     */
+    void _bindFireParticles(int first);
+
+    /**
+     * Draws `_fireParticles` into the world: the smoke blended over the scene, the flames and sparks added to it, all
+     * fading where they meet the level behind them.
+     */
+    void _drawFireParticles();
+
+    /**
      * Binds the torch shadow maps and sets the uniforms `torchshadow.glsl` reads. Does nothing for programs compiled
      * without `TORCH_SHADOWS`.
      *
@@ -574,6 +593,7 @@ class OpenGLRenderer : public BaseRenderer {
     OpenGLShader shadowshader;
     OpenGLShader shadowspriteshader;
     OpenGLShader torchshadowshader;
+    OpenGLShader fireparticleshader;
     OpenGLShader contactshadowshader;
     OpenGLShader aodepthshader;
     OpenGLShader aoshader;
@@ -673,6 +693,21 @@ class OpenGLRenderer : public BaseRenderer {
 
     // linear pipeline sky and water
     GLuint _waterNormals = 0; // Tiling normal map of small waves.
+    struct FireParticle {
+        Vec3f origin;
+        float kind; // 0 flame, 1 spark, 2 smoke, as `glfireparticles.vert` has them.
+        float phase;
+        float seed;
+        float flameSize;
+        Vec3f flame;
+        float spread;
+    };
+    std::vector<FireParticle> _fireParticles; // Smoke first, then the flames and sparks.
+    int _fireSmokeCount = 0;
+    uint64_t _fireParticleFrame = UINT64_MAX; // Frame `_fireParticles` were gathered in.
+    float _fireParticleTime = 0; // Seconds on the particles' clock, taken once a frame so that both eyes see the same particles.
+    GLuint _fireParticleVao = 0;
+    GLuint _fireParticleVbo = 0;
     GLuint _waterShore = 0; // Distance from the shore of every point of the map's water, `WATER_SHORE_CELLS` texels a tile.
     GLuint _waterAverageSampler = 0; // Reads the smallest mip level of a texture array that has its mip levels off.
     GraphicsImage *_skyAverageTexture = nullptr;
@@ -785,6 +820,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _skyClouds = false; // Same for the sky shader.
     bool _nightSky = false; // Same.
     bool _waterShader = false; // Same for the terrain, building and indoor shaders.
+    bool _gpuParticles = false; // Whether burning decorations throw particles.
     uint64_t _windFrame = UINT64_MAX; // Frame `_windTime` was taken in.
     float _windTime = 0;
     bool _filmicTonemap = false; // Same for the composite shader.

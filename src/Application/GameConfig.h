@@ -520,7 +520,7 @@ class GameConfig : public Config {
         Bool Enhanced = {this, "enhanced", false,
                          "Turn on the enhanced renderer: linear_pipeline, filmic_tonemap, eye_adaptation, bloom, FXAA, sun_shadows "
                          "with the soft shadow_filter, torch_shadows for 16 lights, ambient_occlusion, terrain_variation, global_illumination, "
-                         "sky_ambient, world_space_billboards, wind_sway, night_sky, sky_clouds, water_shader and a ui_scale of 2, with the 3D world "
+                         "sky_ambient, world_space_billboards, wind_sway, night_sky, sky_clouds, water_shader, gpu_particles and a ui_scale of 2, with the 3D world "
                          "drawn at the window's resolution. The UI scale changes on restart. Entries that are set in this file, not "
                          "commented out, take precedence over it."};
         Bool LinearPipeline = {this, "linear_pipeline", false,
@@ -579,6 +579,9 @@ class GameConfig : public Config {
         Bool SkyClouds = {this, "sky_clouds", false,
                           "Draw the sky outdoors with drifting clouds lit by the sun in place of the painted sky bitmaps, keeping"
                           " their colour. Only applies with linear_pipeline."};
+        Bool GpuParticles = {this, "gpu_particles", false,
+                             "Let camp fires, torches and beacon fires throw flames, sparks and smoke that drift with the wind, on top"
+                             " of their sprites. Only applies with linear_pipeline and world_space_billboards."};
         Bool WaterShader = {this, "water_shader", false,
                             "Draw the sea, lakes and indoor pools with a water shader: deep away from the shore and lighter in the"
                             " shallows, foam where waves break on the shore, three sizes of waves reflecting the sky, and the sun's"
