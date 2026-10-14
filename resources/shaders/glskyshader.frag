@@ -168,7 +168,8 @@ void main() {
         float light = clamp(0.6 - (towardsSunDensity - density * 0.75) * 4.0, 0.0, 1.0);
         // Clouds near a low sun glow with its colour, light passing through them towards the eye.
         float glow = pow(towardsSun, 8.0) * low * 2.0;
-        vec3 cloud = sky * 0.75 + SunColour() * sunVisibility * (mix(0.25, 1.1, light) + glow);
+        float tint = dot(colour.rgb, vec3(0.2126, 0.7152, 0.0722)); // The sky's own dimming towards dusk, 1 by day.
+        vec3 cloud = sky * 0.75 + SunColour() * sunVisibility * tint * (mix(0.25, 1.1, light) + glow);
         sky = mix(sky, cloud, cover * exp(-cloudDistance / CLOUD_FADE));
     }
 #endif
