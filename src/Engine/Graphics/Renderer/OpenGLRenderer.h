@@ -83,6 +83,7 @@ class OpenGLRenderer : public BaseRenderer {
 
     virtual TextureRenderId CreateTexture(RgbaImageView image, TextureFilter filter) override;
     virtual void updateTexture(TextureRenderId id, RgbaImageView image) override;
+    virtual TextureRenderId createMipmappedTexture(RgbaImageView image, std::span<const RgbaImage> mips) override;
     virtual void DeleteTexture(TextureRenderId id) override;
 
     virtual void BeginScene2D() override;

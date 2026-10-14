@@ -333,6 +333,13 @@ class Renderer {
      */
     virtual void updateTexture(TextureRenderId id, RgbaImageView image) = 0;
 
+    /**
+     * @param image                     Top level of the texture.
+     * @param mips                      The levels below it, each half the size of the one above, down to 1x1.
+     * @return                          A mipmapped texture made from the given levels.
+     */
+    virtual TextureRenderId createMipmappedTexture(RgbaImageView image, std::span<const RgbaImage> mips) = 0;
+
     virtual void DeleteTexture(TextureRenderId id) = 0;
 
     virtual void BeginScene2D() = 0;
@@ -413,6 +420,25 @@ class Renderer {
      * getting them. Does nothing otherwise.
      */
     virtual void presentHeldFrame() = 0;
+
+    /**
+     * Turns the texture pack images that the world's sprites are drawn with into textures, as far as this frame's share
+     * of time allows, once their decoding off the game thread is done. While a headset paces the frames, sprites whose
+     * images aren't ready keep their last side for a few frames, or are drawn from the stock sprite, and their images
+     * are decoded in the background. Call once a frame, before the world is prepared. Does nothing otherwise.
+     */
+    virtual void installDecodedImages() = 0;
+
+    /**
+     * Drops the images queued for decoding and waits for the ones being decoded. Call before freeing images.
+     */
+    virtual void flushImageDecodes() = 0;
+
+    /**
+     * Logs how the sprite images of the level loaded before this one kept up, if nothing has yet, and starts counting
+     * for the level being loaded. Call when a level load starts.
+     */
+    virtual void beginLevelImageStats() = 0;
 
     virtual void DrawTwodVerts() = 0;
 

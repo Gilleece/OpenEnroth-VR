@@ -12,6 +12,7 @@
 #include "Library/Image/Palette.h"
 
 class ImageLoader;
+struct DecodedReplacement;
 
 class GraphicsImage {
  public:
@@ -66,6 +67,31 @@ class GraphicsImage {
 
     [[nodiscard]] TextureRenderId renderId();
     void releaseRenderId();
+
+    /**
+     * @return                          Whether the image has its texture on the GPU, so that `renderId()` returns at
+     *                                  once.
+     */
+    [[nodiscard]] bool hasRenderId() const {
+        return static_cast<bool>(_renderId);
+    }
+
+    /**
+     * Decodes the image's texture pack replacement and material through its loader, with the replacement's mip
+     * levels when it's scaled up. Touches nothing else of the image, so it can run on another thread while the image
+     * is in use, as long as the loader is safe to call from there.
+     *
+     * @return                          The decoded replacement, without `image` set.
+     */
+    [[nodiscard]] DecodedReplacement decodeReplacement() const;
+
+    /**
+     * Takes a replacement that `decodeReplacement` decoded and makes the image's texture from it, unless the image has
+     * one already.
+     *
+     * @param decoded                   Replacement of this image.
+     */
+    void installReplacement(DecodedReplacement decoded);
 
  private:
     GraphicsImage();

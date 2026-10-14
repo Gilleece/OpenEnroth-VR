@@ -13,6 +13,7 @@ set(ENGINE_GRAPHICS_SOURCES
         FrameLimiter.cpp
         GiBaker.cpp
         Image.cpp
+        ImageDecodeQueue.cpp
         ImageLoader.cpp
         Indoor.cpp
         Lighting.cpp
@@ -43,6 +44,7 @@ set(ENGINE_GRAPHICS_HEADERS
         FrameLimiter.h
         GiBaker.h
         Image.h
+        ImageDecodeQueue.h
         ImageLoader.h
         Indoor.h
         Lighting.h
@@ -87,7 +89,8 @@ target_link_libraries(engine_graphics
 
 if(OE_BUILD_TESTS)
     set(TEST_ENGINE_GRAPHICS_SOURCES
-            Tests/CameraView_ut.cpp)
+            Tests/CameraView_ut.cpp
+            Tests/ImageDecodeQueue_ut.cpp)
 
     add_library(test_engine_graphics OBJECT ${TEST_ENGINE_GRAPHICS_SOURCES})
     target_link_libraries(test_engine_graphics PUBLIC testing_unit engine_graphics)

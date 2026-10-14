@@ -8,6 +8,7 @@
 #include "Engine/Engine.h"
 #include "Engine/Graphics/ImageLoader.h"
 #include "Engine/Graphics/Image.h"
+#include "Engine/Graphics/Renderer/Renderer.h"
 #include "Engine/Resources/LodSpriteCache.h"
 #include "Engine/Resources/ResourceManager.h"
 
@@ -47,6 +48,8 @@ AssetsManager::~AssetsManager() = default;
 
 void AssetsManager::releaseAllTextures() {
     MM_TRACE("Render - Releasing Textures.");
+    if (render)
+        render->flushImageDecodes();
     // clears any textures from gpu
     for (auto *cache : {&images, &bitmaps, &sprites, &spriteShapes})
         for (const auto &[name, image] : *cache)
@@ -63,6 +66,8 @@ void AssetsManager::releaseImage(GraphicsImage *image) {
         auto pos = cache->find(image->name());
         if (pos != cache->end() && pos->second.get() == image) {
             if (cache == &sprites) {
+                if (render)
+                    render->flushImageDecodes();
                 spriteVariants.erase(image->name());
                 spriteShapes.erase(image->name());
             }
