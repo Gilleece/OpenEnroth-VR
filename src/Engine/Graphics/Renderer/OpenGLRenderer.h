@@ -623,6 +623,7 @@ class OpenGLRenderer : public BaseRenderer {
     bool _eyeAdaptation = false; // Same.
     SpriteLightUniforms _spriteLights; // Lights of the level pass in the current view.
     bool _billboardDepthPrepass = false; // `DrawBillboards` only writes the depth of the sprites' opaque parts.
+    bool _billboardShapeColourPass = false; // `DrawBillboards` draws the colour of the sprites of the depth prepass.
     int _uiScale = 1; // UI target pixels per UI coordinate, decided once at startup.
     bool _externalFramePacing = false;
 };
