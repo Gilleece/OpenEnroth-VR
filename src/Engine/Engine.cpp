@@ -145,6 +145,7 @@ void Engine::drawWorld() {
         render->DrawBillboards_And_MaybeRenderSpecialEffects_And_EndScene();
         }*/
     } else {
+        render->installDecodedImages();
         render->BeginScene3D(CameraView::fromCamera3D(*pCamera3D, render->worldTargetViewport()));
         render->resetBillboardRenderList(); // Picking reads the previous frame's list up to this point.
         bool cullingCameraMoved = _worldFrameViews && _worldFrameViews->aimCullingCamera();
@@ -717,6 +718,7 @@ void PrepareWorld(int _0_box_loading_1_fullscreen) {
 
 //----- (00464866) --------------------------------------------------------
 void DoPrepareWorld(bool bLoading, int _1_fullscreen_loading_2_box) {
+    render->beginLevelImageStats();
     engine->ResetCursor_Palettes_LODs_Level_Audio_SFT_Windows();
     pGameLoadingUI_ProgressBar->Initialize(_1_fullscreen_loading_2_box == 1 ? GUIProgressBar::TYPE_Fullscreen : GUIProgressBar::TYPE_Box);
 

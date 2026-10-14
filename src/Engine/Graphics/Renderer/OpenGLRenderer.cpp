@@ -260,6 +260,28 @@ static float maxTextureAnisotropy() {
 }
 
 /**
+ * @return                              Whether the driver has `glTexStorage2D`, which is core from OpenGL 4.2 and comes
+ *                                      with `GL_ARB_texture_storage` before that.
+ */
+static bool hasTextureStorage() {
+    GLint major = 0;
+    GLint minor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+    if (major > 4 || (major == 4 && minor >= 2))
+        return true;
+
+    GLint count = 0;
+    glGetIntegerv(GL_NUM_EXTENSIONS, &count);
+    for (GLint i = 0; i < count; i++) {
+        const char *name = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, i));
+        if (name && std::string_view(name) == "GL_ARB_texture_storage")
+            return true;
+    }
+    return false;
+}
+
+/**
  * Switches the bound texture to `TEXTURE_FILTER_MIPMAPPED`.
  *
  * @param target                        Target the texture is bound to. Its mipmaps must already be generated.
@@ -905,6 +927,7 @@ void OpenGLRenderer::setViewportMirror(TextureRenderId colorTexture, Sizei size)
 
 void OpenGLRenderer::setExternalFramePacing(bool external) {
     _externalFramePacing = external;
+    setAsyncImages(external && engine->resources()->hasTexturePack());
 }
 
 /**
@@ -2775,6 +2798,33 @@ TextureRenderId OpenGLRenderer::CreateTexture(RgbaImageView image, TextureFilter
     return TextureRenderId(glId);
 }
 
+TextureRenderId OpenGLRenderer::createMipmappedTexture(RgbaImageView image, std::span<const RgbaImage> mips) {
+    assert(image);
+
+    GLuint glId;
+    glGenTextures(1, &glId);
+    glBindTexture(GL_TEXTURE_2D, glId);
+    if (glad_glTexStorage2D) {
+        glTexStorage2D(GL_TEXTURE_2D, mips.size() + 1, GL_RGBA8, image.width(), image.height());
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image.width(), image.height(), GL_RGBA, GL_UNSIGNED_BYTE, image.pixels().data());
+        for (size_t i = 0; i < mips.size(); i++)
+            glTexSubImage2D(GL_TEXTURE_2D, i + 1, 0, 0, mips[i].width(), mips[i].height(), GL_RGBA, GL_UNSIGNED_BYTE, mips[i].pixels().data());
+    } else {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mips.size());
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, image.width(), image.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, image.pixels().data());
+        for (size_t i = 0; i < mips.size(); i++)
+            glTexImage2D(GL_TEXTURE_2D, i + 1, GL_RGBA8, mips[i].width(), mips[i].height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, mips[i].pixels().data());
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    setMipmappedFilter(GL_TEXTURE_2D);
+    _mipmappedTextures.insert(glId);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return TextureRenderId(glId);
+}
+
 void OpenGLRenderer::updateTexture(TextureRenderId id, RgbaImageView image) {
     assert(id && image);
 
@@ -3735,8 +3785,12 @@ void OpenGLRenderer::DoRenderBillboards_D3D() {
 float OpenGLRenderer::billboardTextureId(GraphicsImage *texture, int *paletteId) {
     if (texture) {
         if (GraphicsImage *variant = assets->getSpriteVariant(texture, *paletteId)) {
-            texture = variant;
-            *paletteId = 0; // The variant has the palette applied.
+            if (!_imageDecodes || variant->hasRenderId()) {
+                texture = variant;
+                *paletteId = 0; // The variant has the palette applied.
+            } else {
+                _imageDecodes->request(variant); // Drawn from the stock sprite until it's ready.
+            }
         }
         return texture->renderId().value();
     }
@@ -5332,6 +5386,10 @@ void OpenGLRenderer::Initialize() {
         version = gladLoadGLES2UserPtr(gladLoadFunc, openGLContext);
     else
         version = gladLoadGLUserPtr(gladLoadFunc, openGLContext);
+
+    // The loader stops at OpenGL 4.1, glTexStorage2D came in 4.2.
+    if (version && !OpenGLES && hasTextureStorage())
+        glad_glTexStorage2D = reinterpret_cast<PFNGLTEXSTORAGE2DPROC>(gladLoadFunc(openGLContext, "glTexStorage2D"));
 
     auto glGetStringSafe = [] (int id) {
         // Need this wrapper b/c glGetString can return nullptr, actually happens under OpenGL 1.1 when called for

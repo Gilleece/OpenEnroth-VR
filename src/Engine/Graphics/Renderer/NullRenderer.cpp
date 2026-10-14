@@ -97,6 +97,10 @@ TextureRenderId NullRenderer::CreateTexture(RgbaImageView image, TextureFilter f
 
 void NullRenderer::updateTexture(TextureRenderId id, RgbaImageView image) {}
 
+TextureRenderId NullRenderer::createMipmappedTexture(RgbaImageView image, std::span<const RgbaImage> mips) {
+    return TextureRenderId(1);
+}
+
 void NullRenderer::DeleteTexture(TextureRenderId id) {}
 
 void NullRenderer::BeginScene2D() {}

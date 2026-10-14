@@ -8,10 +8,14 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
+#include "Engine/Graphics/ImageDecodeQueue.h"
 #include "Engine/Graphics/ImageLoader.h"
 #include "Engine/Graphics/Renderer/Renderer.h"
+
+#include "Library/Image/ImageFunctions.h"
 
 static bool isPowerOfTwoMultiple(Sizei scaled, Sizei size) {
     if (size.w == 0 || scaled.w % size.w != 0)
@@ -149,6 +153,37 @@ const std::string &GraphicsImage::name() {
         _renderId = render->CreateTexture(textureRgba(), textureScale() > 1 ? TEXTURE_FILTER_MIPMAPPED : TEXTURE_FILTER_LINEAR);
 
     return _renderId;
+}
+
+DecodedReplacement GraphicsImage::decodeReplacement() const {
+    DecodedReplacement result;
+    if (!_loader)
+        return result;
+
+    result.texture = _loader->loadTextureRgba();
+    Sizei size = _loader->loadSize();
+    result.material = _loader->loadMaterialRgba(result.texture ? result.texture.size() : size);
+    if (result.texture && result.texture.width() > size.w) {
+        result.mips.push_back(downscaleHalf(result.texture));
+        while (result.mips.back().width() > 1 || result.mips.back().height() > 1)
+            result.mips.push_back(downscaleHalf(result.mips.back()));
+    }
+    return result;
+}
+
+void GraphicsImage::installReplacement(DecodedReplacement decoded) {
+    if (!_textureRgba)
+        _textureRgba = std::move(decoded.texture);
+    if (!_materialRgba)
+        _materialRgba = std::move(decoded.material);
+    if (_renderId)
+        return;
+
+    if (!decoded.mips.empty() && *_textureRgba) {
+        _renderId = render->createMipmappedTexture(*_textureRgba, decoded.mips);
+    } else {
+        std::ignore = renderId();
+    }
 }
 
 void GraphicsImage::releaseRenderId() {

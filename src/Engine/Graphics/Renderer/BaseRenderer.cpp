@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <memory>
+#include <optional>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -125,6 +128,7 @@ static void showSpriteSide(WorldBillboard *billboard, const Sprite *sprite, bool
     if (mirrored)
         halfWidth = -halfWidth;
     billboard->texture = sprite->texture;
+    billboard->sprite = sprite;
     billboard->facing = {{{-halfWidth, height}, {-halfWidth, 0}, {halfWidth, 0}, {halfWidth, height}}};
     billboard->sideExtent = Vec2f(halfWidth, height);
     billboard->shape = nullptr;
@@ -136,6 +140,10 @@ static void showSpriteSide(WorldBillboard *billboard, const Sprite *sprite, bool
     }
 }
 
+static constexpr int IMAGE_DECODE_WORKERS = 2; // Threads that decode sprite images in a headset, few enough to leave the GL driver's thread its cores.
+static constexpr auto IMAGE_INSTALL_BUDGET = std::chrono::microseconds(2000); // Frame time that decoded images may take to become textures.
+static constexpr int64_t SPRITE_HOLD_FRAMES = 4; // Frames an object may keep its last side while the side it should show waits for its images.
+static constexpr int64_t IMAGE_STATS_FRAMES = 900; // Frames after a level load that `logImageStats` reports on.
 static constexpr float SPRITE_CROSSFADE_BAND = 10.0f / 45.0f; // Part of a side's 45 degrees, on each side of a boundary, where it blends with the next.
 static constexpr int SPRITE_SIDE_HYSTERESIS = 16; // How far past a boundary a side is kept, of the 256 angle units in a side, about 3 degrees.
 static constexpr int SPRITE_SIDE_ANGLE = 256; // Angle units in each of a sprite frame's 8 sides.
@@ -184,6 +192,143 @@ void BaseRenderer::addSpriteSideImages(const SpriteFrame *frame, Vec3f pos, int 
     float position = angleIntoSide(angle, octant) / static_cast<float>(SPRITE_SIDE_ANGLE);
     if (std::min(position, 1.0f - position) < SPRITE_CROSSFADE_BAND)
         add(position < 0.5f ? (octant + 7) & 7 : (octant + 1) & 7);
+}
+
+void BaseRenderer::setAsyncImages(bool async) {
+    if (async == static_cast<bool>(_imageDecodes))
+        return;
+
+    if (async) {
+        _imageDecodes = std::make_unique<ImageDecodeQueue>(IMAGE_DECODE_WORKERS);
+    } else {
+        _imageDecodes.reset();
+    }
+    _heldSpriteSides.clear();
+}
+
+void BaseRenderer::installDecodedImages() {
+    if (!_imageDecodes)
+        return;
+
+    auto start = std::chrono::steady_clock::now();
+    while (std::optional<DecodedReplacement> decoded = _imageDecodes->take()) {
+        GraphicsImage *image = decoded->image;
+        _imageStats.decodeMs += decoded->decodeMs;
+        image->installReplacement(std::move(*decoded));
+        _imageStats.decoded++;
+        if (std::chrono::steady_clock::now() - start >= IMAGE_INSTALL_BUDGET)
+            break;
+    }
+
+    if (!_imageStats.logged && _spriteSideFrame - _imageStats.startFrame >= IMAGE_STATS_FRAMES)
+        logImageStats();
+}
+
+void BaseRenderer::flushImageDecodes() {
+    if (_imageDecodes)
+        _imageDecodes->flush();
+}
+
+void BaseRenderer::beginLevelImageStats() {
+    if (_imageDecodes && !_imageStats.logged)
+        logImageStats();
+    _imageStats = SpriteImageStats();
+    _imageStats.startFrame = _spriteSideFrame;
+    _heldSpriteSides.clear();
+}
+
+void BaseRenderer::logImageStats() {
+    _imageStats.logged = true;
+    if (_imageStats.waits == 0 && _imageStats.decoded == 0)
+        return;
+    MM_INFO("VR: after the level load {} sprite sides waited for their images, {} kept their last side for up to {} frames, {} were drawn "
+            "from the stock sprite, the longest wait was {} frames, {} images were decoded in {:.1f} s of worker time.", _imageStats.waits,
+            _imageStats.held, _imageStats.longestHold, _imageStats.stock, _imageStats.longestWait, _imageStats.decoded,
+            _imageStats.decodeMs / 1000);
+}
+
+bool BaseRenderer::spriteImagesReady(GraphicsImage *texture, int paletteId, GraphicsImage *shape) {
+    bool ready = true;
+    for (GraphicsImage *image : {assets->getSpriteVariant(texture, paletteId), shape}) {
+        if (image && !image->hasRenderId()) {
+            _imageDecodes->request(image);
+            ready = false;
+        }
+    }
+    return ready;
+}
+
+void BaseRenderer::showSpriteSideAlone(WorldBillboard *billboard, const Sprite *sprite, bool mirrored, bool withShape) {
+    billboard->texcoords = {{{0, 0}, {0, 1}, {1, 1}, {1, 0}}};
+    showSpriteSide(billboard, sprite, mirrored);
+    if (!withShape) {
+        billboard->shape = nullptr;
+        billboard->shapeThickness = 0;
+    }
+    billboard->crossfadeTexture = nullptr;
+    billboard->crossfade = 0;
+    fitSpriteQuad(billboard, Vec2f());
+}
+
+void BaseRenderer::prefetchNextSpriteFrame(const WorldBillboard &billboard) {
+    if (!billboard.frame || !(billboard.frame->flags & SPRITE_FRAME_HAS_MORE))
+        return;
+    const Sprite *next = (billboard.frame + 1)->sprites[billboard.octant]; // An animation's frames follow each other in the table.
+    if (!next || !next->texture)
+        return;
+    GraphicsImage *shape = spriteShapes() && !billboard.centered ? assets->getSpriteShape(next->texture) : nullptr;
+    for (GraphicsImage *image : {assets->getSpriteVariant(next->texture, billboard.paletteId), shape})
+        if (image && !image->hasRenderId())
+            _imageDecodes->prefetch(image);
+}
+
+void BaseRenderer::useReadySpriteImages(WorldBillboard *billboard) {
+    if (!_imageDecodes || !billboard->sprite)
+        return;
+
+    prefetchNextSpriteFrame(*billboard);
+
+    bool mirrored = billboard->sideExtent.x < 0;
+    bool ready = spriteImagesReady(billboard->texture, billboard->paletteId, billboard->shape);
+    if (ready && billboard->crossfadeTexture && !spriteImagesReady(billboard->crossfadeTexture, billboard->paletteId, nullptr))
+        showSpriteSideAlone(billboard, billboard->sprite, mirrored, true);
+
+    if (!billboard->id || billboard->centered) { // Centred sprites move with their height, so they aren't held.
+        if (!ready)
+            showSpriteSideAlone(billboard, billboard->sprite, mirrored, false);
+        return;
+    }
+
+    HeldSpriteSide &held = _heldSpriteSides[billboard->id.packed()];
+    if (ready) {
+        if (held.waitStart >= 0)
+            _imageStats.longestWait = std::max(_imageStats.longestWait, _spriteSideFrame - held.waitStart);
+        held = HeldSpriteSide{billboard->sprite, mirrored, _spriteSideFrame, -1, false, false};
+        return;
+    }
+
+    if (held.waitStart < 0) {
+        held.waitStart = _spriteSideFrame;
+        held.holding = held.sprite && held.frame >= _spriteSideFrame - 1;
+        _imageStats.waits++;
+        if (held.holding)
+            _imageStats.held++;
+    }
+    held.frame = _spriteSideFrame;
+
+    int64_t waited = _spriteSideFrame - held.waitStart;
+    if (held.holding && !held.stock && waited < SPRITE_HOLD_FRAMES &&
+        spriteImagesReady(held.sprite->texture, billboard->paletteId, spriteShapes() ? assets->getSpriteShape(held.sprite->texture) : nullptr)) {
+        _imageStats.longestHold = std::max(_imageStats.longestHold, waited + 1);
+        showSpriteSideAlone(billboard, held.sprite, held.mirrored, true);
+        return;
+    }
+
+    if (!held.stock) {
+        held.stock = true;
+        _imageStats.stock++;
+    }
+    showSpriteSideAlone(billboard, billboard->sprite, mirrored, false);
 }
 
 void BaseRenderer::crossfadeSpriteSides(WorldBillboard *billboard, const Vec3f &eye) {
@@ -265,6 +410,7 @@ void BaseRenderer::buildWorldBillboardQuads(const CameraView &view, SpriteFacing
     for (unsigned i = 0; i < uNumBillboardsToDraw; i++) {
         WorldBillboard &billboard = _worldBillboards[i];
         crossfadeSpriteSides(&billboard, view.position);
+        useReadySpriteImages(&billboard);
         buildWorldBillboardQuad(&billboard);
         billboard.distance = (billboard.pos - view.position).length();
     }
@@ -273,6 +419,8 @@ void BaseRenderer::buildWorldBillboardQuads(const CameraView &view, SpriteFacing
     _spriteSideFrame++;
     if (_shownSpriteSides.size() > 4 * MAX_BILLBOARDS_D3D)
         std::erase_if(_shownSpriteSides, [&](const auto &entry) { return entry.second.frame < _spriteSideFrame - 1; });
+    if (_heldSpriteSides.size() > 4 * MAX_BILLBOARDS_D3D)
+        std::erase_if(_heldSpriteSides, [&](const auto &entry) { return entry.second.frame < _spriteSideFrame - 1; });
 }
 
 void BaseRenderer::turnWorldSpritesTo(const Vec3f &eye, int view) {
@@ -304,7 +452,10 @@ void BaseRenderer::turnWorldSpritesTo(const Vec3f &eye, int view) {
             billboard.octant = octant;
         showSpriteSide(&billboard, to, billboardFlagsForSprite(billboard.frame->flags, billboard.octant) & BILLBOARD_MIRRORED);
         crossfadeSpriteSides(&billboard, eye);
+        useReadySpriteImages(&billboard);
         buildWorldBillboardQuad(&billboard);
+        if (_imageDecodes)
+            continue;
         if (GraphicsImage *variant = assets->getSpriteVariant(billboard.texture, billboard.paletteId))
             replacements.push_back(variant);
         if (billboard.crossfadeTexture)
@@ -313,7 +464,7 @@ void BaseRenderer::turnWorldSpritesTo(const Vec3f &eye, int view) {
         if (billboard.shape)
             replacements.push_back(billboard.shape);
     }
-    if (engine->resources()->hasTexturePack())
+    if (engine->resources()->hasTexturePack() && !_imageDecodes)
         GraphicsImage::loadReplacements(replacements);
 }
 
@@ -547,7 +698,8 @@ static void loadBillboardReplacements() {
 
 void BaseRenderer::TransformBillboards() {
     pODMRenderParams->uNumBillboards = ::uNumBillboardsToDraw;
-    loadBillboardReplacements();
+    if (!_imageDecodes)
+        loadBillboardReplacements();
 
     for (unsigned int i = 0; i < ::uNumBillboardsToDraw; ++i) {
         RenderBillboard *p = &pBillboardRenderList[i];
